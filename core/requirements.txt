@@ -1,0 +1,2 @@
+# Canonical Python dependencies for this agent core.
+-r brain/requirements.txt

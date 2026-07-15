@@ -1,0 +1,1 @@
+"""Knowledge graph database infrastructure."""

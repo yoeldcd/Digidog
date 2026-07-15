@@ -1,0 +1,21 @@
+# Python and tool caches
+*.pyc
+*.pyo
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+node_modules/
+
+# Agent-authored private state
+/memory/
+/pictures/
+/$workspaces/
+
+# Workspace-local runtime state
+/$agent/.tmp/
+/$agent/database/
+/$agent/logs/
+
+# Generated documentation exports
+/core/**/documentation/wiki/

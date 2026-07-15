@@ -1,0 +1,1 @@
+"""Knowledge repository aggregate mixins."""

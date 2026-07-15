@@ -1,0 +1,1 @@
+"""Diary command handlers."""

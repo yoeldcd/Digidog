@@ -1,0 +1,27 @@
+{
+  "service": {
+    "host": "127.0.0.1",
+    "port": 20772
+  },
+  "active_voice_engine": "edge",
+  "voice_engines": {
+    "edge": {
+      "rate": "+0%",
+      "volume": "+0%",
+      "pitch": "+0Hz",
+      "sanitization_regex": "_+",
+      "voices": {
+        "es": "es-ES-ElviraNeural",
+        "en": "en-US-AriaNeural"
+      }
+    },
+    "pyttsx3": {
+      "rate": 150,
+      "volume": 1.0,
+      "voices": {
+        "es": "spanish",
+        "en": "english"
+      }
+    }
+  }
+}

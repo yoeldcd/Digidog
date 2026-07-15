@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{TITLE}}</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+
+    <script src="{{MARKED_PATH}}"></script>
+    <script src="{{MERMAID_PATH}}"></script>
+    <script src="{{SVG_PAN_ZOOM_PATH}}"></script>
+
+    <link href="{{PRISM_CSS_PATH}}" rel="stylesheet" id="prism-theme">
+    <script src="{{PRISM_JS_PATH}}"></script>
+    <script src="{{PRISM_JS_JS_PATH}}"></script>
+    <script src="{{PRISM_CSS_JS_PATH}}"></script>
+    <script src="{{PRISM_JSON_JS_PATH}}"></script>
+    <script src="{{PRISM_PYTHON_JS_PATH}}"></script>
+
+    <link href="{{WIKI_CORE_CSS_PATH}}" rel="stylesheet" id="wiki-core-theme">
+</head>
+<body data-page-kind="{{PAGE_KIND}}">
+    <aside class="sidebar">
+        <div class="sidebar-brand">
+            <span class="brand-logo">🌸</span>
+            <span class="brand-text">Wiki Docs</span>
+        </div>
+
+        <div class="search-container">
+            <input type="text" class="search-input" id="wiki-search" placeholder="Search page...">
+        </div>
+
+        <nav class="sidebar-menu" id="sidebar-menu"></nav>
+
+        <div class="sidebar-footer">
+            <button class="theme-toggle-btn" id="theme-toggle" title="Change theme">
+                <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" id="theme-sun">
+                    <circle cx="12" cy="12" r="4"></circle>
+                    <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"></path>
+                </svg>
+                <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" id="theme-moon" style="display:none;">
+                    <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"></path>
+                </svg>
+            </button>
+            <span style="font-size: 0.8rem; color: var(--text-muted)">v2.0.0</span>
+        </div>
+    </aside>
+
+    <div class="workspace">
+        <main class="content-area">
+            <article class="article-container">
+                <div class="rendered-markdown" id="markdown-output"></div>
+            </article>
+        </main>
+    </div>
+
+    <script type="text/markdown" id="markdown-source">{{MARKDOWN_SOURCE}}</script>
+    <script>
+        window.WIKI_CONFIG = {
+            manifestPath: 'data/index.json'
+        };
+    </script>
+    <script type="module" src="{{WIKI_CORE_JS_PATH}}"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "name": "brain_explorer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build/build-brain-explorer.mjs",
+    "typecheck": "tsc --project tsconfig.json",
+    "verify": "npm run typecheck && node --experimental-strip-types build/test-notification-message.mjs && node build/test-visual-reference-layout.mjs && node build/build-brain-explorer.mjs && node --check dist/brain-explorer.js"
+  },
+  "devDependencies": {
+    "typescript": "5.7.3"
+  }
+}

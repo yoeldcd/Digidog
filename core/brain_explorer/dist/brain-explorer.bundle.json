@@ -1,0 +1,11 @@
+{
+  "name": "brain_explorer",
+  "kind": "compiled-static-web-bundle",
+  "entrypoints": {
+    "html": "index.html",
+    "script": "brain-explorer.js",
+    "stylesheet": "brain-explorer.css"
+  },
+  "generatedBy": "build/build-brain-explorer.mjs",
+  "sourceEntry": "src/app.ts"
+}

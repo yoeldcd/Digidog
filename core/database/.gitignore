@@ -1,0 +1,6 @@
+# Mutable runtime stores are private; settings and registries are versioned.
+avatar_storage/
+knowledge/
+logs/
+sources/
+vectorstores/
