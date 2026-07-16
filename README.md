@@ -2,11 +2,7 @@
 
 # Codex Dog - @Mia
 
-<img
-  src="core/assets/avatar/avatar_awaiting.gif"
-  alt="Codex Dog @Mia awaiting"
-  width="320"
->
+<img src="core/assets/avatar/avatar_awaiting.gif" alt="Codex Dog @Mia awaiting" width="320" />
 
 Codex Dog is a local-first framework for building persistent, visual software
 agents. This repository is the complete directory of `@Mia`: an
