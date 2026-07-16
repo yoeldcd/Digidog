@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Data transfer objects for modular memory CLI schemas."""
 
 from __future__ import annotations

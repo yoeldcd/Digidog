@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """In-process CLI facade for Brain Explorer API routes."""
 
 from __future__ import annotations

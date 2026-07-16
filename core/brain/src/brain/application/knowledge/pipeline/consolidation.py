@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Delta application and consolidation rules for the knowledge graph."""
 
 from __future__ import annotations

@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Independent, avatar-styled Qt reply composer."""
 
 from __future__ import annotations

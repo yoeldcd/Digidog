@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Knowledge graph scope normalization and runtime-root selection."""
 
 from __future__ import annotations

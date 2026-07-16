@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Lifecycle supervision for the voice daemon avatar child process."""
 
 from __future__ import annotations

@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Action module to speak messages via Text-to-Speech."""
 
 from __future__ import annotations

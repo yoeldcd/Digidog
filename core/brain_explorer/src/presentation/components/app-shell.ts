@@ -1,3 +1,8 @@
+/**
+ * @author Yoel David <yoeldcd@gmail.com>
+ * @see https://x.com/SAY6267
+ */
+
 import { DashboardView } from "./dashboard-view.ts";
 import { BrainApiClient } from "../../infrastructure/api/brain-api-client.ts";
 import { MemoryView } from "./memory-view.ts";

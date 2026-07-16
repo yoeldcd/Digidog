@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Deterministic selectors and constants for global query routing."""
 
 from __future__ import annotations

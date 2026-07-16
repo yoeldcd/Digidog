@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Coverage for backlog-driven avatar ambient states."""
 
 from argparse import Namespace

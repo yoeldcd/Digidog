@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Global flag extraction for Brain CLI runtime options."""
 
 from __future__ import annotations

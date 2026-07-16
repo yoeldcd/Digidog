@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Data-driven spoken narration contracts reviewed by the workspace owner."""
 
 from __future__ import annotations

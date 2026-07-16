@@ -1,5 +1,6 @@
 /**
- * @author: Angi Ichiva
+ * @author Yoel David <yoeldcd@gmail.com>
+ * @see https://x.com/SAY6267
  * @version: 1.0.0
  *
  * Small DOM helpers for safe Brain Explorer rendering.

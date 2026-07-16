@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Client and lifecycle launcher for the local voice daemon."""
 
 from __future__ import annotations

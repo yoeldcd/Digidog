@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Lifecycle status rules for persisted knowledge delta rows."""
 
 from __future__ import annotations

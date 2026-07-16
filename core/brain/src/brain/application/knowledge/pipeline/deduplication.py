@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Deduplication helpers for knowledge graph consolidation."""
 
 from __future__ import annotations

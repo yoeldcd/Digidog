@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """HTTP transport for OpenAI-compatible chat completion requests."""
 
 from __future__ import annotations

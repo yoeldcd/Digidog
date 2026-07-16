@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Contracts for reviewed, best-effort narrated CLI events."""
 
 from argparse import Namespace

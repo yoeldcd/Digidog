@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Backlog application service for the logs-database task projection."""
 
 from __future__ import annotations

@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Regression tests for the Brain CLI presentation boundary."""
 
 from __future__ import annotations

@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Pending delta buffer views for knowledge dream runs."""
 
 from __future__ import annotations

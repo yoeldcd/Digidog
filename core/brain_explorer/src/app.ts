@@ -1,3 +1,8 @@
+/**
+ * @author Yoel David <yoeldcd@gmail.com>
+ * @see https://x.com/SAY6267
+ */
+
 import { BrainApiClient } from "./infrastructure/api/brain-api-client.ts";
 import { AppState } from "./presentation/state/app-state.ts";
 import { BrainExplorerApp } from "./presentation/components/app-shell.ts";

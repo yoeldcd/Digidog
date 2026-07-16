@@ -1,3 +1,8 @@
+/**
+ * @author Yoel David <yoeldcd@gmail.com>
+ * @see https://x.com/SAY6267
+ */
+
 import assert from "node:assert/strict";
 
 import { notificationText } from "../src/presentation/utils/notification-message.ts";

@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Deep answer synthesis for global query."""
 
 from __future__ import annotations

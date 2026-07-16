@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Action module to read the DB-backed workspace logs index."""
 
 from __future__ import annotations

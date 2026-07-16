@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Filesystem path resolution for private brain runtime stores."""
 
 from __future__ import annotations

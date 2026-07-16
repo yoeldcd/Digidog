@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Profile-specific helpers built on top of the Markdown memory store."""
 
 from __future__ import annotations

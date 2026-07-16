@@ -1,3 +1,8 @@
+/**
+ * @author Yoel David <yoeldcd@gmail.com>
+ * @see https://x.com/SAY6267
+ */
+
 import type { ApiResponse } from "../../application/contracts/api-dtos.ts";
 
 export interface NotificationText {

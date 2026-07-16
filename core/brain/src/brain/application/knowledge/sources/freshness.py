@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Source freshness checks for the knowledge graph consumer."""
 
 from __future__ import annotations

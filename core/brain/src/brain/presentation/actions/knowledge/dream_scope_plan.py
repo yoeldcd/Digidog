@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Scope planning for knowledge dream runs."""
 
 from __future__ import annotations

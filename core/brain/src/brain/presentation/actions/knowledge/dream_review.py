@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Review-row helpers for knowledge dream application flow."""
 
 from __future__ import annotations

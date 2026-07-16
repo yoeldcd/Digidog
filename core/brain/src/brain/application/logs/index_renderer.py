@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Markdown renderer for the workspace log domain index."""
 
 from __future__ import annotations

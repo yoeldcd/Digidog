@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Codex quota transport isolation regression tests."""
 
 from io import StringIO

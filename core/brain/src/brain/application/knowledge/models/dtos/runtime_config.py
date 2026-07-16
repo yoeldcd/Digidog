@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Runtime configuration DTO models for brain knowledge services."""
 
 from __future__ import annotations

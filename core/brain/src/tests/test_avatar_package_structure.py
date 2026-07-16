@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Architecture contracts for the split avatar presentation packages."""
 
 from pathlib import Path

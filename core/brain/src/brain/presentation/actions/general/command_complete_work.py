@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Coordinate the validated finalization of one workspace task."""
 
 from __future__ import annotations

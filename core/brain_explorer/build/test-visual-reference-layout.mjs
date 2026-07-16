@@ -1,3 +1,8 @@
+/**
+ * @author Yoel David <yoeldcd@gmail.com>
+ * @see https://x.com/SAY6267
+ */
+
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 

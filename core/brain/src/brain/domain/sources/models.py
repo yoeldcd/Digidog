@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Source registry domain DTOs and callable contracts."""
 
 from __future__ import annotations

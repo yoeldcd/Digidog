@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Outbound gateway that queues avatar replies for the native Codex host."""
 
 from __future__ import annotations

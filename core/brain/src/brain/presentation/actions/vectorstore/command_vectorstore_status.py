@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Action module to show the vector store configuration and statistics."""
 
 from __future__ import annotations

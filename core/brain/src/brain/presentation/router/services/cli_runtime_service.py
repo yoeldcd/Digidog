@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Runtime service that coordinates Brain CLI parsing, dispatch, and error rendering."""
 
 from __future__ import annotations

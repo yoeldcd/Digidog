@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Safe presentation-backend selection for the avatar process."""
 from __future__ import annotations
 

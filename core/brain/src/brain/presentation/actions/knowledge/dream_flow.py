@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Execution flow for the knowledge dream CLI action."""
 
 from __future__ import annotations

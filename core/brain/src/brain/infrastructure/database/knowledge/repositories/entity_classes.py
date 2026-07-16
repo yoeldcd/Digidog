@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Entity class read queries for the SQLite knowledge repository."""
 
 from __future__ import annotations

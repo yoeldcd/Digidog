@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Single-stage LLM runner for knowledge delta generation."""
 
 from __future__ import annotations

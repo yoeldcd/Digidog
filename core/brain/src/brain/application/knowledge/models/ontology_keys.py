@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Shared ontology key normalization helpers."""
 
 from __future__ import annotations

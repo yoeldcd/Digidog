@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Dream consolidation pipeline for the evolving knowledge graph."""
 
 from __future__ import annotations

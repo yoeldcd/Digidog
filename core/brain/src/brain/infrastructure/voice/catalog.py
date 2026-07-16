@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Voice and model catalog adapters for configured avatar speech engines."""
 
 from __future__ import annotations

@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Presentation and terminal formatting utilities for colorized outputs."""
 
 from __future__ import annotations

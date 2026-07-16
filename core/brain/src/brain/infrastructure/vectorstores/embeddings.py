@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Embedding API client used by vectorstore managers."""
 
 from __future__ import annotations

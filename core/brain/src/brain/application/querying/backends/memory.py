@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Memory vector and direct-text backend adapters for global query."""
 
 from __future__ import annotations

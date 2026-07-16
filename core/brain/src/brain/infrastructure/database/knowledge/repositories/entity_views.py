@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Entity graph read-model accessors for the SQLite knowledge repository."""
 
 from __future__ import annotations

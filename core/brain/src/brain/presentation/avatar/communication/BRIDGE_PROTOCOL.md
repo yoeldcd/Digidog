@@ -1,3 +1,5 @@
+<!-- Author: Yoel David <yoeldcd@gmail.com> | X: https://x.com/SAY6267 -->
+
 # Payload-blind avatar bridge protocol
 
 The native bridge transports references, never avatar message bodies.

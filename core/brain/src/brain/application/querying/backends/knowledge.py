@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Knowledge graph backend adapter for global query orchestration."""
 
 from __future__ import annotations

@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Regression tests for deterministic Brain facade import precedence."""
 
 from __future__ import annotations

@@ -8,9 +8,17 @@ __pycache__/
 node_modules/
 
 # Agent-authored private state
-/memory/
+/memory/*
+!/memory/profiles/
+/memory/profiles/*
+!/memory/profiles/developer/
+!/memory/profiles/developer/**
 /pictures/
 /$workspaces/
+
+# Agent-local temporary artifacts
+/.tmp/*
+!/.tmp/.gitkeep
 
 # Workspace-local runtime state
 /$agent/.tmp/

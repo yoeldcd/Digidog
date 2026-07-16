@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Deep query context extraction, keyword selection, and date parsing."""
 
 from __future__ import annotations

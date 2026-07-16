@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Changelog type contract and CLI help regression tests."""
 
 from brain.application.logs.entry_formatting import (

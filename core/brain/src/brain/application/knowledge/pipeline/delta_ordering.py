@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Ordering rules for applying reviewed knowledge deltas."""
 
 from __future__ import annotations

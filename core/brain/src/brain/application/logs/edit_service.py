@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Application service for editing DB-backed workspace log entries."""
 
 from __future__ import annotations

@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """CLI adapter for the durable avatar-to-Codex outbox."""
 
 from __future__ import annotations

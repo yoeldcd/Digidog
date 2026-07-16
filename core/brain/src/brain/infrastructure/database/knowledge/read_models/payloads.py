@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Row-to-payload builders for knowledge graph read models."""
 
 from __future__ import annotations

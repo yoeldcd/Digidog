@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Render avatar service diagnostics."""
 from __future__ import annotations
 import argparse

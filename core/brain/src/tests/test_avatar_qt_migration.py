@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Safe first-slice tests for the optional Qt avatar presentation."""
 import os
 from unittest.mock import patch

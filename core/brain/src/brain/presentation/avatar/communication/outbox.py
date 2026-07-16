@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Payload-blind signal queue used by the native Codex bridge."""
 
 from __future__ import annotations

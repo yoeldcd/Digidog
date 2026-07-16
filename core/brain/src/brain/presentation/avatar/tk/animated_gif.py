@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Memory-conscious animated GIF player for Tk."""
 
 from __future__ import annotations

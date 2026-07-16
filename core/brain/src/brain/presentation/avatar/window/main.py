@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Executable entrypoint for the voice avatar window."""
 import os
 import sys

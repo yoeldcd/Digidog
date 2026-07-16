@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Entity class catalog helpers for dream runs."""
 
 from __future__ import annotations

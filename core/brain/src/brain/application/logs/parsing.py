@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Workspace log filename, timestamp, and entry parsing helpers."""
 
 from __future__ import annotations

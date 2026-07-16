@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Section renderers for knowledge delta review rows."""
 
 from __future__ import annotations

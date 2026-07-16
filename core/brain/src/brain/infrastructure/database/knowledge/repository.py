@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """SQLite knowledge repository composed from focused persistence mixins."""
 
 from __future__ import annotations

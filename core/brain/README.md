@@ -1,3 +1,5 @@
+<!-- Author: Yoel David <yoeldcd@gmail.com> | X: https://x.com/SAY6267 -->
+
 # Agent Brain
 
 `brain.py` is an agent's workspace command center. Consumers are generated from

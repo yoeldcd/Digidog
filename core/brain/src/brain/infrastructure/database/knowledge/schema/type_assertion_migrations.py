@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Entity type assertion migrations for knowledge schema upgrades."""
 
 from __future__ import annotations

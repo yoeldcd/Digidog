@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Tests for terminal progress logging behavior."""
 
 from __future__ import annotations

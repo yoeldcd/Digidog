@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Local HTTP server for the Brain Explorer static UI and JSON API."""
 
 from __future__ import annotations

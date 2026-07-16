@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Entity validation for knowledge deltas."""
 
 from __future__ import annotations

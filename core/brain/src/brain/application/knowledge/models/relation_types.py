@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Relation type normalization helpers for the knowledge graph."""
 
 from __future__ import annotations

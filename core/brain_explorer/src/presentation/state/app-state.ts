@@ -1,5 +1,6 @@
 /**
- * @author: Angi Ichiva
+ * @author Yoel David <yoeldcd@gmail.com>
+ * @see https://x.com/SAY6267
  * @version: 1.0.0
  *
  * Lightweight event-driven presentation state for Brain Explorer.

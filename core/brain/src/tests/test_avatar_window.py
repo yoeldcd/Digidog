@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 from brain.presentation.avatar.window.config import avatar_asset, default_geometry
 from brain.presentation.avatar.tk.window import (
     BUBBLE_FONT,

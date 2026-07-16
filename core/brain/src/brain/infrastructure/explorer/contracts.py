@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Shared contracts for the Brain Explorer HTTP infrastructure."""
 
 from dataclasses import dataclass

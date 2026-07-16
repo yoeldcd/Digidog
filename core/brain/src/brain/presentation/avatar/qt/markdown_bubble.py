@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """PySide6 prototype of the detached Markdown dialogue bubble."""
 from __future__ import annotations
 

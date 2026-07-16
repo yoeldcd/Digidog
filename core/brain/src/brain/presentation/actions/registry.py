@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Registered executable action modules for Brain CLI commands."""
 
 from __future__ import annotations

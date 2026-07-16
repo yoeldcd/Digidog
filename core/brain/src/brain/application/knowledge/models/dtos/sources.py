@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Source, evidence, and framing DTOs for knowledge ingestion."""
 
 from __future__ import annotations

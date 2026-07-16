@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Custom-painted Qt controls faithful to the original avatar overlay."""
 from __future__ import annotations
 

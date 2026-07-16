@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Composed terminal view for knowledge delta review buffers."""
 
 from __future__ import annotations

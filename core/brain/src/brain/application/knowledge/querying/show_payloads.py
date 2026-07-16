@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Read payload builders for the `knowledge-show` command."""
 
 from __future__ import annotations

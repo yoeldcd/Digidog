@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Delete a task from the workspace backlog."""
 
 from __future__ import annotations

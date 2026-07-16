@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Action for listing temporary voice daemon state."""
 
 from __future__ import annotations

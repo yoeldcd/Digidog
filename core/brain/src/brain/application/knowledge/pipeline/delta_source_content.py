@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Source content access for reviewed knowledge delta workflows."""
 
 from __future__ import annotations

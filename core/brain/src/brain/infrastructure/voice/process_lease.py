@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Kernel-owned singleton leases for local voice processes."""
 
 from __future__ import annotations

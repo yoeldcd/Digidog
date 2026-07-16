@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Codex App Server gateway for avatar reply delivery."""
 
 from __future__ import annotations

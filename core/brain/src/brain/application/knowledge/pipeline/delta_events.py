@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Diagnostic event helpers for reviewed knowledge deltas."""
 
 from __future__ import annotations

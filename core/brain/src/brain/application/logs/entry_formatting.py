@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Formatting helpers for canonical workspace log entries."""
 
 from __future__ import annotations

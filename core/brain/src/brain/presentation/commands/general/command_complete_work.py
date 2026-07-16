@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Command metadata for atomic task completion."""
 
 from brain.application.logs.entry_formatting import valid_log_types_text

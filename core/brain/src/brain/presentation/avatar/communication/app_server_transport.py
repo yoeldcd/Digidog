@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Stdio JSON-RPC transport for Codex App Server."""
 
 from __future__ import annotations

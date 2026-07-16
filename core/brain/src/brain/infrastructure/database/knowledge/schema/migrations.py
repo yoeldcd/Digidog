@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Idempotent SQLite migrations for existing knowledge graph stores."""
 
 from __future__ import annotations

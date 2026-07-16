@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Event helpers for knowledge LLM stage diagnostics."""
 
 from __future__ import annotations

@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Native priority controls for borderless avatar windows."""
 from __future__ import annotations
 

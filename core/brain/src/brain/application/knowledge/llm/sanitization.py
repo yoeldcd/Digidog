@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Deterministic sanitizers for model-authored knowledge deltas."""
 
 from __future__ import annotations

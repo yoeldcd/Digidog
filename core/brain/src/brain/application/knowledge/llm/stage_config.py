@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Configuration resolution for knowledge LLM stages."""
 
 from __future__ import annotations

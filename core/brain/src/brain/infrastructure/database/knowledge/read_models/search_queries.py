@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """SQLite row collection queries for knowledge search read models."""
 
 from __future__ import annotations

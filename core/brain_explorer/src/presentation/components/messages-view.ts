@@ -1,3 +1,8 @@
+/**
+ * @author Yoel David <yoeldcd@gmail.com>
+ * @see https://x.com/SAY6267
+ */
+
 import type { VoiceMessageRecord, VoiceSpeakRecord } from "../../application/contracts/api-dtos.ts";
 import { BrainApiClient } from "../../infrastructure/api/brain-api-client.ts";
 import { escapeHtml, renderMarkdown } from "../utils/html.ts";

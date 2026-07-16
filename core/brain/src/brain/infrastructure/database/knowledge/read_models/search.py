@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Repository search orchestration for the knowledge graph read model."""
 
 from __future__ import annotations

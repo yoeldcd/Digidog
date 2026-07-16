@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Static ontology definitions for the cognitive knowledge graph."""
 
 from __future__ import annotations

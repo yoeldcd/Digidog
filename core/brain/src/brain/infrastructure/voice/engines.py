@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Speech synthesis engine implementations for Edge-TTS, PyTTSx3, OpenAI, and ElevenLabs."""
 
 from __future__ import annotations

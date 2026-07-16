@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Borderless transparent avatar window coupled to the voice daemon."""
 from __future__ import annotations
 import json

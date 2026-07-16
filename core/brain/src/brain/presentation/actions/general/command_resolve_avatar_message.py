@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Consumer-only CLI adapter for resolving opaque avatar message references."""
 
 from __future__ import annotations

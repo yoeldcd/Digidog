@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 # Brain runtime dependencies
 PySide6==6.11.1
 Pillow==12.3.0

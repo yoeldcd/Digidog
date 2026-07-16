@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Terminal formatting primitives for live knowledge diagnostics."""
 
 from __future__ import annotations

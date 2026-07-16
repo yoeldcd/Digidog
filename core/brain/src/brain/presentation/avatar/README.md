@@ -1,3 +1,5 @@
+<!-- Author: Yoel David <yoeldcd@gmail.com> | X: https://x.com/SAY6267 -->
+
 # Avatar presentation packages
 
 The avatar presentation is split by ownership instead of toolkit prefixes:

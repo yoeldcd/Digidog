@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Legacy source-state JSON import helpers for runtime migration."""
 
 from __future__ import annotations

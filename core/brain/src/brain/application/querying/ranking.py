@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Ranking, deduplication, and backend-selection helpers for global query."""
 
 from __future__ import annotations

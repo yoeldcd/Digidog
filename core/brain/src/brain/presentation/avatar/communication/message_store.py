@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Producer and consumer access to avatar message bodies."""
 
 from __future__ import annotations

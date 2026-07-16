@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Rendered help documents for the brain CLI."""
 
 from __future__ import annotations

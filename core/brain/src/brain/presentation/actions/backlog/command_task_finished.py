@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Mark a task as finished in the workspace backlog."""
 
 from __future__ import annotations

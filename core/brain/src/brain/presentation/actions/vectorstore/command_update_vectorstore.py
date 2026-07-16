@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Action module to incrementally update the ChromaDB vector store."""
 
 from __future__ import annotations

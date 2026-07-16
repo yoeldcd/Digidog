@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Idempotent file and directory steps used by runtime migration."""
 
 from __future__ import annotations

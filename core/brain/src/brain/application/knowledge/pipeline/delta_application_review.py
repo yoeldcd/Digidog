@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Application payload builders for reviewed knowledge delta application."""
 
 from __future__ import annotations

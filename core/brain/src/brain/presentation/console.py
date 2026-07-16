@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Console runtime helpers for the Brain CLI entrypoint."""
 
 from __future__ import annotations

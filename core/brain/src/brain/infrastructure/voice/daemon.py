@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Lazy memory-only voice synthesis daemon with a one-hour idle TTL."""
 
 from __future__ import annotations

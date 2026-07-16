@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """CLI action for validating and appending one workspace log entry."""
 
 import argparse

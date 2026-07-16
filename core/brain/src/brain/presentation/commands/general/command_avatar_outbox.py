@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Command metadata for native avatar outbox bridge operations."""
 
 from brain.presentation.commands.models import ArgumentSchema, CommandSchema

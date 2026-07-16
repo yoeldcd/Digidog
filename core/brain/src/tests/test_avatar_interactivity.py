@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Contracts for explicit avatar emotion and reaction registries."""
 
 import random

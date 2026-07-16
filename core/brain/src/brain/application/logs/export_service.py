@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Export DB-backed workspace logs for external consumers."""
 
 from __future__ import annotations

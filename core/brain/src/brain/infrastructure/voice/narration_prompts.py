@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Strict system contracts for Spanish CLI signal narration."""
 
 SPANISH_NARRATION_SYSTEM_PROMPT = """

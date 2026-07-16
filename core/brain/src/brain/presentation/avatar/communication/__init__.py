@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Bidirectional communication contracts for the avatar presentation."""
 
 from brain.presentation.avatar.communication.models import (

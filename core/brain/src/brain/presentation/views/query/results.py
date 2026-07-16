@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Human-readable terminal rendering for global query results."""
 
 from __future__ import annotations

@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """ChromaDB collection manager for memory and local vector records."""
 
 from __future__ import annotations

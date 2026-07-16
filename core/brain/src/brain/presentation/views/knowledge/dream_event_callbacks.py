@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Callback builders for live knowledge dream diagnostics."""
 
 from __future__ import annotations

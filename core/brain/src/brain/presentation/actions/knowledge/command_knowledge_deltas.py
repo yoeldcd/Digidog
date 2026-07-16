@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Action module to review and optionally apply pending knowledge graph deltas."""
 
 from __future__ import annotations

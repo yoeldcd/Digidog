@@ -3,6 +3,10 @@ const __brainExplorerModule0=(()=>{let cache;return()=>{if(cache)return cache;
 const { BrainApiClient } = __brainExplorerModule1();
 const { AppState } = __brainExplorerModule2();
 const { BrainExplorerApp } = __brainExplorerModule3();
+/**
+ * @author Yoel David <yoeldcd@gmail.com>
+ * @see https://x.com/SAY6267
+ */
 
 
 
@@ -31,6 +35,10 @@ bootstrapBrainExplorer();
 cache=(()=>{return {};})();return cache;};})();
 const __brainExplorerModule1=(()=>{let cache;return()=>{if(cache)return cache;
 
+/**
+ * @author Yoel David <yoeldcd@gmail.com>
+ * @see https://x.com/SAY6267
+ */
 /**
  * BrainApiClient isolates every browser request to the local explorer server.
  */
@@ -418,7 +426,8 @@ cache=(()=>{return { BrainApiClient: BrainApiClient };})();return cache;};})();
 const __brainExplorerModule2=(()=>{let cache;return()=>{if(cache)return cache;
 
 /**
- * @author: Angi Ichiva
+ * @author Yoel David <yoeldcd@gmail.com>
+ * @see https://x.com/SAY6267
  * @version: 1.0.0
  *
  * Lightweight event-driven presentation state for Brain Explorer.
@@ -772,6 +781,10 @@ const { MessagesView } = __brainExplorerModule13();
 const { codeBlock, escapeHtml } = __brainExplorerModule14();
 const { icon } = __brainExplorerModule15();
 const { notificationText } = __brainExplorerModule16();
+/**
+ * @author Yoel David <yoeldcd@gmail.com>
+ * @see https://x.com/SAY6267
+ */
 
 
 
@@ -1519,6 +1532,10 @@ cache=(()=>{return { BrainExplorerApp: BrainExplorerApp };})();return cache;};})
 const __brainExplorerModule4=(()=>{let cache;return()=>{if(cache)return cache;
 const { escapeHtml } = __brainExplorerModule14();
 const { icon } = __brainExplorerModule15();
+/**
+ * @author Yoel David <yoeldcd@gmail.com>
+ * @see https://x.com/SAY6267
+ */
 
 
 /**
@@ -1983,6 +2000,10 @@ const __brainExplorerModule5=(()=>{let cache;return()=>{if(cache)return cache;
 const { compactLabel, escapeHtml, renderMarkdown } = __brainExplorerModule14();
 const { icon } = __brainExplorerModule15();
 const { StructureTree } = __brainExplorerModule17();
+/**
+ * @author Yoel David <yoeldcd@gmail.com>
+ * @see https://x.com/SAY6267
+ */
 
 
 
@@ -2850,6 +2871,10 @@ const __brainExplorerModule6=(()=>{let cache;return()=>{if(cache)return cache;
 const { escapeHtml } = __brainExplorerModule14();
 const { icon } = __brainExplorerModule15();
 const { StructureTree } = __brainExplorerModule17();
+/**
+ * @author Yoel David <yoeldcd@gmail.com>
+ * @see https://x.com/SAY6267
+ */
 
 
 
@@ -4876,6 +4901,10 @@ cache=(()=>{return { KnowledgeView: KnowledgeView };})();return cache;};})();
 const __brainExplorerModule7=(()=>{let cache;return()=>{if(cache)return cache;
 const { escapeHtml, renderMarkdown } = __brainExplorerModule14();
 const { icon } = __brainExplorerModule15();
+/**
+ * @author Yoel David <yoeldcd@gmail.com>
+ * @see https://x.com/SAY6267
+ */
 
 
 const DEFAULT_SOURCES = ["memory", "knowledge"];
@@ -5035,6 +5064,10 @@ cache=(()=>{return { QueryView: QueryView };})();return cache;};})();
 const __brainExplorerModule8=(()=>{let cache;return()=>{if(cache)return cache;
 const { escapeHtml, renderMarkdown } = __brainExplorerModule14();
 const { icon } = __brainExplorerModule15();
+/**
+ * @author Yoel David <yoeldcd@gmail.com>
+ * @see https://x.com/SAY6267
+ */
 
 
 /**
@@ -5267,6 +5300,10 @@ const __brainExplorerModule9=(()=>{let cache;return()=>{if(cache)return cache;
 const { escapeHtml, optionTags, renderMarkdown } = __brainExplorerModule14();
 const { icon } = __brainExplorerModule15();
 const { StructureTree } = __brainExplorerModule17();
+/**
+ * @author Yoel David <yoeldcd@gmail.com>
+ * @see https://x.com/SAY6267
+ */
 
 
 
@@ -6087,6 +6124,10 @@ const { escapeHtml } = __brainExplorerModule14();
 const { icon } = __brainExplorerModule15();
 const { BacklogPip } = __brainExplorerModule18();
 const { StructureTree } = __brainExplorerModule17();
+/**
+ * @author Yoel David <yoeldcd@gmail.com>
+ * @see https://x.com/SAY6267
+ */
 
 
 
@@ -7561,6 +7602,10 @@ cache=(()=>{return { BacklogView: BacklogView };})();return cache;};})();
 const __brainExplorerModule11=(()=>{let cache;return()=>{if(cache)return cache;
 const { escapeHtml } = __brainExplorerModule14();
 const { icon } = __brainExplorerModule15();
+/**
+ * @author Yoel David <yoeldcd@gmail.com>
+ * @see https://x.com/SAY6267
+ */
 
 
 /**
@@ -7653,6 +7698,10 @@ cache=(()=>{return { SettingsView: SettingsView };})();return cache;};})();
 const __brainExplorerModule12=(()=>{let cache;return()=>{if(cache)return cache;
 const { escapeHtml } = __brainExplorerModule14();
 const { icon } = __brainExplorerModule15();
+/**
+ * @author Yoel David <yoeldcd@gmail.com>
+ * @see https://x.com/SAY6267
+ */
 
 
 /**
@@ -7871,6 +7920,10 @@ cache=(()=>{return { WikisView: WikisView };})();return cache;};})();
 const __brainExplorerModule13=(()=>{let cache;return()=>{if(cache)return cache;
 const { escapeHtml, renderMarkdown } = __brainExplorerModule14();
 const { icon } = __brainExplorerModule15();
+/**
+ * @author Yoel David <yoeldcd@gmail.com>
+ * @see https://x.com/SAY6267
+ */
 
 
 /** Browse, inspect, copy, download, and replay persisted voice messages. */
@@ -8051,7 +8104,8 @@ cache=(()=>{return { MessagesView: MessagesView };})();return cache;};})();
 const __brainExplorerModule14=(()=>{let cache;return()=>{if(cache)return cache;
 
 /**
- * @author: Angi Ichiva
+ * @author Yoel David <yoeldcd@gmail.com>
+ * @see https://x.com/SAY6267
  * @version: 1.0.0
  *
  * Small DOM helpers for safe Brain Explorer rendering.
@@ -8269,6 +8323,10 @@ function inlineMarkdown(value) {
 cache=(()=>{return { escapeHtml: escapeHtml, prettyJson: prettyJson, codeBlock: codeBlock, renderMarkdown: renderMarkdown, compactLabel: compactLabel, optionTags: optionTags };})();return cache;};})();
 const __brainExplorerModule15=(()=>{let cache;return()=>{if(cache)return cache;
 
+/**
+ * @author Yoel David <yoeldcd@gmail.com>
+ * @see https://x.com/SAY6267
+ */
 const SVG_ICONS = {
     home: `<path d="M3 10.5 12 3l9 7.5"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/>`,
     database: `<ellipse cx="12" cy="5" rx="7" ry="3"/><path d="M5 5v6c0 1.7 3.1 3 7 3s7-1.3 7-3V5"/><path d="M5 11v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/>`,
@@ -8324,6 +8382,10 @@ function icon(name) {
 cache=(()=>{return { icon: icon, SVG_ICONS: SVG_ICONS };})();return cache;};})();
 const __brainExplorerModule16=(()=>{let cache;return()=>{if(cache)return cache;
 
+/**
+ * @author Yoel David <yoeldcd@gmail.com>
+ * @see https://x.com/SAY6267
+ */
 /** Build concise human feedback from one structured API response. */
 function notificationText(payload, method, requestLabel = "") {
     const data = asRecord(payload.data);
@@ -8428,6 +8490,10 @@ cache=(()=>{return { notificationText: notificationText };})();return cache;};})
 const __brainExplorerModule17=(()=>{let cache;return()=>{if(cache)return cache;
 const { escapeHtml } = __brainExplorerModule14();
 const { icon } = __brainExplorerModule15();
+/**
+ * @author Yoel David <yoeldcd@gmail.com>
+ * @see https://x.com/SAY6267
+ */
 var _a;
 
 
@@ -8892,6 +8958,10 @@ cache=(()=>{return { StructureTree: StructureTree };})();return cache;};})();
 const __brainExplorerModule18=(()=>{let cache;return()=>{if(cache)return cache;
 const { escapeHtml } = __brainExplorerModule14();
 const { icon } = __brainExplorerModule15();
+/**
+ * @author Yoel David <yoeldcd@gmail.com>
+ * @see https://x.com/SAY6267
+ */
 
 
 /**

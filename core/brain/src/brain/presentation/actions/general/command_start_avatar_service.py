@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Action for explicitly starting the avatar service."""
 
 from __future__ import annotations

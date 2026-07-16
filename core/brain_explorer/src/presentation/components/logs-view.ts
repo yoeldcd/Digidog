@@ -1,3 +1,8 @@
+/**
+ * @author Yoel David <yoeldcd@gmail.com>
+ * @see https://x.com/SAY6267
+ */
+
 import { escapeHtml, optionTags, renderMarkdown } from "../utils/html.ts";
 import { icon } from "../utils/icons.ts";
 import { StructureTree } from "./structure-tree.ts";

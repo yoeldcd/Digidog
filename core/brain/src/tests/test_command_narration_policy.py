@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Coverage for owner-reviewed CLI narration selection and dispatch."""
 
 from argparse import Namespace

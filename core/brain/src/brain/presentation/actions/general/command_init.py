@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Initialize session: run workspace checks and hydrate context."""
 
 from __future__ import annotations

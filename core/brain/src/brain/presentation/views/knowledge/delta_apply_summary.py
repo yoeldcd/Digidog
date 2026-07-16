@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Terminal renderers for knowledge delta application summaries."""
 
 from __future__ import annotations

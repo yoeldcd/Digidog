@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Safe filesystem resolution for Brain Explorer resources."""
 
 import os

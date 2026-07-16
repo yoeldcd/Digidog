@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Avatar window presentation constants and asset resolution."""
 
 from pathlib import Path

@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Direct Markdown text-result mapping and excerpt helpers."""
 
 from __future__ import annotations

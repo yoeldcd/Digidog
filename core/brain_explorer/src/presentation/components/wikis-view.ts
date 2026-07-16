@@ -1,3 +1,8 @@
+/**
+ * @author Yoel David <yoeldcd@gmail.com>
+ * @see https://x.com/SAY6267
+ */
+
 import { escapeHtml } from "../utils/html.ts";
 import { icon } from "../utils/icons.ts";
 import { BrainApiClient } from "../../infrastructure/api/brain-api-client.ts";

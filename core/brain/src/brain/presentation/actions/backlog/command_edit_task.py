@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Edit one workspace backlog task through the SQLite-backed service."""
 
 from __future__ import annotations

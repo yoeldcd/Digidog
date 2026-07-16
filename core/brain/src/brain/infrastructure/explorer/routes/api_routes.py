@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """ApiRoutesMixin for Brain Explorer."""
 
 from __future__ import annotations

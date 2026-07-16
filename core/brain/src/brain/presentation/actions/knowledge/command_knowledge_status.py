@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Action module to inspect the private knowledge graph runtime."""
 
 from __future__ import annotations

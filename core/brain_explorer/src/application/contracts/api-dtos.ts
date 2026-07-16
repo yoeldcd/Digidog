@@ -1,5 +1,6 @@
 /**
- * @author: Angi Ichiva
+ * @author Yoel David <yoeldcd@gmail.com>
+ * @see https://x.com/SAY6267
  * @version: 1.0.0
  *
  * Browser-facing DTO contracts for the Brain Explorer API.

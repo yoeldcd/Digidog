@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Package-owned narration templates migrated from the reviewed CSV seed."""
 
 from __future__ import annotations

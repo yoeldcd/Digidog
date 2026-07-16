@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Constants for the brain runtime.
 
 This module intentionally contains no filesystem, JSON, environment, network,

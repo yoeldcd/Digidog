@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Action module to migrate workspace logs into SQLite and refresh the DB index."""
 
 from __future__ import annotations

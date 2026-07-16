@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Structured workspace log entry parsing and rendering."""
 
 from __future__ import annotations

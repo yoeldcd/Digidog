@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Entity and relation DTOs for knowledge graph mutations."""
 
 from __future__ import annotations

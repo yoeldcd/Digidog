@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Workspace log vector indexing and search helpers."""
 
 from __future__ import annotations

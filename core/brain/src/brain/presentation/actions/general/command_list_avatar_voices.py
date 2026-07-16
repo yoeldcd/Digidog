@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Render the voice catalog exposed by one avatar engine."""
 
 from __future__ import annotations

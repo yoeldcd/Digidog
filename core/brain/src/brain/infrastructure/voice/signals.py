@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Best-effort dispatch for owner-reviewed CLI narration templates."""
 
 from __future__ import annotations

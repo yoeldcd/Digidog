@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Command metadata for the core-owned agent prompt propagator."""
 
 from __future__ import annotations

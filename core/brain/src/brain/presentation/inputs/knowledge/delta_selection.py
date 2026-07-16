@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Interactive delta selection for knowledge dream review."""
 
 from __future__ import annotations

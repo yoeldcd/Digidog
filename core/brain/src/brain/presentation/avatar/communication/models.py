@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Typed data contracts for replies sent from the avatar to Codex."""
 
 from __future__ import annotations

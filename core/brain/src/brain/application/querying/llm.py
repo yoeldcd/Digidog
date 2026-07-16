@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """OpenAI-compatible helper calls used by deep query mode."""
 
 from __future__ import annotations

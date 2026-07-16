@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Unified voice synthesis facade coordinating engines and speech dispatch."""
 
 from __future__ import annotations

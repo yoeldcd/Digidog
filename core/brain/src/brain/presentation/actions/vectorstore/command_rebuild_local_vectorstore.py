@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Action module to completely index or rebuild local collections in ChromaDB."""
 
 from __future__ import annotations

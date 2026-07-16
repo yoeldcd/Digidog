@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """CLI action to register a workspace project root."""
 
 from __future__ import annotations

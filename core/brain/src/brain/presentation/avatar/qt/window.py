@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """PySide6 avatar runtime connected to the existing voice daemon."""
 from __future__ import annotations
 

@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Source file content reader for knowledge ingestion."""
 
 from __future__ import annotations

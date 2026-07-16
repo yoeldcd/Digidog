@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Command metadata for `list-avatar-voices`."""
 
 from brain.presentation.commands.models import ArgumentSchema, CommandSchema

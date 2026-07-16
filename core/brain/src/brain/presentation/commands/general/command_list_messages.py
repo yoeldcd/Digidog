@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Command metadata for the `list-messages` CLI command."""
 
 from brain.presentation.commands.models import ArgumentSchema, CommandSchema

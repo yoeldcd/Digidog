@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Add a task under a specified domain path in the workspace."""
 
 from __future__ import annotations

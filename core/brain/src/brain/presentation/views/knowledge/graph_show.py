@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Markdown renderers for knowledge graph show payloads."""
 
 from __future__ import annotations

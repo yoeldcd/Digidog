@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Build a speech-safe projection from visually rich Markdown messages."""
 
 from __future__ import annotations

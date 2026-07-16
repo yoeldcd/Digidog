@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Shared SQLite setup for avatar communication persistence."""
 
 from __future__ import annotations

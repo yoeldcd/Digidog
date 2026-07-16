@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Semantic Markdown preparation shared by avatar presentation backends."""
 from __future__ import annotations
 

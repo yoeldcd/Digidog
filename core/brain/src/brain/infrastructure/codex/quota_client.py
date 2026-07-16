@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Persistent JSON-RPC client for Codex account rate limits."""
 from __future__ import annotations
 

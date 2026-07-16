@@ -1,3 +1,8 @@
+/**
+ * @author Yoel David <yoeldcd@gmail.com>
+ * @see https://x.com/SAY6267
+ */
+
 import type { ApiRequestOptions, ApiResponse, BacklogMutation, BacklogPayload, LogsPayload, QueryParams, HealthStatus, ProjectsResponse, VoiceMessagesResponse, WikisResponse } from "../../application/contracts/api-dtos.ts";
 
 interface CacheRecord {

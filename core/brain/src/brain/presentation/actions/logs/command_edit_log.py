@@ -1,3 +1,6 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """CLI action for editing workspace log entries."""
 
 from __future__ import annotations
