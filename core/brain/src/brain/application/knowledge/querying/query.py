@@ -42,7 +42,12 @@ def query_knowledge(
 
         vectorstore_path: Path = get_vectorstore_dir(scope="global")
         manager = VectorStoreManager(db_path=vectorstore_path, collection_name="memories")
-        vector_matches: list[dict] = manager.search(query=text, limit=max(1, limit // 2))
+        try:
+            vector_matches: list[dict] = manager.search(query=text, limit=max(1, limit // 2))
+        finally:
+            close_manager = getattr(manager, "close", None)
+            if callable(close_manager):
+                close_manager()
         for match in vector_matches:
             results.append(
                 {

@@ -19,7 +19,7 @@ from brain.infrastructure.database.knowledge.repository import KnowledgeReposito
 from brain.infrastructure.runtime.paths import get_agent_home, get_source_registry_path, get_workspace_root
 from brain.infrastructure.sources.registry.consumers import list_changed_records_for_consumer, mark_consumer_source_processed
 from brain.infrastructure.sources.registry.records import refresh_registry_records
-from brain.infrastructure.sources.scanning import scan_log_source_records
+from brain.infrastructure.sources.scanning import scan_log_source_records, scan_message_database_record
 
 
 def check_source_updates(
@@ -137,8 +137,11 @@ def changed_source_paths(
         )
         deleted_paths.extend(memory_check.deleted)
 
-    if normalized_scope == "local" and normalized_domain in ("all", "logs"):
+    if normalized_scope == "local" and normalized_domain in ("all", "logs", "messages"):
         records = scan_log_source_records(workspace_root=resolved_workspace_root)
+        message_record = scan_message_database_record(workspace_root=resolved_workspace_root)
+        if message_record is not None:
+            records.append(message_record)
         root_prefix = "$agent/database" if any(record.path.startswith("$agent/database/") for record in records) else "$agent/logs"
         registry_path = get_source_registry_path(
             scope=normalized_scope,
@@ -158,7 +161,13 @@ def changed_source_paths(
             root_prefix=root_prefix,
             force_all=force_all,
         )
-        changed_paths.update(record.path for record in changed_records)
+        changed_paths.update(
+            record.path
+            for record in changed_records
+            if normalized_domain == "all"
+            or (normalized_domain == "logs" and record.source_type == "workspace_logs")
+            or (normalized_domain == "messages" and record.source_type == "workspace_messages")
+        )
         deleted_paths.extend(current_deleted)
         if root_prefix == "$agent/database":
             refresh_registry_records(

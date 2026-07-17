@@ -57,12 +57,20 @@ class VoiceSignalService:
     _task_connectors = ("Además, ", "También, ", "Y, además, ")
 
     @staticmethod
-    def emit(message: str, emotion: str = "happy", signal_key: str = "", display_text: str = "") -> None:
+    def emit(
+        message: str,
+        emotion: str = "happy",
+        signal_key: str = "",
+        display_text: str = "",
+        source_command: str = "",
+        source_phase: str = "",
+    ) -> None:
         """Dispatch speech best-effort and tolerate one cold-start race."""
         try:
             VoiceService().present(
                 text=message, display_text=display_text or message,
                 lang="es", emotion=emotion, signal_key=signal_key,
+                source_command=source_command, source_phase=source_phase,
             )
         except Exception:
             try:
@@ -70,6 +78,7 @@ class VoiceSignalService:
                 VoiceService().present(
                     text=message, display_text=display_text or message,
                     lang="es", emotion=emotion, signal_key=signal_key,
+                    source_command=source_command, source_phase=source_phase,
                 )
             except Exception:
                 pass
@@ -103,7 +112,14 @@ class VoiceSignalService:
             if not narration.refine_with_llm:
                 message = display_message
         signal_key = f"reviewed-template:{command}:{phase}" if narration.refine_with_llm else ""
-        self.emit(message, narration.emotion, signal_key=signal_key, display_text=display_message)
+        self.emit(
+            message,
+            narration.emotion,
+            signal_key=signal_key,
+            display_text=display_message,
+            source_command=command,
+            source_phase=phase,
+        )
 
     @staticmethod
     def sync_task_state(command: str, args: argparse.Namespace) -> None:

@@ -18,12 +18,16 @@ SOURCE_DOMAINS: set[str] = {
     "memory",
     "diary",
     "logs",
+    "messages",
     "profiles",
 }
 """Supported source domains for knowledge dream runs."""
 
 WORKSPACE_LOG_SOURCE_TYPE = "workspace_logs"
 """Persistent source type used for repository-local log files."""
+
+WORKSPACE_MESSAGE_SOURCE_TYPE = "workspace_messages"
+"""Persistent source type used for repository-local avatar messages."""
 
 KNOWLEDGE_CONSUMER_NAME = "knowledge_graph"
 """Consumer namespace used in source registry state."""

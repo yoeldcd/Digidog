@@ -8,7 +8,7 @@
 
 export type ThemeMode = "light" | "dark";
 
-export type RouteId = "dashboard" | "memory" | "knowledge" | "query" | "profiles" | "logs" | "backlog" | "messages" | "wikis" | "settings";
+export type RouteId = "dashboard" | "memory" | "knowledge" | "pictures" | "query" | "profiles" | "logs" | "backlog" | "messages" | "wikis" | "settings";
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
@@ -88,6 +88,30 @@ export interface MemoryEntry {
     domain: string;
     key: string;
     content: string;
+}
+
+export interface PictureRecord {
+    id: string;
+    relative_path: string;
+    domain: string;
+    filename: string;
+    extension: string;
+    mime_type: string;
+    size_bytes: number;
+    mtime_ns: number;
+    content_hash: string;
+    width: number;
+    height: number;
+    description: string;
+    description_source: string;
+    described_at: string;
+    active: boolean;
+}
+
+export interface PicturesPayload {
+    pictures: PictureRecord[];
+    domains: Record<string, number>;
+    scan: Record<string, unknown>;
 }
 
 export interface KnowledgeStatus {
@@ -196,10 +220,51 @@ export interface VoiceSpeakRecord {
     error?: string;
 }
 
+export interface AvatarMessageRecord {
+    id: string;
+    created_at: string;
+    date: string;
+    time: string;
+    text: string;
+    emotion: string;
+    chat_id: string;
+    language: string;
+    source_type: "speak" | "operation";
+    source_command: string;
+    source_phase: string;
+}
+
+export interface AvatarMessageSession {
+    id: string;
+    date: string;
+    chatId: string;
+    label: string;
+    messageCount: number;
+    startedAt: string;
+    endedAt: string;
+}
+
 export interface VoiceMessagesResponse {
     ok: boolean;
     speaks: VoiceSpeakRecord[];
     messages: VoiceMessageRecord[];
+    history: AvatarMessageRecord[];
+    historyTotal: number;
+    sessions: AvatarMessageSession[];
+    selectedSession: { date: string; chatId: string } | null;
+    database: string;
+}
+
+export interface VoiceStatusResponse {
+    state: "stopped" | "awaiting" | "working" | "thinking" | "preparing" | "speaking" | "muted" | "muted_replay";
+    activeSpeakId: string;
+    muted: boolean;
+}
+
+export interface VoiceStatusResponse {
+    state: "stopped" | "awaiting" | "working" | "thinking" | "preparing" | "speaking" | "muted" | "muted_replay";
+    activeSpeakId: string;
+    muted: boolean;
 }
 
 export interface WikiUpdateResponse {

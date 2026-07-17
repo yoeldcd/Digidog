@@ -397,4 +397,17 @@ def has_selected_backend(source: str, mechanism: str) -> bool:
     knowledge_vector_selected: bool = source in ("all", "knowledge") and mechanism in ("all", "vector")
     memory_vector_selected: bool = source in ("all", "memory") and mechanism in ("all", "vector")
     memory_text_selected: bool = source in ("all", "memory") and mechanism in ("all", "text")
-    return knowledge_selected or knowledge_vector_selected or memory_vector_selected or memory_text_selected
+    message_text_selected: bool = source in ("all", "messages") and mechanism in ("all", "text")
+    message_vector_selected: bool = source in ("all", "messages") and mechanism in ("all", "vector")
+    picture_text_selected: bool = source in ("all", "pictures") and mechanism in ("all", "text")
+    picture_vector_selected: bool = source in ("all", "pictures") and mechanism in ("all", "vector")
+    return (
+        knowledge_selected
+        or knowledge_vector_selected
+        or memory_vector_selected
+        or memory_text_selected
+        or message_text_selected
+        or message_vector_selected
+        or picture_text_selected
+        or picture_vector_selected
+    )

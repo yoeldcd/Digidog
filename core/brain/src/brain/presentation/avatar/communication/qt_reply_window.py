@@ -5,9 +5,9 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QPoint, QRectF, Qt
+from PySide6.QtCore import QPoint, QRect, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QKeySequence, QPainter, QPainterPath, QPen, QShortcut
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSizeGrip, QTextEdit, QToolButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QTextEdit, QToolButton, QVBoxLayout, QWidget
 
 from brain.presentation.avatar.communication.controller import AvatarReplyController
 from brain.presentation.avatar.communication.models import CodexThreadTargetDTO, DeliveryMode, ReplyResultDTO
@@ -25,6 +25,7 @@ class QtReplyWindow(QWidget):
         self._target: CodexThreadTargetDTO | None = None
         self._drag_pointer: QPoint | None = None
         self._drag_origin: QPoint | None = None
+        self._theme_mode = "light"
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setWindowTitle("Responder a Codex")
         self.setMinimumSize(320, 92)
@@ -66,20 +67,14 @@ class QtReplyWindow(QWidget):
         self.status_label.setFont(QFont("Arial", 9))
         self.status_label.setStyleSheet("color: #765568; background: transparent; padding: 0 3px;")
 
-        self.queue_button = self._action_button("◷  Encolar", primary=False)
-        self.queue_button.setToolTip("Enviar cuando termine el turno actual")
         self.steer_button = self._action_button("➤  Enviar", primary=True)
+        self.steer_button.setMinimumWidth(140)
         self.steer_button.setToolTip("Enviar ahora · Ctrl+Enter")
-        self.interrupt_button = self._action_button("■  Interrumpir", primary=False)
-        self.interrupt_button.setToolTip("Interrumpir el turno actual y enviar")
-        self.queue_button.clicked.connect(lambda: self._submit(DeliveryMode.QUEUE))
         self.steer_button.clicked.connect(lambda: self._submit(DeliveryMode.STEER))
-        self.interrupt_button.clicked.connect(lambda: self._submit(DeliveryMode.INTERRUPT))
         actions = QHBoxLayout()
         actions.setSpacing(8)
-        actions.addWidget(self.queue_button)
+        actions.addStretch(1)
         actions.addWidget(self.steer_button)
-        actions.addWidget(self.interrupt_button)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 12, 18, 14)
@@ -89,8 +84,6 @@ class QtReplyWindow(QWidget):
         layout.addWidget(self.editor, 1)
         layout.addWidget(self.status_label)
         layout.addLayout(actions)
-        self.size_grip = QSizeGrip(self)
-        self.size_grip.setStyleSheet("background: transparent; width: 14px; height: 14px;")
         self._controller.deliveryFinished.connect(self._delivery_finished)
         self.send_shortcut = QShortcut(QKeySequence("Ctrl+Return"), self)
         self.send_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
@@ -99,35 +92,74 @@ class QtReplyWindow(QWidget):
         self.send_keypad_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
         self.send_keypad_shortcut.activated.connect(lambda: self._submit(DeliveryMode.STEER))
         self._set_actions_enabled(False)
-        self.interrupt_button.setToolTip("No disponible: el canal nativo del host no expone interrupción")
+        self.set_theme("light")
+
+    def set_theme(self, mode: str) -> None:
+        """Apply the avatar's active light or dark palette to the reply composer."""
+        normalized = mode if mode in {"light", "dark"} else "light"
+        self._theme_mode = normalized
+        dark = normalized == "dark"
+        text = "#fff4fb" if dark else "#251a28"
+        muted = "#dec5d5" if dark else "#6f3158"
+        editor_surface = "#2b222d" if dark else "#ffffff"
+        editor_border = "#a96b91" if dark else "#dfbfd2"
+        self.title_label.setStyleSheet(f"color: {text}; background: transparent;")
+        self.target_label.setStyleSheet(f"color: {muted}; background: transparent;")
+        self.status_label.setStyleSheet(f"color: {muted}; background: transparent; padding: 0 3px;")
+        self.close_button.setStyleSheet(
+            f"QToolButton {{ color: {text}; background: transparent; border: 0; font: 700 18px Arial; }}"
+            "QToolButton:hover { color: #ff5b70; background: rgba(214,40,57,24); border-radius: 14px; }"
+        )
+        self.editor.setStyleSheet(
+            f"QTextEdit {{ color: {text}; background: {editor_surface}; border: 1px solid {editor_border}; "
+            "border-radius: 12px; padding: 10px; selection-background-color: #f062b7; }"
+            "QTextEdit:focus { border: 2px solid #f062b7; padding: 9px; }"
+        )
+        self._style_action_button(self.steer_button, True, dark)
+        self.setProperty("avatarTheme", normalized)
+        self.update()
 
     def _action_button(self, text: str, primary: bool) -> QPushButton:
         button = QPushButton(text, self)
+        button.setProperty("primaryAction", primary)
         button.setCursor(Qt.CursorShape.PointingHandCursor)
         button.setMinimumHeight(30)
-        colors = (
-            "color: white; background: #d946a0; border: 1px solid #d946a0;"
-            if primary
-            else "color: #6f3158; background: #fff8fd; border: 1px solid #d99abb;"
-        )
+        self._style_action_button(button, primary, self._theme_mode == "dark")
+        return button
+
+    @staticmethod
+    def _style_action_button(button: QPushButton, primary: bool, dark: bool) -> None:
+        """Style one reply action according to role and active theme."""
+        if primary:
+            colors = "color: white; background: #d946a0; border: 1px solid #f88dcc;"
+        elif dark:
+            colors = "color: #fff4fb; background: #302832; border: 1px solid #d9bfd0;"
+        else:
+            colors = "color: #6f3158; background: #fff8fd; border: 1px solid #d99abb;"
         button.setStyleSheet(
             f"QPushButton {{ {colors} border-radius: 14px; padding: 3px 9px; font: 700 9pt Arial; }}"
             "QPushButton:hover { background: #f062b7; color: white; border-color: #f062b7; }"
-            "QPushButton:disabled { color: #bca6b3; background: #f2eaf0; border-color: #dfd1da; }"
+            + (
+                "QPushButton:disabled { color: #82727d; background: #292229; border-color: #5f515a; }"
+                if dark
+                else "QPushButton:disabled { color: #bca6b3; background: #f2eaf0; border-color: #dfd1da; }"
+            )
         )
-        return button
 
     @property
     def target(self) -> CodexThreadTargetDTO | None:
         return self._target
 
-    def open_for(self, target: CodexThreadTargetDTO) -> None:
+    def open_for(self, target: CodexThreadTargetDTO, geometry: QRect | None = None) -> None:
         """Bind to one message target without following later incoming speaks."""
         self._target = target
         self.target_label.setText(f"🧵 Task {target.thread_id}")
         self.target_label.setToolTip(target.thread_id)
         self.status_label.clear()
         self._set_actions_enabled(True)
+        if geometry is not None:
+            self.setFixedSize(geometry.size())
+            self.move(geometry.topLeft())
         self.show()
         self.raise_()
         self.activateWindow()
@@ -156,9 +188,7 @@ class QtReplyWindow(QWidget):
             self.status_label.setStyleSheet("color: #a33161; background: transparent; padding: 0 3px;")
 
     def _set_actions_enabled(self, enabled: bool) -> None:
-        for button in (self.queue_button, self.steer_button):
-            button.setEnabled(enabled)
-        self.interrupt_button.setEnabled(False)
+        self.steer_button.setEnabled(enabled)
 
     def mousePressEvent(self, event) -> None:  # noqa: N802 - Qt API
         if event.button() == Qt.MouseButton.LeftButton and event.position().y() <= 58:
@@ -180,17 +210,14 @@ class QtReplyWindow(QWidget):
         self._drag_origin = None
         super().mouseReleaseEvent(event)
 
-    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt API
-        super().resizeEvent(event)
-        self.size_grip.move(self.width() - self.size_grip.width() - 8, self.height() - self.size_grip.height() - 8)
-
     def paintEvent(self, event) -> None:  # noqa: N802 - Qt API
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         body = QRectF(2, 2, self.width() - 4, self.height() - 4)
         path = QPainterPath()
         path.addRoundedRect(body, 18, 18)
-        painter.setPen(QPen(QColor("#f062b7"), 3))
-        painter.setBrush(QColor("#fff8fd"))
+        dark = self._theme_mode == "dark"
+        painter.setPen(QPen(QColor("#ff74c4" if dark else "#f062b7"), 3))
+        painter.setBrush(QColor("#1f1722" if dark else "#fff8fd"))
         painter.drawPath(path)
         painter.end()

@@ -125,6 +125,8 @@ def _resolve_query_source(args: argparse.Namespace) -> str:
     Returns:
         str: Selected query source.
     """
+    if bool(getattr(args, "messages", False)):
+        return "messages"
     source: str = getattr(args, "source", "all") or "all"
     legacy_scope: str | None = getattr(args, "scope", None)
     if source == "all" and legacy_scope:

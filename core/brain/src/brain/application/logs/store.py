@@ -326,6 +326,18 @@ def get_log_entry_by_timestamp(workspace_root: Path, timestamp: str) -> LogEntry
     return row_to_log_entry(row=row)
 
 
+def get_log_entry_by_id(workspace_root: Path, record_id: int) -> LogEntryRecord | None:
+    """Return one canonical log row by its stable SQLite identifier."""
+    with connect_logs_database(workspace_root=workspace_root) as connection:
+        row = connection.execute(
+            "SELECT * FROM log_entries WHERE id = ?",
+            (record_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    return row_to_log_entry(row=row)
+
+
 def list_log_entries(
     workspace_root: Path,
     date_text: str | None = None,
@@ -612,4 +624,5 @@ def row_to_log_entry(row: sqlite3.Row) -> LogEntryRecord:
         source_path=str(row["source_path"] or ""),
         source_mtime=float(row["source_mtime"] or 0.0),
         source_size=int(row["source_size"] or 0),
+        record_id=int(row["id"]),
     )

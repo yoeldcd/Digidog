@@ -81,7 +81,30 @@ def display_text_from_vector_result(result: dict[str, Any], metadata: dict[str, 
     body_text: str = str(metadata.get("body") or "").strip()
     if body_text:
         return body_text
-    return strip_leading_markdown_heading(text=str(result.get("text", "")))
+    stored_text: str = str(result.get("text", ""))
+    if stored_text.strip():
+        return strip_leading_markdown_heading(text=stored_text)
+    return hydrate_memory_vector_text(result=result, metadata=metadata)
+
+
+def hydrate_memory_vector_text(result: dict[str, Any], metadata: dict[str, Any]) -> str:
+    """Recover one vector match from its canonical Markdown source."""
+    from brain.application.memory.paths import resolve_file_path
+    from brain.infrastructure.vectorstores.chunking import chunk_content
+
+    category: str = str(result.get("category") or metadata.get("category") or "").strip()
+    key: str = str(result.get("key") or metadata.get("key") or "").strip()
+    reference: str = str(metadata.get("vector_reference") or result.get("id") or "").strip()
+    if not category or not key or not reference:
+        return ""
+    try:
+        content: str = resolve_file_path(category, key).read_text(encoding="utf-8")
+    except (OSError, ValueError):
+        return ""
+    for chunk_id, text, _chunk_metadata in chunk_content(category=category, key=key, content=content):
+        if chunk_id == reference:
+            return strip_leading_markdown_heading(text=text)
+    return ""
 
 
 def strip_leading_markdown_heading(text: str) -> str:

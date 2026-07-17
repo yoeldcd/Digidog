@@ -57,6 +57,12 @@ from brain.presentation.commands.memory import (
     command_write_record,
 )
 from brain.presentation.commands.profiles import command_list_profiles, command_read_profile
+from brain.presentation.commands.pictures import (
+    command_describe_picture,
+    command_list_pictures,
+    command_picture_status,
+    command_scan_pictures,
+)
 from brain.presentation.commands.snippets import command_clone_snippet, command_list_snippets
 from brain.presentation.commands.utilities import command_propagate_agent_prompt, command_wiki
 from brain.presentation.commands.vectorstore import (
@@ -129,4 +135,8 @@ COMMAND_MODULES = [
     command_start_avatar_service,
     command_stop_avatar_service,
     command_avatar_service_status,
+    command_scan_pictures,
+    command_list_pictures,
+    command_describe_picture,
+    command_picture_status,
 ]

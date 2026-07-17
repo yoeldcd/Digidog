@@ -10,6 +10,8 @@ from pathlib import Path
 
 from brain.infrastructure.explorer.resources import find_documentation_dirs, resolve_static_file, resolve_workspace_picture
 from brain.infrastructure.runtime.paths import get_workspace_root
+from brain.infrastructure.pictures.repository import PictureRepository
+from brain.infrastructure.runtime.paths import get_pictures_dir
 
 TEXT_CONTENT_TYPE = "text/plain; charset=utf-8"
 
@@ -67,6 +69,28 @@ class ResourceRoutesMixin:
             return
         if not picture_file.is_file():
             self._send_json(status=HTTPStatus.NOT_FOUND, payload={"ok": False, "error": "Image not found."})
+            return
+        self._send_picture_file(picture_file)
+
+    def _handle_picture_file(self, method: str, query: dict[str, str]) -> None:
+        """Serve one active registry image by opaque picture identifier."""
+        if method != "GET":
+            self._send_json(status=HTTPStatus.METHOD_NOT_ALLOWED, payload={"ok": False, "error": "GET only."})
+            return
+        picture_id = query.get("id", "").strip()
+        record = PictureRepository().get(picture_id=picture_id)
+        if record is None or not record.active:
+            self._send_json(status=HTTPStatus.NOT_FOUND, payload={"ok": False, "error": "Image not found."})
+            return
+        safe_root = get_pictures_dir().resolve()
+        picture_file = (safe_root / record.relative_path).resolve()
+        try:
+            picture_file.relative_to(safe_root)
+        except ValueError:
+            self._send_json(status=HTTPStatus.FORBIDDEN, payload={"ok": False, "error": "Image path is unsafe."})
+            return
+        if not picture_file.is_file():
+            self._send_json(status=HTTPStatus.NOT_FOUND, payload={"ok": False, "error": "Image file is missing."})
             return
         self._send_picture_file(picture_file)
 

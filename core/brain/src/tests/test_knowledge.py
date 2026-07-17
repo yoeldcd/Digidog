@@ -125,6 +125,8 @@ class KnowledgeGraphTests(unittest.TestCase):
             json.dumps(
                 {
                     "version": 1,
+                    "agent_name": "@TestAgent",
+                    "user_name": "TestUser",
                     "agent_dir": str(self.root),
                     "knowledge": {"version": 1, "minimum_confidence": 0.65, "stages": {}},
                     "memory": {},
@@ -172,6 +174,8 @@ class KnowledgeGraphTests(unittest.TestCase):
         raw_config = json.loads((self.core_root / "configs" / "brain_configs.json").read_text(encoding="utf-8"))
         self.assertNotIn("database_name", raw_config["knowledge"])
         self.assertNotIn("vectorstore_dir_name", raw_config["memory"])
+        self.assertEqual(raw_config["agent_name"], "@TestAgent")
+        self.assertEqual(raw_config["user_name"], "TestUser")
 
     def test_local_repository_uses_core_config_contract(self) -> None:
         """Ensure local KG storage uses the shared core config file."""

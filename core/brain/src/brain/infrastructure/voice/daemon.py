@@ -35,6 +35,8 @@ from brain.infrastructure.voice.process_lease import (  # noqa: E402
     core_process_lease_name,
     core_runtime_id,
 )
+from brain.infrastructure.messages.models import MessageWriteDTO  # noqa: E402
+from brain.infrastructure.messages.repository import MessageRepository, should_persist_message  # noqa: E402
 
 
 IDLE_TTL_SECONDS = 60 * 60
@@ -65,17 +67,21 @@ class VoiceMemory:
         self.speaks: list[dict[str, Any]] = []
         self.requests: queue.Queue[dict[str, str]] = queue.Queue()
         self.playback_requests: queue.Queue[dict[str, Any]] = queue.Queue()
+        self.persistence_requests: queue.Queue[dict[str, str]] = queue.Queue()
+        self.persistence_errors: list[dict[str, str]] = []
         self.lock = threading.RLock()
         self.last_activity = time.monotonic()
         self.last_request: dict[str, str] | None = None
         self.stop_requested = False
         self.ambient_state = "awaiting"
+        self.theme_mode = "light"
         self.state = "awaiting"
         self.active_text = ""
         self.active_display_text = ""
         self.active_emotion = ""
         self.muted = False
         self.playback: subprocess.Popen[bytes] | None = None
+        self.replay_active = False
         self.pending_playback: tuple[str, str, str, str] | None = None
         self.active_speak_id = ""
         self.audio_by_hash: dict[str, bytes] = {}
@@ -97,8 +103,14 @@ class VoiceMemory:
         display_text: str = "",
         consumer_path: str = "",
         codex_thread_id: str = "",
+        source_command: str = "",
+        source_phase: str = "",
     ) -> str | None:
         with self.lock:
+            # A newly arriving live message owns the audible channel. Historical
+            # replay must never continue underneath it.
+            if source_command.casefold().strip() != "historical-message-audio" and self.replay_active:
+                self._stop_playback_locked()
             request = {
                 "text": text,
                 "displayText": display_text or text,
@@ -108,6 +120,8 @@ class VoiceMemory:
                 "preludeSeconds": str(bounded_prelude_seconds(prelude_seconds)),
                 "consumerPath": consumer_path,
                 "codexThreadId": codex_thread_id,
+                "sourceCommand": source_command,
+                "sourcePhase": source_phase,
             }
             if text:
                 self.last_request = request
@@ -164,6 +178,15 @@ class VoiceMemory:
                 self.active_emotion = ""
             return self.state
 
+    def set_theme_mode(self, mode: str) -> str:
+        """Persist one supported presentation theme for attached avatar windows."""
+        normalized = mode.strip().lower()
+        if normalized not in {"dark", "light"}:
+            raise ValueError(f"Unsupported avatar theme: {mode}")
+        with self.lock:
+            self.theme_mode = normalized
+            return self.theme_mode
+
     def status(self) -> dict[str, Any]:
         with self.lock:
             self._expire_muted_visual(time.monotonic())
@@ -179,6 +202,7 @@ class VoiceMemory:
                 "service": {"host": VOICE_DAEMON_HOST, "port": VOICE_DAEMON_PORT},
                 "state": self.state,
                 "ambientState": self.ambient_state,
+                "themeMode": self.theme_mode,
                 "text": self.active_text,
                 "displayText": self.active_display_text,
                 "emotion": self.active_emotion,
@@ -203,6 +227,8 @@ class VoiceMemory:
                 "queueDepth": self.requests.qsize(),
                 "historyCount": len(self.speaks),
                 "synthesisCacheEntries": len(self.audio_by_hash),
+                "persistenceQueueDepth": self.persistence_requests.qsize(),
+                "persistenceErrors": list(self.persistence_errors[-10:]),
                 "visualRemainingSeconds": max(0, round(self.muted_visual_deadline - time.monotonic(), 2)),
                 "ttlRemainingSeconds": remaining,
             }
@@ -300,16 +326,21 @@ class VoiceMemory:
 
     def stop_playback(self) -> None:
         with self.lock:
-            if self.playback and self.playback.poll() is None:
-                self.playback.terminate()
-            self.playback = None
-            self.state = self.ambient_state
-            self.active_text = ""
-            self.active_display_text = ""
-            self.pending_playback = None
-            self.active_speak_id = ""
-            self.playback_natural_end_at = 0.0
-            self.muted_visual_deadline = 0.0
+            self._stop_playback_locked()
+
+    def _stop_playback_locked(self) -> None:
+        """Stop current audio while the caller owns the re-entrant lock."""
+        if self.playback and self.playback.poll() is None:
+            self.playback.terminate()
+        self.playback = None
+        self.replay_active = False
+        self.state = self.ambient_state
+        self.active_text = ""
+        self.active_display_text = ""
+        self.pending_playback = None
+        self.active_speak_id = ""
+        self.playback_natural_end_at = 0.0
+        self.muted_visual_deadline = 0.0
 
     def toggle_muted(self) -> bool:
         """Toggle audible output while preserving the active message for the bubble."""
@@ -655,6 +686,7 @@ def consume_requests() -> None:
                 MEMORY.begin_thinking(request["id"])
             cohere_signal_presentation(request)
             MEMORY.update_speak_text(request["id"], request["text"])
+            enqueue_message_persistence(request=request)
             if MEMORY.is_muted():
                 MEMORY.show_muted_message(
                     request["text"],
@@ -676,6 +708,74 @@ def consume_requests() -> None:
             MEMORY.set_speak_status(request["id"], "ERROR", error=str(exc))
         finally:
             MEMORY.requests.task_done()
+
+
+def enqueue_message_persistence(request: dict[str, str]) -> None:
+    """Queue selected message history without delaying synthesis or playback."""
+    source_command: str = request.get("sourceCommand", "").casefold().strip()
+    consumer_path: str = request.get("consumerPath", "").strip()
+    if not consumer_path or not should_persist_message(source_command=source_command):
+        return
+    persisted_text: str = (
+        request.get("text", "")
+        if source_command
+        else request.get("displayText", "") or request.get("text", "")
+    )
+    MEMORY.persistence_requests.put(
+        {
+            "id": request["id"],
+            "createdAt": request["createdAt"],
+            "text": persisted_text,
+            "emotion": request.get("emotion", ""),
+            "chatId": request.get("codexThreadId", ""),
+            "language": request.get("lang", "es"),
+            "consumerPath": consumer_path,
+            "sourceType": "operation" if source_command else "speak",
+            "sourceCommand": source_command,
+            "sourcePhase": request.get("sourcePhase", ""),
+        },
+    )
+
+
+def consume_persistence_requests() -> None:
+    """Persist message jobs independently with bounded SQLite retries."""
+    while True:
+        request: dict[str, str] = MEMORY.persistence_requests.get()
+        try:
+            message_dto = MessageWriteDTO(
+                id=request["id"],
+                created_at=request["createdAt"],
+                text=request["text"],
+                emotion=request["emotion"],
+                chat_id=request["chatId"],
+                language=request["language"],
+                source_type=request["sourceType"],
+                source_command=request["sourceCommand"],
+                source_phase=request["sourcePhase"],
+            )
+            last_error: Exception | None = None
+            for attempt in range(3):
+                try:
+                    MessageRepository(consumer_path=request["consumerPath"]).append(message=message_dto)
+                    last_error = None
+                    break
+                except Exception as exc:
+                    last_error = exc
+                    time.sleep(0.05 * (attempt + 1))
+            if last_error is not None:
+                raise last_error
+        except Exception as exc:
+            with MEMORY.lock:
+                MEMORY.persistence_errors.append(
+                    {
+                        "speakId": request.get("id", ""),
+                        "consumerPath": request.get("consumerPath", ""),
+                        "error": str(exc),
+                    },
+                )
+                del MEMORY.persistence_errors[:-10]
+        finally:
+            MEMORY.persistence_requests.task_done()
 
 
 def consume_playback_requests() -> None:
@@ -738,8 +838,7 @@ def replay_message(name: str | None = None) -> None:
             message.get("speakId", ""),
         )
         return
-    if MEMORY.playback and MEMORY.playback.poll() is None:
-        return
+    MEMORY.stop_playback()
     MEMORY.prepare_playback(
         message["text"],
         message.get("emotion", ""),
@@ -747,6 +846,7 @@ def replay_message(name: str | None = None) -> None:
         message.get("speakId", ""),
     )
     try:
+        MEMORY.replay_active = True
         playback = play_audio_url(
             f"{VOICE_DAEMON_URL}/audio/name/{message['name']}",
             f"{VOICE_DAEMON_URL}/playback-started",
@@ -756,6 +856,7 @@ def replay_message(name: str | None = None) -> None:
         playback.wait()
     finally:
         MEMORY.playback = None
+        MEMORY.replay_active = False
         MEMORY.set_state("awaiting")
 
 
@@ -829,6 +930,16 @@ class VoiceDaemonHandler(BaseHTTPRequestHandler):
                 return
             self._send_json({"ok": True, "state": state, "ambientState": MEMORY.ambient_state})
             return
+        if self.path == "/theme":
+            length = min(int(self.headers.get("Content-Length", "0")), 1_000)
+            payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+            try:
+                mode = MEMORY.set_theme_mode(str(payload.get("mode", "")))
+            except ValueError as exc:
+                self._send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+            self._send_json({"ok": True, "themeMode": mode})
+            return
         if self.path != "/speak":
             self.send_error(HTTPStatus.NOT_FOUND)
             return
@@ -843,6 +954,8 @@ class VoiceDaemonHandler(BaseHTTPRequestHandler):
             prelude_seconds=bounded_prelude_seconds(payload.get("preludeSeconds", 0)),
             consumer_path=str(payload.get("consumerPath", "")),
             codex_thread_id=str(payload.get("codexThreadId", "")),
+            source_command=str(payload.get("sourceCommand", "")),
+            source_phase=str(payload.get("sourcePhase", "")),
         )
         self._send_json({"ok": True, "queued": speak_id is not None, "speakId": speak_id}, status=HTTPStatus.ACCEPTED)
 
@@ -872,6 +985,7 @@ def main() -> int:
         return 0
     threading.Thread(target=consume_requests, daemon=True, name="voice-synthesis").start()
     threading.Thread(target=consume_playback_requests, daemon=True, name="voice-playback").start()
+    threading.Thread(target=consume_persistence_requests, daemon=True, name="message-persistence").start()
     server = ThreadingHTTPServer((VOICE_DAEMON_HOST, VOICE_DAEMON_PORT), VoiceDaemonHandler)
     avatar_entrypoint = SOURCE_ROOT / "brain" / "presentation" / "avatar" / "window" / "main.py"
     avatar_supervisor = AvatarProcessSupervisor(avatar_entrypoint, DAEMON_INSTANCE_ID)
@@ -882,6 +996,9 @@ def main() -> int:
             server.handle_request()
             MEMORY.window_pids = [avatar_supervisor.ensure_running()]
     finally:
+        persistence_deadline = time.monotonic() + 5.0
+        while MEMORY.persistence_requests.unfinished_tasks and time.monotonic() < persistence_deadline:
+            time.sleep(0.025)
         server.server_close()
         avatar_supervisor.close()
         MEMORY.window_pids = []

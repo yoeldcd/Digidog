@@ -26,9 +26,9 @@ from brain.presentation.avatar.communication.qt_reply_window import QtReplyWindo
 from brain.presentation.avatar.communication.service import AvatarReplyService
 from brain.presentation.avatar.window.config import DAEMON_LOSS_GRACE_SECONDS, INITIAL_HEIGHT, INITIAL_WIDTH, POLL_INTERVAL_MS, avatar_asset
 from brain.presentation.avatar.interactivity.emotions import emotion_emoji
+from brain.presentation.avatar.interactivity.reactions import ReactionPhraseBag
 from brain.presentation.avatar.qt.markdown_bubble import QtMarkdownBubble
 from brain.presentation.avatar.qt.controls import QtAvatarControls
-from brain.presentation.avatar.interactivity.reactions import ReactionPhraseBag
 
 
 def bubble_position(screen: QRect, avatar: QRect, bubble: QSize, gap: int = 18) -> QPoint:
@@ -51,6 +51,18 @@ def bubble_position(screen: QRect, avatar: QRect, bubble: QSize, gap: int = 18) 
     margin = 18
     return QPoint(max(screen.left() + margin, min(x, screen.right() - bubble.width() - margin)),
                   max(screen.top() + margin, min(y, screen.bottom() - bubble.height() - margin)))
+
+
+def reply_composer_geometry(screen: QRect, bubble: QRect, above_avatar: bool, margin: int = 18) -> QRect:
+    """Fill the bubble-facing viewport span while preserving its width and anchor edge."""
+    left = max(screen.left() + margin, min(bubble.left(), screen.right() - margin - bubble.width()))
+    if above_avatar:
+        top = screen.top() + margin
+        bottom = min(screen.bottom() - margin, bubble.bottom())
+    else:
+        top = max(screen.top() + margin, bubble.top())
+        bottom = screen.bottom() - margin
+    return QRect(left, top, bubble.width(), max(180, bottom - top + 1))
 
 
 def quota_reset_label(timestamp: int, weekly: bool) -> str:
@@ -99,11 +111,15 @@ class QtAvatarWindow(QWidget):
         self.history_browsing = False
         self.history_anchor_message_id = ""
         self.message_reveal_latched = False
-        self.click_count, self.last_click_at = 0, 0.0
         self.reaction_bag = ReactionPhraseBag()
+        self.avatar_click_timer = QTimer(self)
+        self.avatar_click_timer.setSingleShot(True)
+        self.avatar_click_timer.setInterval(self.app.doubleClickInterval())
+        self.avatar_click_timer.timeout.connect(self._toggle_playback)
         self.awaiting_quota_animation = ""
         self.last_quota_remaining: tuple[int, int] | None = None
         self._applied_topmost = True
+        self._theme_mode = "light"
 
         self.avatar = QLabel(self)
         self.avatar.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -210,8 +226,9 @@ class QtAvatarWindow(QWidget):
         self._drag_origin = None
         super().mouseReleaseEvent(event)
 
-    def _post(self, path: str) -> None:
-        request = Request(f"{VOICE_DAEMON_URL}{path}", data=b"{}", method="POST", headers={"Content-Type": "application/json"})
+    def _post(self, path: str, payload: dict[str, str] | None = None) -> None:
+        body = json.dumps(payload or {}).encode("utf-8")
+        request = Request(f"{VOICE_DAEMON_URL}{path}", data=body, method="POST", headers={"Content-Type": "application/json"})
         try:
             urlopen(request, timeout=.5).close()
         except OSError:
@@ -231,17 +248,21 @@ class QtAvatarWindow(QWidget):
         self.show()
 
     def _toggle_playback(self) -> None:
-        self._post("/pause" if self.state in {"muted_replay", "preparing", "speaking"} else "/replay")
+        if self.state in {"muted_replay", "preparing", "speaking"}:
+            self._post("/pause")
+            return
+        self._post("/replay")
 
     def _avatar_click(self) -> None:
-        if self.state in {"preparing", "speaking"}:
+        """Disambiguate one-click playback from the preserved double-click reaction."""
+        if self.avatar_click_timer.isActive():
+            self.avatar_click_timer.stop()
+            self._speak_reaction()
             return
-        now = time.monotonic()
-        self.click_count = self.click_count + 1 if now - self.last_click_at <= 2.0 else 1
-        self.last_click_at = now
-        if self.click_count < 2:
-            return
-        self.click_count = 0
+        self.avatar_click_timer.start()
+
+    def _speak_reaction(self) -> None:
+        """Queue one playful reaction after a confirmed double click."""
         phrase = self.reaction_bag.draw()
         payload = json.dumps({"text": phrase, "lang": "es", "emotion": "reacting", "preludeSeconds": 1}).encode("utf-8")
         request = Request(f"{VOICE_DAEMON_URL}/speak", data=payload, method="POST", headers={"Content-Type": "application/json"})
@@ -434,10 +455,14 @@ class QtAvatarWindow(QWidget):
         except ValueError:
             self.bubble.set_reply_available(False)
             return
-        self.reply_window.open_for(target)
         bubble = self.bubble.frameGeometry()
-        self.reply_window.setGeometry(bubble)
-        self.reply_window.raise_()
+        screen = self.app.screenAt(bubble.center()) or self.app.primaryScreen()
+        geometry = reply_composer_geometry(
+            screen.availableGeometry(),
+            bubble,
+            self._bubble_is_above_avatar(),
+        )
+        self.reply_window.open_for(target, geometry)
 
     def _bubble_is_above_avatar(self) -> bool:
         """Resolve vertical orientation solely from the current global window centers."""
@@ -529,6 +554,11 @@ class QtAvatarWindow(QWidget):
             self.close()
             return
         self.last_seen = time.monotonic()
+        theme_mode = str(payload.get("themeMode", "light"))
+        if theme_mode != self._theme_mode:
+            self._theme_mode = theme_mode
+            self.bubble.set_theme(theme_mode)
+            self.reply_window.set_theme(theme_mode)
         state = payload.get("state", "awaiting")
         emotion = payload.get("emotion", "") or ("happy" if state == "speaking" else "")
         active_message_id = str(payload.get("activeSpeakId", ""))

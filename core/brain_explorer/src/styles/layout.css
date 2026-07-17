@@ -19,6 +19,7 @@
 
 .top-bar {
     position: relative;
+    z-index: 100;
     grid-area: top;
     display: grid;
     grid-template-columns: minmax(230px, 1fr) auto;

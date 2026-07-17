@@ -9,12 +9,38 @@
 import type { ActiveCommand, ApiResponse, CallLogRecord, RouteId, RouteTarget, ThemeMode } from "../../application/contracts/api-dtos.ts";
 
 const THEME_STORAGE_KEY = "brain_explorer_theme_v2";
+const PROJECT_ROUTE_STORAGE_PREFIX = "brain_explorer_project_route_v1:";
+const PERSISTABLE_ROUTES: readonly RouteId[] = [
+    "dashboard",
+    "messages",
+    "memory",
+    "knowledge",
+    "pictures",
+    "profiles",
+    "logs",
+    "backlog",
+    "wikis",
+    "settings"
+];
+
+/** Build the isolated local-storage key for one workspace's active view. */
+export function projectRouteStorageKey(projectPath: string): string {
+    return `${PROJECT_ROUTE_STORAGE_PREFIX}${projectPath.trim().toLocaleLowerCase()}`;
+}
+
+/** Restore one stable project route while rejecting stale or transient values. */
+export function restoreProjectRoute(projectPath: string): RouteId {
+    if (!projectPath.trim()) return "dashboard";
+    const storedRoute = localStorage.getItem(projectRouteStorageKey(projectPath)) as RouteId | null;
+    return storedRoute && PERSISTABLE_ROUTES.includes(storedRoute) ? storedRoute : "dashboard";
+}
 
 /**
  * AppState coordinates route, theme, and latest CLI result.
  */
 export class AppState extends EventTarget {
-    #route: RouteId = "dashboard";
+    #route: RouteId;
+    #projectPath: string;
     #theme = this.#initialTheme();
     #lastResult: ApiResponse | null = null;
     #pendingQuery = "";
@@ -24,6 +50,12 @@ export class AppState extends EventTarget {
     #activeCommand: ActiveCommand | null = null;
     #diagnosticsOpen = false;
     #sidebarOpen = false;
+
+    constructor(projectPath = "") {
+        super();
+        this.#projectPath = projectPath.trim();
+        this.#route = restoreProjectRoute(this.#projectPath);
+    }
 
     /**
      * Get active route.
@@ -126,6 +158,7 @@ export class AppState extends EventTarget {
             return;
         }
         this.#route = route;
+        this.#persistProjectRoute(route);
         this.#emitChange("route");
     }
 
@@ -142,6 +175,7 @@ export class AppState extends EventTarget {
             target: { ...target }
         };
         this.#route = route;
+        this.#persistProjectRoute(route);
         this.#emitChange("route");
     }
 
@@ -360,6 +394,12 @@ export class AppState extends EventTarget {
     #emitChange(type: string): void {
         this.dispatchEvent(new CustomEvent(type, { detail: { type } }));
         this.dispatchEvent(new CustomEvent("change", { detail: { type } }));
+    }
+
+    /** Persist only stable navigation views under the active project identity. */
+    #persistProjectRoute(route: RouteId): void {
+        if (!this.#projectPath || !PERSISTABLE_ROUTES.includes(route)) return;
+        localStorage.setItem(projectRouteStorageKey(this.#projectPath), route);
     }
 
     /**

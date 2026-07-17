@@ -100,6 +100,40 @@ def scan_log_database_record(workspace_root: Path) -> SourceRegistryRecordDTO | 
     )
 
 
+def scan_message_database_record(workspace_root: Path) -> SourceRegistryRecordDTO | None:
+    """Return a virtual source record for persisted workspace avatar messages."""
+    database_path: Path = workspace_root / "$agent" / "database" / "messages.db"
+    if not database_path.is_file():
+        return None
+    connection = None
+    try:
+        connection = sqlite3.connect(database_path)
+        row = connection.execute("SELECT COUNT(*) FROM messages").fetchone()
+    except sqlite3.Error:
+        return None
+    finally:
+        if connection is not None:
+            connection.close()
+    entry_count: int = int(row[0] or 0)
+    if entry_count <= 0:
+        return None
+    stat = database_path.stat()
+    wal_path: Path = Path(f"{database_path}-wal")
+    source_mtime: float = max(
+        stat.st_mtime,
+        wal_path.stat().st_mtime if wal_path.is_file() else 0.0,
+    )
+    return SourceRegistryRecordDTO(
+        path="$agent/database/messages.db",
+        mtime=source_mtime,
+        size=_format_size(size_bytes=stat.st_size),
+        lines=str(entry_count),
+        entries=entry_count,
+        source_type="workspace_messages",
+        title="messages",
+    )
+
+
 def scan_tree_source_records(
     root: Path,
     root_prefix: str,

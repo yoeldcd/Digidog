@@ -18,6 +18,11 @@ SCHEMA = CommandSchema(
         ArgumentSchema(flags=["-l", "--lang"], default="es", help="Spoken language code (e.g. es, en). Defaults to es."),
         ArgumentSchema(flags=["--emotion"], default="", help="Avatar animation name resolved as avatar_{emotion}.gif."),
         ArgumentSchema(
+            flags=["--stdin-json"],
+            action="store_true",
+            help="Read one JSON message envelope from standard input for a stable, policy-friendly invocation.",
+        ),
+        ArgumentSchema(
             flags=["--codex-thread-id"],
             default="",
             help="Codex thread UUID used as the reply target for this message.",

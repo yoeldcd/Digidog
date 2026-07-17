@@ -4,10 +4,12 @@
 """Unit tests for voice dispatch and asynchronous playback."""
 
 import subprocess
+from argparse import Namespace
+from io import StringIO
 import tempfile
 import time
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, call, patch
 
 from brain.infrastructure.voice.daemon import IDLE_TTL_SECONDS, VoiceMemory
 from brain.infrastructure.voice.daemon_client import (
@@ -68,15 +70,35 @@ def test_voice_process_identity_is_scoped_to_physical_core() -> None:
     assert core_process_lease_name("voice-daemon", first) != core_process_lease_name("voice-avatar-window", first)
 
 
-def test_windows_daemon_cold_start_requests_elevation() -> None:
-    """Windows lazy startup must use the RunAs shell verb."""
+def test_windows_daemon_cold_start_uses_detached_standard_user_process() -> None:
+    """Windows lazy startup must detach without requesting administrator rights."""
     import inspect
     from brain.infrastructure.voice.daemon_client import VoiceDaemonClient
 
     source = inspect.getsource(VoiceDaemonClient._ensure_daemon)
-    assert '"runas"' in source
-    assert "ShellExecuteW" in source
+    assert "DETACHED_PROCESS" in source
+    assert "CREATE_NEW_PROCESS_GROUP" in source
+    assert '"runas"' not in source
+    assert "ShellExecuteW" not in source
 
+
+def test_codex_sandbox_refuses_to_spawn_an_invisible_avatar() -> None:
+    """Require the interactive user to own GUI startup instead of a sandbox desktop."""
+    client = VoiceDaemonClient()
+    with (
+        patch.object(client, "_is_healthy", return_value=False),
+        patch("brain.infrastructure.voice.daemon_client.sys.platform", "win32"),
+        patch.dict("os.environ", {"USERNAME": "CodexSandboxOnline"}, clear=False),
+        patch("brain.infrastructure.voice.daemon_client.subprocess.Popen") as popen,
+    ):
+        try:
+            client._ensure_daemon()
+        except RuntimeError as exc:
+            assert "invisible GUI" in str(exc)
+        else:
+            raise AssertionError("Codex sandbox startup must be rejected")
+
+    popen.assert_not_called()
 
 def test_explicit_daemon_start_is_idempotent_and_returns_status() -> None:
     """The explicit command must reuse the lazy lifecycle contract."""
@@ -88,9 +110,64 @@ def test_explicit_daemon_start_is_idempotent_and_returns_status() -> None:
         snapshot = client.start()
 
     ensure.assert_called_once_with()
-    request.assert_called_once_with(path="/status")
+    assert request.call_args_list == [
+        call(path="/theme", method="POST", payload={"mode": "light"}),
+        call(path="/status"),
+    ]
     assert snapshot["daemonPid"] == 42
 
+
+def test_explicit_daemon_start_propagates_dark_theme() -> None:
+    client = VoiceDaemonClient()
+    with (
+        patch.object(client, "_ensure_daemon"),
+        patch.object(client, "_request_json", return_value={"ok": True}) as request,
+    ):
+        client.start(mode="dark")
+    assert request.call_args_list[0] == call(path="/theme", method="POST", payload={"mode": "dark"})
+
+
+def test_voice_memory_exposes_validated_theme_in_status() -> None:
+    memory = VoiceMemory()
+    assert memory.set_theme_mode("dark") == "dark"
+    assert memory.status()["themeMode"] == "dark"
+    try:
+        memory.set_theme_mode("sepia")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("Unsupported themes must be rejected")
+
+
+def test_avatar_message_accepts_one_stdin_json_envelope() -> None:
+    """Keep the executable command constant while message data travels over stdin."""
+    from brain.presentation.actions.general.command_speak import handle
+
+    args = Namespace(
+        text=None,
+        body=None,
+        lang="es",
+        emotion="",
+        codex_thread_id="",
+        stdin_json=True,
+        color=False,
+        json=False,
+        no_speak=False,
+    )
+    envelope = '{"text":"Hola desde stdin","lang":"es","emotion":"happy","codex_thread_id":"thread-1"}\n'
+    with (
+        patch("sys.stdin", StringIO(envelope)),
+        patch("brain.presentation.actions.general.command_speak.VoiceService.speak") as speak,
+    ):
+        assert handle(args) == 0
+
+    speak.assert_called_once_with(
+        text="Hola desde stdin",
+        lang="es",
+        emotion="happy",
+        codex_thread_id="thread-1",
+    )
+    assert args.json_payload["characters"] == len("Hola desde stdin")
 
 def test_daemon_client_attaches_nearest_consumer_repository() -> None:
     with tempfile.TemporaryDirectory() as directory:
@@ -392,6 +469,19 @@ def test_voice_memory_finds_named_message_for_direct_replay() -> None:
 
     assert memory.find_message(name=message["name"])["audio"] == b"mp3-bytes"
     assert memory.find_message(name="missing.mp3") is None
+
+
+def test_incoming_message_interrupts_historical_replay() -> None:
+    """Live speech must own the audio channel instead of overlapping replay."""
+    playback = Mock()
+    playback.poll.return_value = None
+    memory = VoiceMemory()
+    memory.playback = playback
+    memory.replay_active = True
+    memory.enqueue("Mensaje entrante", "es")
+    playback.terminate.assert_called_once_with()
+    assert memory.replay_active is False
+    assert memory.playback is None
 
 
 def test_voice_memory_exposes_thinking_without_interrupting_playback_contract() -> None:

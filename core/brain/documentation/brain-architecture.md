@@ -382,3 +382,19 @@ An ORM could provide higher-level query construction, but no ORM dependency is g
 #### Chosen Solution.
 The knowledge graph uses standard library SQLite directly behind a repository boundary. This keeps the runtime
 small while preserving testability.
+## Workspace Message History
+
+The Avatar Service owns asynchronous persistence for messages because it is the
+single boundary that accepts and orders speak requests. Each registered consumer
+stores its own history at `$agent/database/messages.db`; no global message
+database mixes independent WoSP conversations.
+
+The HTTP `/speak` request is acknowledged after the in-memory presentation queue
+accepts it. A dedicated persistence worker then validates the consumer against
+`brain_mirrors.json` and writes a short SQLite transaction using WAL,
+`busy_timeout`, bounded retries, and idempotent speak identifiers. Shutdown waits
+up to five seconds for accepted persistence jobs.
+
+Every explicit speak is retained. Automatic command narrations are retained only
+for `add-task`, `complete-work`, and `append-log`/`add-log`; other command
+narrations remain ephemeral to avoid redundant knowledge.

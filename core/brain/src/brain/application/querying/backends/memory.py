@@ -32,7 +32,12 @@ def query_memory_backend(text: str, domain: str, limit: int) -> list[GlobalQuery
 
         manager = VectorStoreManager()
         raw_limit: int = limit * 4 if domain.casefold() != "all" else limit
-        memory_matches: list[dict[str, Any]] = manager.search(query=text, limit=raw_limit)
+        try:
+            memory_matches: list[dict[str, Any]] = manager.search(query=text, limit=raw_limit)
+        finally:
+            close_manager = getattr(manager, "close", None)
+            if callable(close_manager):
+                close_manager()
     except Exception as exc:
         return [
             GlobalQueryResultDTO(

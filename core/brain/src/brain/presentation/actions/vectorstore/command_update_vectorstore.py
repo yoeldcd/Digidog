@@ -17,6 +17,8 @@ from brain.infrastructure.vectorstores.recovery import (
 from brain.application.knowledge.vector_sync import sync_all_knowledge_vectorstores
 from brain.application.memory.paths import MEMORY_ROOT
 from brain.infrastructure.vectorstores.manager import VectorStoreManager
+from brain.infrastructure.vectorstores.messages import sync_all_message_vectors
+from brain.infrastructure.vectorstores.pictures import sync_picture_vectors
 from brain.presentation.terminal import render_placeholders, log_step
 
 
@@ -139,6 +141,8 @@ def handle(args: argparse.Namespace) -> int:
                     )
 
         knowledge_stats, knowledge_warnings = sync_all_knowledge_vectorstores()
+        message_stats = sync_all_message_vectors()
+        picture_stats = sync_picture_vectors()
 
         if args.json:
             print(json.dumps({
@@ -151,6 +155,8 @@ def handle(args: argparse.Namespace) -> int:
                 "total_active": total_discovered,
                 "files": file_stats,
                 "knowledge": knowledge_stats,
+                "messages": message_stats,
+                "pictures": picture_stats,
                 "warnings": knowledge_warnings,
             }, ensure_ascii=False))
         else:

@@ -12,8 +12,11 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
 
+from brain.infrastructure.explorer.contracts import ApiRouteError
 from brain.infrastructure.runtime.paths import get_avatar_storage_dir
 from brain.infrastructure.voice.daemon_client import VoiceDaemonClient
+from brain.infrastructure.messages.repository import MessageRepository
+from brain.infrastructure.runtime.paths import get_workspace_root
 
 
 VOICE_FILENAME_PATTERN = re.compile(r"^[A-Za-z0-9._~-]+\.mp3$")
@@ -22,8 +25,9 @@ VOICE_FILENAME_PATTERN = re.compile(r"^[A-Za-z0-9._~-]+\.mp3$")
 class VoiceRoutesMixin:
     """List and stream validated stored voice messages."""
 
-    def _voice_messages(self) -> dict[str, Any]:
-        """Return stored MP3 metadata ordered from newest to oldest."""
+    def _voice_messages(self, query: dict[str, str] | None = None) -> dict[str, Any]:
+        """Return the message session tree and an optional selected session."""
+        query = query or {}
         snapshot = VoiceDaemonClient().snapshot()
         messages = list(snapshot.get("messages", []))
         for audio_file in self._voice_directory().glob("*.mp3"):
@@ -39,7 +43,48 @@ class VoiceRoutesMixin:
                 }
             )
         messages.sort(key=lambda item: item["createdAt"], reverse=True)
-        return {"ok": True, "data": {"speaks": snapshot.get("speaks", []), "messages": messages}}
+        repository = MessageRepository(
+            consumer_path=get_workspace_root(),
+            require_registered=False,
+        )
+        selected_date = str(query.get("date", "")).strip()
+        selected_chat_id = str(query.get("chatId", "")).strip()
+        history = [
+            record.as_mapping()
+            for record in repository.list_messages(
+                limit=500,
+                date=selected_date,
+                chat_id_exact=selected_chat_id,
+            )
+        ] if selected_date else []
+        sessions = repository.list_session_summaries()
+        return {
+            "ok": True,
+            "data": {
+                "speaks": snapshot.get("speaks", []),
+                "messages": messages,
+                "history": history,
+                "historyTotal": repository.count(),
+                "sessions": sessions,
+                "selectedSession": {
+                    "date": selected_date,
+                    "chatId": selected_chat_id,
+                } if selected_date else None,
+                "database": repository.database_path.as_posix(),
+            },
+        }
+
+    def _voice_status(self) -> dict[str, Any]:
+        """Return the daemon-confirmed playback identity used by UI polling."""
+        status = VoiceDaemonClient().status()
+        return {
+            "ok": bool(status.get("ok")),
+            "data": {
+                "state": str(status.get("state", "stopped")),
+                "activeSpeakId": str(status.get("activeSpeakId", "")),
+                "muted": bool(status.get("muted")),
+            },
+        }
 
     def _voice_replay(self) -> dict[str, Any]:
         """Replay one retained daemon message without requesting synthesis."""
@@ -54,6 +99,36 @@ class VoiceRoutesMixin:
         """Stop active daemon replay while retaining the message."""
         result = VoiceDaemonClient().pause()
         return {"ok": bool(result.get("paused")), "data": result}
+
+    def _voice_synthesize(self) -> dict[str, Any]:
+        """Generate and play audio for one persisted historical message."""
+        payload = self._read_json_body()
+        message_id = str(payload.get("messageId", "")).strip()
+        repository = MessageRepository(
+            consumer_path=get_workspace_root(),
+            require_registered=False,
+        )
+        record = repository.get_message(message_id=message_id)
+        if record is None:
+            raise ApiRouteError(HTTPStatus.NOT_FOUND, "Persisted message not found.")
+        queued = VoiceDaemonClient().speak(
+            text=record.text,
+            display_text=record.text,
+            lang=record.language,
+            emotion=record.emotion,
+            consumer_path=str(get_workspace_root()),
+            codex_thread_id=record.chat_id,
+            source_command="historical-message-audio",
+            source_phase="replay",
+        )
+        return {
+            "ok": True,
+            "data": {
+                "messageId": record.id,
+                "queued": bool(queued.get("queued")),
+                "speakId": str(queued.get("speakId", "")),
+            },
+        }
 
     def _handle_voice_audio(self, method: str, path: str) -> None:
         """Stream the latest or one explicitly named stored MP3."""

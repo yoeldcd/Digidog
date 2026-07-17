@@ -175,7 +175,6 @@ def append_dated_entry_chunk(
                 "entry_date": entry["date"],
                 "entry_time": entry["time"],
                 "read_command": read_command,
-                "body": body_text,
                 "mtime": mtime,
             },
         ),

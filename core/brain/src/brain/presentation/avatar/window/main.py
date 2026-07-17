@@ -28,7 +28,7 @@ def run_avatar_window() -> None:
 if __name__ == "__main__":
     daemon_instance_id = os.environ.get("BRAIN_VOICE_DAEMON_INSTANCE_ID", "")
     lease = ProcessLease(core_process_lease_name("voice-avatar-window"))
-    if daemon_instance_id and lease.acquire():
+    if lease.acquire():
         try:
             run_avatar_window()
         finally:

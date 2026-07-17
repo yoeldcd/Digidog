@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -32,12 +31,9 @@ class AvatarProcessSupervisor:
         live_pid = self.pid
         if live_pid is not None:
             return live_pid
-        environment = os.environ.copy()
-        environment["BRAIN_VOICE_DAEMON_INSTANCE_ID"] = self._instance_id
         creation_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
         self._process = subprocess.Popen(
             [sys.executable, str(self._entrypoint)],
-            env=environment,
             creationflags=creation_flags,
             close_fds=True,
             stdout=subprocess.DEVNULL,

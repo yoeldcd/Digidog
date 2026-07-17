@@ -31,6 +31,7 @@ from brain.infrastructure.explorer.server import (
 )
 from brain.infrastructure.explorer.validation import resolve_registered_workspace_root
 from brain.infrastructure.runtime.paths import get_agent_home, get_core_root
+from brain.infrastructure.messages.models import MessageRecordDTO
 
 
 class BrainExplorerTests(unittest.TestCase):
@@ -115,6 +116,21 @@ class BrainExplorerTests(unittest.TestCase):
         self.assertIn("--deep", calls[0]["arguments"])
         self.assertNotIn("--response", calls[0]["arguments"])
 
+    def test_global_query_route_accepts_messages_source(self) -> None:
+        """Explorer must forward persisted messages as a first-class source."""
+        calls = []
+        handler = object.__new__(BrainExplorerRequestHandler)
+
+        def fake_run(arguments: list[str], stdin_text: str | None = None, expect_json: bool = True) -> CliCommandResult:
+            calls.append(arguments)
+            return CliCommandResult(True, ["fake", *arguments], 0, "[]", "", 1, [])
+
+        handler._run_cli = fake_run
+        result = handler._global_query({"q": "primeras palabras", "source": "messages"})
+
+        self.assertTrue(result["ok"])
+        self.assertIn("messages", calls[0])
+
     def test_voice_replay_route_delegates_named_message_to_daemon(self) -> None:
         """Ensure message PLAY reuses retained daemon audio instead of synthesis."""
         handler = object.__new__(BrainExplorerRequestHandler)
@@ -125,6 +141,54 @@ class BrainExplorerTests(unittest.TestCase):
 
         self.assertTrue(result["ok"])
         replay.assert_called_once_with(name="14-07-26~11-00.mp3")
+
+    def test_voice_status_exposes_daemon_confirmed_playback_identity(self) -> None:
+        """Explorer polling must not infer Play/Pause state locally."""
+        handler = object.__new__(BrainExplorerRequestHandler)
+        status = {"ok": True, "state": "speaking", "activeSpeakId": "speak-focused", "muted": False}
+
+        with patch("brain.infrastructure.explorer.routes.voice_routes.VoiceDaemonClient.status", return_value=status):
+            result = handler._voice_status()
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["data"]["state"], "speaking")
+        self.assertEqual(result["data"]["activeSpeakId"], "speak-focused")
+
+    def test_voice_synthesize_uses_persisted_message_contract(self) -> None:
+        """Historical audio must be generated from server-owned persisted text."""
+        handler = object.__new__(BrainExplorerRequestHandler)
+        handler._read_json_body = lambda: {"messageId": "speak-history"}
+        record = MessageRecordDTO(
+            id="speak-history",
+            created_at="2026-07-17T01:30:00+03:00",
+            text="Mensaje historico.",
+            emotion="calm",
+            chat_id="chat-1",
+            language="es",
+        )
+        consumer_root = Path("D:/registered-consumer").resolve()
+
+        with patch(
+            "brain.infrastructure.explorer.routes.voice_routes.MessageRepository.get_message",
+            return_value=record,
+        ), patch(
+            "brain.infrastructure.explorer.routes.voice_routes.get_workspace_root",
+            return_value=consumer_root,
+        ), patch("brain.infrastructure.explorer.routes.voice_routes.VoiceDaemonClient.speak") as speak:
+            result = handler._voice_synthesize()
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["data"]["queued"])
+        speak.assert_called_once_with(
+            text="Mensaje historico.",
+            display_text="Mensaje historico.",
+            lang="es",
+            emotion="calm",
+            consumer_path=str(consumer_root),
+            codex_thread_id="chat-1",
+            source_command="historical-message-audio",
+            source_phase="replay",
+        )
 
     def test_cli_facade_parses_json_output(self) -> None:
         """Ensure successful JSON command output is parsed into `data`."""

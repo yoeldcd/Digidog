@@ -117,6 +117,22 @@ class CliCleanArchitectureTest(unittest.TestCase):
         self.assertEqual(args.body, "# Hola")
         self.assertEqual(args.emotion, "happy")
 
+        stdin_args = parser.parse_args(["avatar-message", "--stdin-json", "--json"])
+        self.assertTrue(stdin_args.stdin_json)
+        self.assertTrue(stdin_args.json)
+
+    def test_query_messages_flag_selects_persisted_messages(self) -> None:
+        """Keep the convenience flag equivalent to the explicit messages source."""
+        from brain.presentation.actions.general.command_query import _resolve_query_source
+        from brain.presentation.commands.registry import COMMAND_MODULES
+        from brain.presentation.parser.services.argument_parser_service import build_argument_parser
+
+        parser = build_argument_parser(COMMAND_MODULES)
+        args = parser.parse_args(["query", "first words", "--messages", "--json"])
+
+        self.assertTrue(args.messages)
+        self.assertEqual(_resolve_query_source(args), "messages")
+
     def test_avatar_service_uses_the_public_service_command_names(self) -> None:
         """Expose the avatar lifecycle without voice-daemon command terminology."""
         from brain.presentation.commands.registry import COMMAND_MODULES

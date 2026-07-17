@@ -41,6 +41,7 @@ class LogEntryRecord:
     source_path: str = ""
     source_mtime: float = 0.0
     source_size: int = 0
+    record_id: int = 0
 
 
 def parse_log_content(content: str, source_path: str = "", source_mtime: float = 0.0, source_size: int = 0) -> list[LogEntryRecord]:

@@ -58,11 +58,15 @@ class ApiRoutesMixin:
         if method == "GET" and path == "/api/wikis":
             return self._wikis_list()
         if method == "GET" and path == "/api/voice/messages":
-            return self._voice_messages()
+            return self._voice_messages(query=query)
+        if method == "GET" and path == "/api/voice/status":
+            return self._voice_status()
         if method == "POST" and path == "/api/voice/replay":
             return self._voice_replay()
         if method == "POST" and path == "/api/voice/pause":
             return self._voice_pause()
+        if method == "POST" and path == "/api/voice/synthesize":
+            return self._voice_synthesize()
         if method == "GET" and path == "/api/context":
             return self._run_cli(["get-context", "--json"]).to_payload()
         if method == "POST" and path == "/api/cli":
@@ -85,6 +89,10 @@ class ApiRoutesMixin:
             return self._knowledge_deltas(method=method, query=query)
         if path == "/api/query" and method == "GET":
             return self._global_query(query=query)
+        if path == "/api/pictures" and method == "GET":
+            return self._pictures(query=query)
+        if path == "/api/pictures/description" and method == "POST":
+            return self._describe_picture()
         if path == "/api/profiles" and method == "GET":
             return self._run_cli(["list-profiles", "--json"]).to_payload()
         if path == "/api/profiles/read" and method == "GET":

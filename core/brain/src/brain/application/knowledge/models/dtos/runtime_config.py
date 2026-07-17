@@ -84,12 +84,34 @@ class MemoryConfigDTO(BaseModel):
     text_model: StageModelConfigDTO = Field(default_factory=StageModelConfigDTO)
     """Text model configuration used by memory helpers."""
 
+
+class PicturesConfigDTO(BaseModel):
+    """Runtime configuration for picture discovery and img2text descriptions."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    image_model: StageModelConfigDTO = Field(
+        default_factory=lambda: StageModelConfigDTO(
+            model="google/gemini-2.5-flash",
+            max_tokens=1200,
+            enabled=False,
+        ),
+    )
+    """Optional OpenAI-compatible vision model used to describe images."""
+
+    supported_extensions: list[str] = Field(
+        default_factory=lambda: [".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"],
+    )
+    """Case-insensitive file extensions included by picture scans."""
+
 class BrainConfigsDTO(BaseModel):
     """
     Unified runtime configuration for brain services.
 
     Attributes:
         version: Configuration schema version.
+        agent_name: Canonical agent identity owned by this core.
+        user_name: Canonical user identity associated with the agent.
         agent_dir: Canonical global directory for agent-owned memory and snippets.
         knowledge: Knowledge graph configuration.
         memory: Memory and vectorstore configuration.
@@ -100,6 +122,12 @@ class BrainConfigsDTO(BaseModel):
     version: int = Field(default=1)
     """Configuration schema version."""
 
+    agent_name: str = Field(default="")
+    """Canonical agent identity owned by this core."""
+
+    user_name: str = Field(default="")
+    """Canonical user identity associated with the agent."""
+
     agent_dir: str = Field(default="")
     """Canonical global directory for agent-owned memory and snippets."""
 
@@ -108,3 +136,6 @@ class BrainConfigsDTO(BaseModel):
 
     memory: MemoryConfigDTO = Field(default_factory=MemoryConfigDTO)
     """Memory and vectorstore configuration."""
+
+    pictures: PicturesConfigDTO = Field(default_factory=PicturesConfigDTO)
+    """Picture registry and optional img2text configuration."""

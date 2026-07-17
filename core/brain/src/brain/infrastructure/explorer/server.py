@@ -25,6 +25,7 @@ from brain.infrastructure.explorer.routes.backlog_routes import BacklogRoutesMix
 from brain.infrastructure.explorer.routes.knowledge_routes import KnowledgeRoutesMixin
 from brain.infrastructure.explorer.routes.log_routes import LogRoutesMixin
 from brain.infrastructure.explorer.routes.memory_routes import MemoryRoutesMixin
+from brain.infrastructure.explorer.routes.picture_routes import PictureRoutesMixin
 from brain.infrastructure.explorer.routes.resource_routes import ResourceRoutesMixin
 from brain.infrastructure.explorer.routes.system_routes import SystemRoutesMixin
 from brain.infrastructure.explorer.routes.voice_routes import VoiceRoutesMixin
@@ -82,6 +83,7 @@ class BrainExplorerRequestHandler(
     KnowledgeRoutesMixin,
     LogRoutesMixin,
     MemoryRoutesMixin,
+    PictureRoutesMixin,
     ResourceRoutesMixin,
     SystemRoutesMixin,
     VoiceRoutesMixin,
@@ -148,6 +150,9 @@ class BrainExplorerRequestHandler(
                 return
             if parsed_url.path == "/api/logs/image":
                 self._handle_log_image(method=method, query=parse_query(parsed_url.query))
+                return
+            if parsed_url.path == "/api/pictures/file":
+                self._handle_picture_file(method=method, query=parse_query(parsed_url.query))
                 return
             self._handle_api(method=method, path=parsed_url.path, query=parse_query(parsed_url.query))
             return

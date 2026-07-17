@@ -24,7 +24,7 @@ function bootstrapBrainExplorer() {
     }
     app.context = {
         api,
-        state: new AppState()
+        state: new AppState(activePath || "")
     };
 }
 

@@ -14,6 +14,7 @@ import { BacklogView } from "./backlog-view.ts";
 import { SettingsView } from "./settings-view.ts";
 import { WikisView } from "./wikis-view.ts";
 import { MessagesView } from "./messages-view.ts";
+import { PicturesView } from "./pictures-view.ts";
 import { codeBlock, escapeHtml } from "../utils/html.ts";
 import { icon } from "../utils/icons.ts";
 import { notificationText } from "../utils/notification-message.ts";
@@ -23,6 +24,7 @@ const ROUTES = [
     { id: "messages", label: "Mensajes", icon: "messageCircle", element: MessagesView.selector },
     { id: "memory", label: "Memoria", icon: "database", element: MemoryView.selector },
     { id: "knowledge", label: "Conocimiento", icon: "graph", element: KnowledgeView.selector },
+    { id: "pictures", label: "Pictures", icon: "camera", element: PicturesView.selector },
     { id: "query", label: "Resultados", icon: "search", element: QueryView.selector, nav: false },
     { id: "profiles", label: "Perfiles", icon: "users", element: ProfilesView.selector },
     { id: "logs", label: "Logs", icon: "document", element: LogsView.selector },
@@ -133,6 +135,8 @@ export class BrainExplorerApp extends HTMLElement {
                                     <legend>Fuentes</legend>
                                     <label><input type="checkbox" name="search-source" value="memory" checked>Memoria</label>
                                     <label><input type="checkbox" name="search-source" value="knowledge" checked>Conocimiento</label>
+                                    <label><input type="checkbox" name="search-source" value="messages" checked>Mensajes</label>
+                                    <label><input type="checkbox" name="search-source" value="pictures" checked>Pictures</label>
                                 </fieldset>
                                 <fieldset>
                                     <legend>Modos</legend>

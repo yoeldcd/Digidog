@@ -132,7 +132,7 @@ class KnowledgeRoutesMixin:
         """
         text = require_query(query=query, key="q")
         domain = query.get("domain")
-        source = safe_choice(query.get("source", "all"), {"all", "memory", "knowledge"}, "source")
+        source = safe_choice(query.get("source", "all"), {"all", "memory", "knowledge", "messages"}, "source")
         mechanism = safe_choice(query.get("mechanism", "all"), {"all", "graph", "vector", "text"}, "mechanism")
         knowledge_scope = safe_scope(query.get("knowledgeScope", "all"))
         limit = safe_int(query.get("limit"), default=5, minimum=1, maximum=100)

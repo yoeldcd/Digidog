@@ -23,7 +23,7 @@ KNOWLEDGE_VECTOR_COLLECTION = "knowledge"
 """Chroma collection name for knowledge graph vector records."""
 
 
-def sync_all_knowledge_vectorstores() -> tuple[list[dict[str, Any]], list[str]]:
+def sync_all_knowledge_vectorstores(vectorstore_path: Path | None = None) -> tuple[list[dict[str, Any]], list[str]]:
     """
     Synchronize knowledge vectors for all configured graph scopes.
 
@@ -34,7 +34,10 @@ def sync_all_knowledge_vectorstores() -> tuple[list[dict[str, Any]], list[str]]:
     warnings: list[str] = []
     for scope_name, knowledge_root in iter_knowledge_roots(scope="all"):
         repository = KnowledgeRepository(knowledge_root=knowledge_root, scope=scope_name)
-        scope_stats, scope_warning = safe_sync_knowledge_vectors(repository=repository)
+        scope_stats, scope_warning = safe_sync_knowledge_vectors(
+            repository=repository,
+            vectorstore_path=vectorstore_path,
+        )
         if scope_stats:
             stats.append(scope_stats)
         if scope_warning:
@@ -42,7 +45,10 @@ def sync_all_knowledge_vectorstores() -> tuple[list[dict[str, Any]], list[str]]:
     return stats, warnings
 
 
-def safe_sync_knowledge_vectors(repository: KnowledgeRepository) -> tuple[dict[str, Any], str]:
+def safe_sync_knowledge_vectors(
+    repository: KnowledgeRepository,
+    vectorstore_path: Path | None = None,
+) -> tuple[dict[str, Any], str]:
     """
     Best-effort sync wrapper that never blocks graph application.
 
@@ -53,12 +59,15 @@ def safe_sync_knowledge_vectors(repository: KnowledgeRepository) -> tuple[dict[s
         tuple[dict[str, Any], str]: Sync stats and warning text.
     """
     try:
-        return sync_knowledge_vectors(repository=repository), ""
+        return sync_knowledge_vectors(repository=repository, vectorstore_path=vectorstore_path), ""
     except Exception as exc:
         return {}, f"Knowledge vector sync skipped ({repository.scope}): {exc}"
 
 
-def sync_knowledge_vectors(repository: KnowledgeRepository) -> dict[str, Any]:
+def sync_knowledge_vectors(
+    repository: KnowledgeRepository,
+    vectorstore_path: Path | None = None,
+) -> dict[str, Any]:
     """
     Rebuild knowledge vectors for one repository scope.
 
@@ -72,23 +81,32 @@ def sync_knowledge_vectors(repository: KnowledgeRepository) -> dict[str, Any]:
         RuntimeError: If embeddings are not configured.
     """
     ensure_embedding_config_available()
-    manager: VectorStoreManager = open_knowledge_vectorstore(scope=repository.scope)
-    removed_count: int = manager.delete_by_metadata({"knowledge_scope": repository.scope})
-    indexed_count: int = 0
-    for entity_row in repository.list_entities():
-        manager.add_record(
-            doc_id=knowledge_doc_id(scope=repository.scope, kind="entity", record_id=int(entity_row["id"])),
-            text=entity_vector_text(entity_row=entity_row),
-            metadata=entity_vector_metadata(scope=repository.scope, entity_row=entity_row),
-        )
-        indexed_count += 1
-    for relation_row in repository.list_relations():
-        manager.add_record(
-            doc_id=knowledge_doc_id(scope=repository.scope, kind="relation", record_id=int(relation_row["id"])),
-            text=relation_vector_text(relation_row=relation_row),
-            metadata=relation_vector_metadata(scope=repository.scope, relation_row=relation_row),
-        )
-        indexed_count += 1
+    manager: VectorStoreManager = (
+        VectorStoreManager(db_path=vectorstore_path, collection_name=KNOWLEDGE_VECTOR_COLLECTION)
+        if vectorstore_path is not None
+        else open_knowledge_vectorstore(scope=repository.scope)
+    )
+    try:
+        removed_count: int = manager.delete_by_metadata({"knowledge_scope": repository.scope})
+        indexed_count: int = 0
+        for entity_row in repository.list_entities():
+            manager.add_record(
+                doc_id=knowledge_doc_id(scope=repository.scope, kind="entity", record_id=int(entity_row["id"])),
+                text=entity_vector_text(entity_row=entity_row),
+                metadata=entity_vector_metadata(scope=repository.scope, entity_row=entity_row),
+            )
+            indexed_count += 1
+        for relation_row in repository.list_relations():
+            manager.add_record(
+                doc_id=knowledge_doc_id(scope=repository.scope, kind="relation", record_id=int(relation_row["id"])),
+                text=relation_vector_text(relation_row=relation_row),
+                metadata=relation_vector_metadata(scope=repository.scope, relation_row=relation_row),
+            )
+            indexed_count += 1
+    finally:
+        close_manager = getattr(manager, "close", None)
+        if callable(close_manager):
+            close_manager()
     return {
         "knowledge_scope": repository.scope,
         "entries_created": indexed_count,
@@ -109,11 +127,92 @@ def search_knowledge_vectors(repository: KnowledgeRepository, text: str, limit: 
         list[dict[str, Any]]: Vector matches.
     """
     manager: VectorStoreManager = open_knowledge_vectorstore(scope=repository.scope, create=False)
-    return manager.search(
-        query=text,
-        limit=limit,
-        where_filter={"knowledge_scope": repository.scope},
-    )
+    try:
+        matches: list[dict[str, Any]] = manager.search(
+            query=text,
+            limit=limit,
+            where_filter={"knowledge_scope": repository.scope},
+        )
+    finally:
+        close_manager = getattr(manager, "close", None)
+        if callable(close_manager):
+            close_manager()
+    return [
+        hydrate_knowledge_vector_match(repository=repository, match=match)
+        for match in matches
+    ]
+
+
+def hydrate_knowledge_vector_match(
+    repository: KnowledgeRepository,
+    match: dict[str, Any],
+) -> dict[str, Any]:
+    """Hydrate a reference-only knowledge vector from canonical SQLite rows."""
+    metadata: dict[str, Any] = dict(match.get("metadata") or {})
+    kind: str = str(metadata.get("knowledge_kind") or "")
+    record_id: int = int(metadata.get("record_id") or 0)
+    if kind == "entity":
+        row = repository.get_entity(record_id)
+        if row:
+            match["text"] = entity_vector_text(entity_row=row)
+            match["metadata"] = hydrated_entity_vector_metadata(
+                reference_metadata=metadata,
+                entity_row=row,
+            )
+    elif kind == "relation":
+        row = next(
+            (item for item in repository.list_relations() if int(item.get("id") or 0) == record_id),
+            None,
+        )
+        if row:
+            match["text"] = relation_vector_text(relation_row=row)
+            match["metadata"] = hydrated_relation_vector_metadata(
+                reference_metadata=metadata,
+                relation_row=row,
+            )
+    return match
+
+
+def hydrated_entity_vector_metadata(
+    reference_metadata: dict[str, Any],
+    entity_row: dict[str, Any],
+) -> dict[str, Any]:
+    """Expand an entity reference for query presentation without persisting payload copies."""
+    assertions: list[dict[str, Any]] = [
+        assertion
+        for assertion in entity_row.get("type_assertions", [])
+        if isinstance(assertion, dict)
+    ]
+    source_assertion: dict[str, Any] = assertions[0] if assertions else {}
+    return {
+        **reference_metadata,
+        "entity_id": int(entity_row["id"]),
+        "entity_class": str(entity_row.get("entity_class") or ""),
+        "entity_name": str(entity_row.get("canonical_name") or ""),
+        "entity_description": str(entity_row.get("description") or ""),
+        "source_path": str(entity_row.get("source_path") or source_assertion.get("source_path") or ""),
+        "source_type": str(entity_row.get("source_type") or source_assertion.get("source_type") or ""),
+        "source_title": str(entity_row.get("source_title") or source_assertion.get("source_title") or ""),
+    }
+
+
+def hydrated_relation_vector_metadata(
+    reference_metadata: dict[str, Any],
+    relation_row: dict[str, Any],
+) -> dict[str, Any]:
+    """Expand a relation reference for query presentation without persisting payload copies."""
+    return {
+        **reference_metadata,
+        "relation_id": int(relation_row["id"]),
+        "predicate": str(relation_row.get("predicate") or ""),
+        "subject_id": int(relation_row.get("subject_entity_id") or 0),
+        "subject_class": str(relation_row.get("subject_class") or ""),
+        "subject_name": str(relation_row.get("subject_name") or ""),
+        "object_id": int(relation_row.get("object_entity_id") or 0),
+        "object_class": str(relation_row.get("object_class") or ""),
+        "object_name": str(relation_row.get("object_name") or ""),
+        "source_path": str(relation_row.get("source_path") or ""),
+    }
 
 
 def open_knowledge_vectorstore(scope: str, create: bool = True) -> VectorStoreManager:
@@ -203,13 +302,7 @@ def entity_vector_metadata(scope: str, entity_row: dict[str, Any]) -> dict[str, 
     return {
         "knowledge_scope": scope,
         "knowledge_kind": "entity",
-        "entity_id": int(entity_row["id"]),
-        "entity_class": str(entity_row.get("entity_class") or ""),
-        "entity_name": str(entity_row.get("canonical_name") or ""),
-        "entity_description": str(entity_row.get("description") or ""),
-        "source_path": str(entity_row.get("source_path") or ""),
-        "source_type": str(entity_row.get("source_type") or ""),
-        "source_title": str(entity_row.get("source_title") or ""),
+        "record_id": int(entity_row["id"]),
     }
 
 
@@ -218,13 +311,5 @@ def relation_vector_metadata(scope: str, relation_row: dict[str, Any]) -> dict[s
     return {
         "knowledge_scope": scope,
         "knowledge_kind": "relation",
-        "relation_id": int(relation_row["id"]),
-        "predicate": str(relation_row.get("predicate") or ""),
-        "subject_id": int(relation_row.get("subject_entity_id") or 0),
-        "subject_class": str(relation_row.get("subject_class") or ""),
-        "subject_name": str(relation_row.get("subject_name") or ""),
-        "object_id": int(relation_row.get("object_entity_id") or 0),
-        "object_class": str(relation_row.get("object_class") or ""),
-        "object_name": str(relation_row.get("object_name") or ""),
-        "source_path": str(relation_row.get("source_path") or ""),
+        "record_id": int(relation_row["id"]),
     }

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 
 from brain.infrastructure.voice import VoiceService
@@ -20,6 +21,12 @@ def handle(args: argparse.Namespace) -> int:
         lang = getattr(args, "lang", "es")
         emotion = getattr(args, "emotion", "")
         codex_thread_id = getattr(args, "codex_thread_id", "")
+        if getattr(args, "stdin_json", False):
+            envelope = json.loads(sys.stdin.readline())
+            text = str(envelope.get("text", ""))
+            lang = str(envelope.get("lang", lang))
+            emotion = str(envelope.get("emotion", emotion))
+            codex_thread_id = str(envelope.get("codex_thread_id", codex_thread_id))
         voice_service = VoiceService()
 
         if not text:

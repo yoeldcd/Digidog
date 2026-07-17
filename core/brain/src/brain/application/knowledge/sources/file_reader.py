@@ -24,4 +24,12 @@ def read_source_text(path: Path) -> str:
 
         workspace_root = path.parents[2]
         return export_logs_markdown(workspace_root=workspace_root)
+    if path.name == "messages.db" and path.parent.name == "database":
+        from brain.infrastructure.messages.repository import MessageRepository
+
+        workspace_root = path.parents[2]
+        return MessageRepository(
+            consumer_path=workspace_root,
+            require_registered=False,
+        ).export_markdown()
     return path.read_text(encoding="utf-8", errors="ignore")

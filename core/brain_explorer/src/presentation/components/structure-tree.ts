@@ -46,6 +46,7 @@ export class StructureTree extends HTMLElement {
         toolbarActions: [],
         showSearch: true,
         searchPlaceholder: "Buscar...",
+        sortDirection: "asc",
         emptyText: "No hay elementos todavia."
     };
 
@@ -57,7 +58,7 @@ export class StructureTree extends HTMLElement {
     /**
      * Assign the full tree presentation model.
      *
-     * @param {{nodes: StructureTreeNode[], selectedPath?: string, expandedPaths?: Set<string>, toggleOnBranchSelect?: boolean, title?: string, toolbarActions?: object[], searchQuery?: string, disableFilter?: boolean, showSearch?: boolean, searchPlaceholder?: string, emptyText?: string}} value Tree model.
+     * @param {{nodes: StructureTreeNode[], selectedPath?: string, expandedPaths?: Set<string>, toggleOnBranchSelect?: boolean, title?: string, toolbarActions?: object[], searchQuery?: string, disableFilter?: boolean, showSearch?: boolean, searchPlaceholder?: string, sortDirection?: "asc"|"desc", emptyText?: string}} value Tree model.
      */
     set model(value) {
         this.#model = {
@@ -69,6 +70,7 @@ export class StructureTree extends HTMLElement {
             toolbarActions: Array.isArray(value?.toolbarActions) ? value.toolbarActions : [],
             showSearch: value?.showSearch !== false,
             searchPlaceholder: value?.searchPlaceholder || "Buscar...",
+            sortDirection: value?.sortDirection === "desc" ? "desc" : "asc",
             emptyText: value?.emptyText || "No hay elementos todavia."
         };
         if (typeof value?.searchQuery === "string") {
@@ -111,13 +113,14 @@ export class StructureTree extends HTMLElement {
     }
 
     #render() {
+        const rootDirection = this.#model.sortDirection === "desc" ? -1 : 1;
         const sortedRootNodes = [...this.#model.nodes].sort((left, right) => {
             const leftHas = Array.isArray(left.children) && left.children.length > 0;
             const rightHas = Array.isArray(right.children) && right.children.length > 0;
             if (leftHas !== rightHas) {
                 return leftHas ? -1 : 1;
             }
-            return (left.label || "").localeCompare(right.label || "");
+            return rootDirection * String(left.sortKey || left.label || "").localeCompare(String(right.sortKey || right.label || ""));
         });
         const visibleNodes = sortedRootNodes.filter(node => this.#matchesFilter(node));
         this.innerHTML = `
@@ -151,7 +154,7 @@ export class StructureTree extends HTMLElement {
                 ${this.#model.title ? `<strong>${escapeHtml(this.#model.title)}</strong>` : "<span></span>"}
                 <div>
                     ${this.#model.toolbarActions.map(action => `
-                        <button class="icon-action" data-tree-toolbar-action="${escapeHtml(action.id)}" title="${escapeHtml(action.label)}" aria-label="${escapeHtml(action.label)}">
+                    <button class="icon-action ${action.active ? "is-active" : ""}" data-tree-toolbar-action="${escapeHtml(action.id)}" title="${escapeHtml(action.label)}" aria-label="${escapeHtml(action.label)}" ${action.active !== undefined ? `aria-pressed="${String(!!action.active)}"` : ""}>
                             ${icon(action.icon || "more")}
                         </button>
                     `).join("")}
@@ -200,13 +203,14 @@ export class StructureTree extends HTMLElement {
             `;
         }
 
+        const childDirection = node.sortDirection === "desc" ? -1 : 1;
         const sortedChildren = [...children].sort((left, right) => {
             const leftHas = Array.isArray(left.children) && left.children.length > 0;
             const rightHas = Array.isArray(right.children) && right.children.length > 0;
             if (leftHas !== rightHas) {
                 return leftHas ? -1 : 1;
             }
-            return (left.label || "").localeCompare(right.label || "");
+            return childDirection * String(left.sortKey || left.label || "").localeCompare(String(right.sortKey || right.label || ""));
         });
 
         return `
@@ -293,13 +297,14 @@ export class StructureTree extends HTMLElement {
             this.#searchQuery = event.target.value;
             
             // Render only nodes container to keep focus and cursor position!
+            const rootDirection = this.#model.sortDirection === "desc" ? -1 : 1;
             const sortedRootNodes = [...this.#model.nodes].sort((left, right) => {
                 const leftHas = Array.isArray(left.children) && left.children.length > 0;
                 const rightHas = Array.isArray(right.children) && right.children.length > 0;
                 if (leftHas !== rightHas) {
                     return leftHas ? -1 : 1;
                 }
-                return (left.label || "").localeCompare(right.label || "");
+                return rootDirection * String(left.sortKey || left.label || "").localeCompare(String(right.sortKey || right.label || ""));
             });
             
             const nodesContainer = this.querySelector(".structure-tree-nodes");

@@ -6,7 +6,7 @@
 import { escapeHtml, renderMarkdown } from "../utils/html.ts";
 import { icon } from "../utils/icons.ts";
 
-const DEFAULT_SOURCES = ["memory", "knowledge"];
+const DEFAULT_SOURCES = ["memory", "knowledge", "messages", "pictures"];
 const DEFAULT_MECHANISMS = ["graph", "vector", "text"];
 
 /** Render global search answers and grouped, traceable source results. */
@@ -90,11 +90,16 @@ export class QueryView extends HTMLElement {
                 <main class="search-results-column scroll-area">${this.#renderResult()}</main>
             </section>
         `;
+        this.querySelectorAll("[data-open-picture]").forEach(button => {
+            button.addEventListener("click", () => {
+                this.#state?.setRouteTarget("pictures", { pictureId: button.getAttribute("data-open-picture") || "" });
+            });
+        });
     }
 
     #renderResult() {
         if (this.#result?.loading) {
-            return `<div class="loading-state search-loading"><span></span><strong>Buscando en memoria y conocimiento</strong><small>Preparando resultados...</small></div>`;
+            return `<div class="loading-state search-loading"><span></span><strong>Buscando en memoria, conocimiento y mensajes</strong><small>Preparando resultados...</small></div>`;
         }
         if (!this.#result) {
             return `<section class="search-empty">${icon("search")}<h2>Resultados</h2><p>Escribe una consulta en el buscador del encabezado para comenzar.</p></section>`;
@@ -146,6 +151,7 @@ export class QueryView extends HTMLElement {
                                         <small>${escapeHtml(this.#resultOrigin(item))}</small>
                                     </div>
                                     ${item.rank !== undefined ? `<span class="result-rank" title="Relevancia">${Number(item.rank).toFixed(2)}</span>` : ""}
+                                    ${item.source === "pictures" && item.data?.id ? `<button class="result-open-button" data-open-picture="${escapeHtml(item.data.id)}">Abrir</button>` : ""}
                                 </li>
                             `).join("")}
                         </ol>
@@ -160,7 +166,11 @@ export class QueryView extends HTMLElement {
     }
 
     #sourceLabel(source) {
-        return source === "memory" ? "Memoria" : source === "knowledge" ? "Conocimiento" : "Otros resultados";
+        if (source === "memory") return "Memoria";
+        if (source === "knowledge") return "Conocimiento";
+        if (source === "messages") return "Mensajes";
+        if (source === "pictures") return "Pictures";
+        return "Otros resultados";
     }
 
     #mechanismLabel(mechanism) {

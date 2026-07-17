@@ -170,6 +170,7 @@ def build_default_brain_configs() -> BrainConfigsDTO:
         BrainConfigsDTO: Unified brain runtime config.
     """
     return BrainConfigsDTO(
+        agent_name=get_core_root().parent.name,
         agent_dir=get_core_root().parent.as_posix(),
         knowledge=build_default_config(),
     )

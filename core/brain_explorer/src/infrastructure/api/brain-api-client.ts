@@ -3,7 +3,7 @@
  * @see https://x.com/SAY6267
  */
 
-import type { ApiRequestOptions, ApiResponse, BacklogMutation, BacklogPayload, LogsPayload, QueryParams, HealthStatus, ProjectsResponse, VoiceMessagesResponse, WikisResponse } from "../../application/contracts/api-dtos.ts";
+import type { ApiRequestOptions, ApiResponse, BacklogMutation, BacklogPayload, LogsPayload, PicturesPayload, QueryParams, HealthStatus, ProjectsResponse, VoiceMessagesResponse, VoiceStatusResponse, WikisResponse } from "../../application/contracts/api-dtos.ts";
 
 interface CacheRecord {
     payload: ApiResponse;
@@ -169,8 +169,17 @@ export class BrainApiClient extends EventTarget {
     }
 
     /** Read persisted paid-voice messages. */
-    getVoiceMessages(options: ApiRequestOptions = {}): Promise<ApiResponse<VoiceMessagesResponse>> {
-        return this.request<VoiceMessagesResponse>("/api/voice/messages", options);
+    getVoiceMessages(
+        params: QueryParams = {},
+        options: ApiRequestOptions = {}
+    ): Promise<ApiResponse<VoiceMessagesResponse>> {
+        const query = toQueryString(params);
+        return this.request<VoiceMessagesResponse>(`/api/voice/messages${query ? `?${query}` : ""}`, options);
+    }
+
+    /** Poll the daemon-confirmed avatar playback identity. */
+    getVoiceStatus(options: ApiRequestOptions = {}): Promise<ApiResponse<VoiceStatusResponse>> {
+        return this.request<VoiceStatusResponse>("/api/voice/status", options);
     }
 
     /** Replay one retained daemon message without regenerating speech. */
@@ -185,6 +194,15 @@ export class BrainApiClient extends EventTarget {
     /** Stop active daemon replay without removing retained audio. */
     pauseVoiceReplay(): Promise<ApiResponse> {
         return this.request("/api/voice/pause", { method: "POST", forceRefresh: true });
+    }
+
+    /** Generate and immediately play audio for one persisted message. */
+    synthesizeVoiceMessage(messageId: string): Promise<ApiResponse> {
+        return this.request("/api/voice/synthesize", {
+            method: "POST",
+            body: JSON.stringify({ messageId }),
+            forceRefresh: true
+        });
     }
 
     /** Build the safe media URL for one stored voice message. */
@@ -334,6 +352,26 @@ export class BrainApiClient extends EventTarget {
     globalQuery(params: QueryParams = {}, options: ApiRequestOptions = {}): Promise<ApiResponse> {
         const query = toQueryString(params);
         return this.request(`/api/query?${query}`, options);
+    }
+
+    /** Read the canonical picture registry. */
+    pictures(params: QueryParams = {}, options: ApiRequestOptions = {}): Promise<ApiResponse<PicturesPayload>> {
+        const query = toQueryString(params);
+        return this.request<PicturesPayload>(`/api/pictures${query ? `?${query}` : ""}`, options);
+    }
+
+    /** Persist one manual picture description. */
+    describePicture(pictureId: string, description: string): Promise<ApiResponse> {
+        return this.request("/api/pictures/description", {
+            method: "POST",
+            body: JSON.stringify({ pictureId, description }),
+            forceRefresh: true
+        });
+    }
+
+    /** Build the opaque registry-backed URL for one picture. */
+    pictureUrl(pictureId: string): string {
+        return `/api/pictures/file?id=${encodeURIComponent(pictureId)}`;
     }
 
     /**

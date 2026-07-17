@@ -49,7 +49,7 @@ python .\$agent\scripts\brain.py update-vectorstore
 
 | Path | Owner | Purpose |
 |---|---|---|
-| `core/configs/brain_configs.json` | Core | Shared runtime config and canonical `agent_dir`. |
+| `core/configs/brain_configs.json` | Core | `agent_name`, `user_name`, absolute `agent_dir`, and shared runtime settings. |
 | `core/configs/brain_mirrors.json` | Core | Registered Brain consumer workspaces. |
 | `core/configs/brain_avatar_config.json` | Core | Avatar service and voice configuration. |
 | `core/database/knowledge/brain_knowledge.db` | Core | Global knowledge graph database. |

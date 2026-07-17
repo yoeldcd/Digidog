@@ -207,7 +207,8 @@ def test_reply_composer_uses_frameless_translucent_avatar_chrome() -> None:
         avatar._set_text("Mensaje", message_id="s1", codex_thread_id=THREAD_ID)
         avatar._open_reply_composer()
         assert THREAD_ID in avatar.reply_window.target_label.text()
-        assert avatar.reply_window.geometry() == avatar.bubble.frameGeometry()
+        assert avatar.reply_window.width() == avatar.bubble.frameGeometry().width()
+        assert avatar.reply_window.geometry().bottom() == avatar.bubble.frameGeometry().bottom()
         assert avatar.reply_window.send_shortcut.key() == QKeySequence("Ctrl+Return")
     finally:
         avatar.close()
@@ -226,7 +227,7 @@ def test_accepted_external_reply_does_not_claim_native_visual_delivery() -> None
         assert "referencia encolada" in avatar.reply_window.status_label.text().casefold()
         assert "entregado" not in avatar.reply_window.status_label.text().casefold()
         assert avatar.reply_window.editor.toPlainText() == ""
-        assert avatar.reply_window.interrupt_button.isEnabled() is False
+        assert avatar.reply_window.steer_button.isEnabled() is True
     finally:
         avatar.close()
 

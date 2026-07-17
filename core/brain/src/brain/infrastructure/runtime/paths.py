@@ -32,6 +32,9 @@ from brain.config import (
     INSTRUCTION_MIRRORS_DIR_NAME,
     INSTRUCTION_MIRRORS_FILE_NAME,
     LOCAL_SOURCES_DB_NAME,
+    PICTURE_STORAGE_DB_NAME,
+    PICTURE_STORAGE_DIR_NAME,
+    PICTURES_DIR_NAME,
 )
 
 
@@ -227,6 +230,23 @@ def get_avatar_storage_dir(create: bool = True) -> Path:
     """Return the core-owned retained avatar runtime directory."""
     path: Path = get_core_database_dir(create=create) / AVATAR_STORAGE_DIR_NAME
     return ensure_private_directory(path=path) if create else path
+
+
+def get_picture_storage_dir(create: bool = True) -> Path:
+    """Return the core-owned private picture registry directory."""
+    path: Path = get_core_database_dir(create=create) / PICTURE_STORAGE_DIR_NAME
+    return ensure_private_directory(path=path) if create else path
+
+
+def get_picture_database_path(create: bool = True) -> Path:
+    """Return the SQLite database used by the picture registry."""
+    return get_picture_storage_dir(create=create) / PICTURE_STORAGE_DB_NAME
+
+
+def get_pictures_dir(agent_home: Path | None = None, create: bool = True) -> Path:
+    """Return the agent-owned image library root."""
+    path: Path = get_agent_home(agent_home=agent_home) / PICTURES_DIR_NAME
+    return ensure_directory(path=path) if create else path
 
 
 def get_avatar_assets_dir(create: bool = False) -> Path:

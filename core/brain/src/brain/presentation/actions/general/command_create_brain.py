@@ -6,12 +6,15 @@
 from __future__ import annotations
 
 # Standard Libraries Imports
+import json
 import sys
 from pathlib import Path
 
 # Application Modules Imports
 from brain.application.workspace.bootstrap_service import (
     create_workspace_brain_entrypoint,
+    ensure_workspace_codex_config,
+    ensure_workspace_codex_rules,
     ensure_workspace_readme,
     ensure_workspace_structure,
     inspect_git_repository,
@@ -20,6 +23,7 @@ from brain.application.workspace.bootstrap_service import (
     validate_workspace_path,
 )
 from brain.presentation.terminal import log_step, render_placeholders
+from brain.infrastructure.runtime.paths import get_brain_configs_path
 
 
 def handle(args) -> int:
@@ -62,8 +66,23 @@ def handle(args) -> int:
     log_step(args, "[2/4] Setting up workspace directories...")
     structure_result = ensure_workspace_structure(workspace=workspace)
     readme_created = ensure_workspace_readme(workspace=workspace)
+    agent_config = json.loads(get_brain_configs_path().read_text(encoding="utf-8"))
+    codex_config_created = ensure_workspace_codex_config(
+        workspace=workspace,
+        agent_name=str(agent_config["agent_name"]),
+        agent_dir=Path(str(agent_config["agent_dir"])),
+    )
+    codex_rules_created = ensure_workspace_codex_rules(workspace=workspace)
     if readme_created:
         print("Created workspace guidelines at: $agent/README.md", flush=True)
+    print(
+        f"Verified message history database at: {structure_result.messages_database.relative_to(workspace)}",
+        flush=True,
+    )
+    if codex_config_created:
+        print("Created restrictive Codex policy binding at: .codex/config.toml", flush=True)
+    if codex_rules_created:
+        print("Created Brain command policy at: .codex/rules/default.rules", flush=True)
 
     log_step(args, "[3/4] Verifying logs database integrity...")
     database_path = None
@@ -101,6 +120,11 @@ def handle(args) -> int:
             "logs": structure_result.logs_dir.as_posix(),
             "data": structure_result.data_dir.as_posix(),
             "readmeCreated": readme_created,
+            "codexConfig": (workspace / ".codex" / "config.toml").as_posix(),
+            "codexConfigCreated": codex_config_created,
+            "codexRules": (workspace / ".codex" / "rules" / "default.rules").as_posix(),
+            "messagesDatabase": structure_result.messages_database.as_posix(),
+            "codexRulesCreated": codex_rules_created,
         },
         "database": database_path.as_posix() if database_path is not None else None,
         "entrypoint": {

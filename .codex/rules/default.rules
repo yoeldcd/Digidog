@@ -1,0 +1,20 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
+# Brain is the agent-owned control plane. This narrow prefix permits every
+# Brain subcommand to run outside the sandbox without review, including local
+# services and model-backed commands that require network access. It does not
+# authorize generic Python or any other script.
+prefix_rule(
+    pattern = ["py", ".\\$agent\\scripts\\brain.py"],
+    decision = "allow",
+    justification = "The workspace Brain CLI is an agent-owned trusted control plane.",
+    match = [
+        "py .\\$agent\\scripts\\brain.py avatar-service-status --json",
+        "py .\\$agent\\scripts\\brain.py query example --json",
+    ],
+    not_match = [
+        "py arbitrary.py",
+        "py -c print('not Brain')",
+    ],
+)

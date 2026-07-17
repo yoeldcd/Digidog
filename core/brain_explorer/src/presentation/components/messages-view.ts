@@ -3,8 +3,14 @@
  * @see https://x.com/SAY6267
  */
 
-import type { VoiceMessageRecord, VoiceSpeakRecord } from "../../application/contracts/api-dtos.ts";
+import type {
+    AvatarMessageRecord,
+    AvatarMessageSession,
+    VoiceMessageRecord,
+    VoiceSpeakRecord
+} from "../../application/contracts/api-dtos.ts";
 import { BrainApiClient } from "../../infrastructure/api/brain-api-client.ts";
+import { StructureTree } from "./structure-tree.ts";
 import { escapeHtml, renderMarkdown } from "../utils/html.ts";
 import { icon } from "../utils/icons.ts";
 
@@ -18,15 +24,25 @@ export class MessagesView extends HTMLElement {
     #state = null;
     #messages: VoiceMessageRecord[] = [];
     #speaks: VoiceSpeakRecord[] = [];
+    #history: AvatarMessageRecord[] = [];
+    #sessions: AvatarMessageSession[] = [];
+    #selectedSessionId = "";
     #loading = false;
     #playingName = "";
     #refreshTimer: number | null = null;
+    #statusTimer: number | null = null;
+    #activeSpeakId = "";
+    #serviceState = "stopped";
     #expandedIds = new Set<string>();
+    #expandedTreePaths = new Set<string>();
+    #generatingAudioIds = new Set<string>();
+    #generatedAudioSpeakIds = new Map<string, string>();
 
     set context(context) {
         this.#api = context.api;
         this.#state = context.state;
         void this.#loadMessages();
+        void this.#pollVoiceStatus();
     }
 
     connectedCallback() {
@@ -36,6 +52,37 @@ export class MessagesView extends HTMLElement {
     disconnectedCallback() {
         this.#stopAudio();
         if (this.#refreshTimer !== null) window.clearTimeout(this.#refreshTimer);
+        if (this.#statusTimer !== null) window.clearTimeout(this.#statusTimer);
+    }
+
+    /** Synchronize playback controls exclusively from the daemon's latest status. */
+    async #pollVoiceStatus() {
+        if (!this.#api) return;
+        if (this.#statusTimer !== null) window.clearTimeout(this.#statusTimer);
+        this.#statusTimer = null;
+        try {
+            const response = await this.#api.getVoiceStatus({ forceRefresh: true, silent: true });
+            const activeSpeakId = response.data?.activeSpeakId ?? "";
+            const serviceState = response.data?.state ?? "stopped";
+            const playbackActive = ["preparing", "speaking", "muted_replay"].includes(serviceState);
+            const playingName = playbackActive
+                ? this.#messages.find(message => message.speakId === activeSpeakId)?.name ?? ""
+                : "";
+            if (
+                activeSpeakId !== this.#activeSpeakId
+                || serviceState !== this.#serviceState
+                || playingName !== this.#playingName
+            ) {
+                this.#activeSpeakId = activeSpeakId;
+                this.#serviceState = serviceState;
+                this.#playingName = playingName;
+                this.#render();
+            }
+        } finally {
+            if (this.isConnected) {
+                this.#statusTimer = window.setTimeout(() => void this.#pollVoiceStatus(), 750);
+            }
+        }
     }
 
     async #loadMessages(silent = false) {
@@ -47,9 +94,19 @@ export class MessagesView extends HTMLElement {
             this.#render();
         }
         try {
-            const response = await this.#api.getVoiceMessages({ forceRefresh: true, silent });
+            const selected = this.#sessions.find(session => session.id === this.#selectedSessionId);
+            const params = selected ? { date: selected.date, chatId: selected.chatId } : {};
+            const response = await this.#api.getVoiceMessages(params, { forceRefresh: true, silent });
             this.#messages = response.data?.messages ?? [];
             this.#speaks = response.data?.speaks ?? [];
+            this.#history = response.data?.history ?? [];
+            this.#sessions = response.data?.sessions ?? [];
+            if (!this.#selectedSessionId && this.#sessions.length) {
+                this.#selectedSessionId = this.#sessions[0].id;
+                this.#expandSessionPath(this.#sessions[0]);
+                await this.#loadMessages(true);
+                return;
+            }
             this.#state?.setLastResult(response);
         } finally {
             this.#loading = false;
@@ -61,71 +118,194 @@ export class MessagesView extends HTMLElement {
     #render() {
         this.innerHTML = `
             <section class="page-surface messages-console">
-                <header class="view-header messages-header">
-                    <h2>Registro de Messages</h2>
-                    <button data-action="refresh-messages" class="compact-action" title="Actualizar mensajes" aria-label="Actualizar mensajes">${icon("refresh")}</button>
-                </header>
-                <main class="voice-message-list">
-                    ${this.#loading ? `<div class="loading-state"><span></span><strong>Cargando mensajes...</strong></div>` : this.#renderMessages()}
-                </main>
+                <div class="structure-layout messages-structure">
+                    <aside class="structure-tree" aria-label="Sesiones de mensajes">
+                        <brain-structure-tree data-role="message-session-tree"></brain-structure-tree>
+                    </aside>
+                    <main class="structure-content">
+                        <header class="content-head">
+                            <strong>${escapeHtml(this.#selectedSessionLabel())}</strong>
+                            <span>${this.#selectedSessionId && this.#history.length ? `${this.#history.length} mensajes` : ""}</span>
+                        </header>
+                        <section class="voice-message-list" aria-label="Mensajes de la sesion">
+                            ${this.#loading ? `<div class="loading-state"><span></span><strong>Cargando mensajes...</strong></div>` : this.#renderMessages()}
+                        </section>
+                    </main>
+                </div>
             </section>
         `;
-        this.querySelector("[data-action='refresh-messages']")?.addEventListener("click", () => void this.#loadMessages());
         this.querySelectorAll("[data-action='play-message']").forEach(button => {
             button.addEventListener("click", () => void this.#toggleMessage(button.getAttribute("data-name") || ""));
         });
         this.querySelectorAll(".voice-message-item").forEach(item => {
             item.addEventListener("click", event => {
                 const target = event.target instanceof Element ? event.target : null;
-                if (target?.closest(".voice-message-actions")) return;
+                if (target?.closest(".voice-message-actions, .voice-message-leading-action")) return;
                 this.#toggleExpandedMessage(item.getAttribute("data-message-id") || "");
             });
         });
         this.querySelectorAll("[data-action='copy-message']").forEach(button => {
             button.addEventListener("click", () => void this.#copyMessage(button));
         });
+        this.querySelectorAll("[data-action='generate-message-audio']").forEach(button => {
+            button.addEventListener("click", () => {
+                void this.#generateMessageAudio(button.getAttribute("data-message-id") || "");
+            });
+        });
+        this.#configureTree();
     }
 
     #renderMessages() {
-        if (!this.#messages.length && !this.#speaks.length) {
-            return `<div class="voice-empty-state">${icon("messageCircle")}<strong>No hay mensajes almacenados</strong></div>`;
+        if (!this.#selectedSessionId) {
+            return `<div class="voice-empty-state">${icon("messageCircle")}<strong>Selecciona una sesion</strong></div>`;
+        }
+        if (!this.#history.length) {
+            return `<div class="voice-empty-state">${icon("messageCircle")}<strong>Esta sesion no contiene mensajes</strong></div>`;
         }
         const pairedNames = new Set<string>();
-        const retainedItems = this.#speaks.map(speak => {
-            const message = this.#messages.find(candidate => candidate.speakId === speak.id);
+        const persistedItems = this.#history.map(record => {
+            const speak = this.#speaks.find(candidate => candidate.id === record.id) ?? null;
+            const generatedSpeakId = this.#generatedAudioSpeakIds.get(record.id);
+            const message = this.#messages.find(candidate =>
+                candidate.speakId === record.id || candidate.speakId === generatedSpeakId
+            );
             if (message) pairedNames.add(message.name);
-            return this.#renderMessageItem(speak.id, speak, message);
+            return this.#renderMessageItem(record, speak, message);
         });
-        const legacyItems = this.#messages
-            .filter(message => !pairedNames.has(message.name))
-            .map(message => this.#renderMessageItem(message.id ?? message.name, null, message));
-        return [...retainedItems, ...legacyItems].join("");
+        return persistedItems.join("");
     }
 
-    #renderMessageItem(id: string, speak: VoiceSpeakRecord | null, message: VoiceMessageRecord | undefined) {
+    /** Project durable summaries into the shared Explorer tree contract. */
+    #sessionTreeNodes() {
+        const years = new Map<string, Map<string, Map<string, AvatarMessageSession[]>>>();
+        this.#sessions.forEach(session => {
+            const [year, month, day] = session.date.split("-");
+            if (!years.has(year)) years.set(year, new Map());
+            const months = years.get(year)!;
+            if (!months.has(month)) months.set(month, new Map());
+            const days = months.get(month)!;
+            if (!days.has(day)) days.set(day, []);
+            days.get(day)!.push(session);
+        });
+        return [...years.entries()].map(([year, months]) => ({
+            id: `messages/${year}`,
+            path: `messages/${year}`,
+            label: year,
+            icon: "folder",
+            count: [...months.values()].reduce((total, days) => total + [...days.values()].flat().length, 0),
+            children: [...months.entries()].map(([month, days]) => ({
+                id: `messages/${year}/${month}`,
+                path: `messages/${year}/${month}`,
+                label: this.#monthLabel(month),
+                icon: "folder",
+                count: [...days.values()].flat().length,
+                children: [...days.entries()].map(([day, sessions]) => ({
+                    id: `messages/${year}/${month}/${day}`,
+                    path: `messages/${year}/${month}/${day}`,
+                    label: `Dia ${day}`,
+                    icon: "folder",
+                    count: sessions.length,
+                    children: sessions.map(session => ({
+                        id: session.id,
+                        path: session.id,
+                        label: session.chatId ? session.label : `Sesion ${this.#formatTime(session.startedAt)}`,
+                        icon: "messageCircle",
+                        count: session.messageCount
+                    }))
+                }))
+            }))
+        }));
+    }
+
+    /** Configure the reusable structural tree with message session nodes. */
+    #configureTree() {
+        const tree = this.querySelector("[data-role='message-session-tree']");
+        if (!(tree instanceof StructureTree)) return;
+        tree.model = {
+            nodes: this.#sessionTreeNodes(),
+            selectedPath: this.#selectedSessionId,
+            expandedPaths: this.#expandedTreePaths,
+            toggleOnBranchSelect: true,
+            title: "Mensajes",
+            toolbarActions: [{ id: "refresh", label: "Actualizar mensajes", icon: "refresh" }],
+            defaultBranchIcon: "folder",
+            defaultLeafIcon: "messageCircle",
+            searchPlaceholder: "Buscar sesiones...",
+            emptyText: this.#loading ? "Cargando sesiones..." : "No hay sesiones almacenadas."
+        };
+        tree.addEventListener("brain-tree-select", event => {
+            if (!event.detail.branch) void this.#selectSession(event.detail.path);
+        });
+        tree.addEventListener("brain-tree-toolbar-action", event => {
+            if (event.detail.action === "refresh") void this.#loadMessages();
+        });
+    }
+
+    /** Expand the ancestors of the active session in the shared tree. */
+    #expandSessionPath(session: AvatarMessageSession) {
+        const [year, month, day] = session.date.split("-");
+        this.#expandedTreePaths.add(`messages/${year}`);
+        this.#expandedTreePaths.add(`messages/${year}/${month}`);
+        this.#expandedTreePaths.add(`messages/${year}/${month}/${day}`);
+    }
+
+    /** Return the content-panel heading for the selected session. */
+    #selectedSessionLabel() {
+        const session = this.#sessions.find(candidate => candidate.id === this.#selectedSessionId);
+        if (!session) return "Selecciona una sesion";
+        return session.chatId ? session.label : `Sesion del ${session.date} a las ${this.#formatTime(session.startedAt)}`;
+    }
+
+    /** Select a durable session and request only its messages. */
+    async #selectSession(id: string) {
+        if (!id || id === this.#selectedSessionId) return;
+        this.#selectedSessionId = id;
+        const selected = this.#sessions.find(session => session.id === id);
+        if (selected) this.#expandSessionPath(selected);
+        this.#history = [];
+        await this.#loadMessages();
+    }
+
+    #renderMessageItem(
+        record: AvatarMessageRecord,
+        speak: VoiceSpeakRecord | null,
+        message: VoiceMessageRecord | undefined
+    ) {
+        const id = record.id;
         const expanded = this.#expandedIds.has(id);
         const name = message?.name ?? "";
-        const createdAt = message?.createdAt ?? speak?.createdAt ?? "";
-        const text = speak?.text ?? message?.text ?? "Mensaje histórico sin transcripción";
+        const createdAt = record.created_at;
+        const text = record.text;
         const status = speak?.status ?? "DONE";
+        const generatingAudio = this.#generatingAudioIds.has(id);
+        const sourceLabel = record.source_command
+            ? `${record.source_command}:${record.source_phase || "output"}`
+            : record.emotion || "speak";
         return `
             <article class="voice-message-item ${name === this.#playingName ? "is-playing" : ""} ${expanded ? "is-expanded" : ""}" data-message-id="${escapeHtml(id)}">
-                <button class="voice-message-summary" data-action="toggle-message-details" data-id="${escapeHtml(id)}" aria-expanded="${expanded}">
-                    ${icon(expanded ? "chevronDown" : "chevronRight")}
-                    ${expanded ? `<span class="voice-message-spacer"></span>` : `<span class="voice-message-preview">${escapeHtml(text)}</span>`}
-                    <span class="voice-speak-status is-${status.toLowerCase()}">${escapeHtml(status)}</span>
-                </button>
+                <div class="voice-message-header">
+                    ${expanded
+                        ? `<span class="voice-message-leading-placeholder" aria-hidden="true"></span>`
+                        : this.#renderLeadingAudioAction(id, name, generatingAudio)}
+                    <button class="voice-message-summary" data-action="toggle-message-details" data-id="${escapeHtml(id)}" aria-expanded="${expanded}">
+                        ${expanded ? `<span class="voice-message-spacer"></span>` : `<span class="voice-message-preview">${escapeHtml(text)}</span>`}
+                        <span class="voice-speak-status is-${status.toLowerCase()}">${escapeHtml(sourceLabel)}</span>
+                        <time class="voice-message-time" datetime="${escapeHtml(createdAt)}">${escapeHtml(this.#formatTime(createdAt))}</time>
+                    </button>
+                </div>
                 ${expanded ? `
                     <div class="voice-message-detail">
                         <div class="voice-message-markdown">${renderMarkdown(text)}</div>
                         ${speak?.error ? `<section class="voice-error-detail" role="alert"><strong>Detalle del error</strong><pre>${escapeHtml(speak.error)}</pre></section>` : ""}
                         <footer class="voice-message-footer">
                             <div class="voice-message-actions">
-                                <button class="voice-icon-action" data-action="play-message" data-name="${escapeHtml(name)}" ${name ? "" : "disabled"} title="Reproducir mensaje" aria-label="Reproducir mensaje">${icon(name === this.#playingName ? "pause" : "play")}</button>
+                                ${name
+                                    ? `<button class="voice-icon-action" data-action="play-message" data-name="${escapeHtml(name)}" title="Reproducir mensaje" aria-label="Reproducir mensaje">${icon(name === this.#playingName ? "pause" : "play")}</button>`
+                                    : `<button class="voice-icon-action" data-action="generate-message-audio" data-message-id="${escapeHtml(id)}" ${generatingAudio ? "disabled" : ""} title="Generar audio" aria-label="Generar audio">${icon("volume")}</button>`
+                                }
                                 ${message ? `<a class="voice-download-button labeled" href="${this.#api?.voiceMessageUrl(message.name) ?? "#"}" download="${escapeHtml(message.name)}" title="Descargar mensaje">${icon("download")} ${this.#formatBytes(message.sizeBytes)}</a>` : ""}
                                 <button class="voice-icon-action" data-action="copy-message" data-text="${escapeHtml(text)}" title="Copiar mensaje" aria-label="Copiar mensaje">${icon("copy")}</button>
                             </div>
-                            <time datetime="${escapeHtml(createdAt)}">${escapeHtml(this.#formatTime(createdAt))}</time>
                         </footer>
                     </div>
                 ` : ""}
@@ -133,40 +313,120 @@ export class MessagesView extends HTMLElement {
         `;
     }
 
+    #renderLegacyMessageItem(message: VoiceMessageRecord) {
+        const createdAt = message.createdAt;
+        const text = message.text ?? "Audio histórico sin transcripción";
+        const id = message.id ?? message.name;
+        const expanded = this.#expandedIds.has(id);
+        return `
+            <article class="voice-message-item ${message.name === this.#playingName ? "is-playing" : ""} ${expanded ? "is-expanded" : ""}" data-message-id="${escapeHtml(id)}">
+                <div class="voice-message-header">
+                    ${expanded
+                        ? `<span class="voice-message-leading-placeholder" aria-hidden="true"></span>`
+                        : this.#renderLeadingAudioAction(id, message.name, false)}
+                    <button class="voice-message-summary" data-action="toggle-message-details" data-id="${escapeHtml(id)}" aria-expanded="${expanded}">
+                        <span class="voice-message-preview">${escapeHtml(text)}</span>
+                        <span class="voice-speak-status is-done">audio</span>
+                        <time class="voice-message-time" datetime="${escapeHtml(createdAt)}">${escapeHtml(this.#formatTime(createdAt))}</time>
+                    </button>
+                </div>
+                ${expanded ? `
+                    <div class="voice-message-detail">
+                        <div class="voice-message-markdown">${renderMarkdown(text)}</div>
+                        <footer class="voice-message-footer">
+                            <div class="voice-message-actions">
+                                <button class="voice-icon-action" data-action="play-message" data-name="${escapeHtml(message.name)}" title="Reproducir mensaje" aria-label="Reproducir mensaje">${icon(message.name === this.#playingName ? "pause" : "play")}</button>
+                                <a class="voice-download-button labeled" href="${this.#api?.voiceMessageUrl(message.name) ?? "#"}" download="${escapeHtml(message.name)}" title="Descargar mensaje">${icon("download")} ${this.#formatBytes(message.sizeBytes)}</a>
+                                <button class="voice-icon-action" data-action="copy-message" data-text="${escapeHtml(text)}" title="Copiar mensaje" aria-label="Copiar mensaje">${icon("copy")}</button>
+                            </div>
+                        </footer>
+                    </div>
+                ` : ""}
+            </article>
+        `;
+    }
+
+    /** Render the primary list action as replay or on-demand audio generation. */
+    #renderLeadingAudioAction(id: string, name: string, generatingAudio: boolean) {
+        if (name) {
+            const playing = name === this.#playingName;
+            return `<button class="voice-icon-action voice-message-leading-action" data-action="play-message" data-name="${escapeHtml(name)}" title="${playing ? "Pausar mensaje" : "Reproducir mensaje"}" aria-label="${playing ? "Pausar mensaje" : "Reproducir mensaje"}">${icon(playing ? "pause" : "play")}</button>`;
+        }
+        return `<button class="voice-icon-action voice-message-leading-action" data-action="generate-message-audio" data-message-id="${escapeHtml(id)}" ${generatingAudio ? "disabled" : ""} title="Generar y reproducir audio" aria-label="Generar y reproducir audio">${icon("play")}</button>`;
+    }
+
     async #copyMessage(button: Element) {
         await navigator.clipboard.writeText(button.getAttribute("data-text") || "");
         button.setAttribute("title", "Copiado");
     }
 
+    /** Request one non-persistent audio rendering for a historical message. */
+    async #generateMessageAudio(id: string) {
+        if (!this.#api || !id || this.#generatingAudioIds.has(id)) return;
+        this.#generatingAudioIds.add(id);
+        this.#render();
+        try {
+            const result = await this.#api.synthesizeVoiceMessage(id);
+            this.#state?.setLastResult(result);
+            const speakId = (result.data as { speakId?: string } | undefined)?.speakId ?? "";
+            if (result.ok && speakId) {
+                this.#generatedAudioSpeakIds.set(id, speakId);
+                await this.#waitForGeneratedAudio(speakId);
+            }
+        } finally {
+            this.#generatingAudioIds.delete(id);
+            this.#render();
+        }
+    }
+
+    /** Refresh briefly until the daemon exposes the newly retained MP3. */
+    async #waitForGeneratedAudio(speakId: string) {
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+            await new Promise(resolve => window.setTimeout(resolve, 500));
+            await this.#loadMessages(true);
+            if (this.#messages.some(message => message.speakId === speakId)) return;
+        }
+    }
+
     /** Toggle one bubble while restoring keyboard focus after the DOM refresh. */
     #toggleExpandedMessage(id: string) {
         if (!id) return;
-        if (this.#expandedIds.has(id)) this.#expandedIds.delete(id);
-        else this.#expandedIds.add(id);
+        const willExpand = !this.#expandedIds.has(id);
+        if (willExpand) this.#expandedIds.add(id);
+        else this.#expandedIds.delete(id);
         this.#render();
+        requestAnimationFrame(() => this.#focusMessage(id, willExpand));
+    }
+
+    /** Focus one summary and keep its expanded card inside the message viewport. */
+    #focusMessage(id: string, expanded: boolean) {
         const summary = Array.from(this.querySelectorAll<HTMLElement>(".voice-message-summary"))
             .find(candidate => candidate.getAttribute("data-id") === id);
         summary?.focus({ preventScroll: true });
+        if (!expanded) return;
+        const article = summary?.closest<HTMLElement>(".voice-message-item");
+        const container = article?.closest<HTMLElement>(".voice-message-list");
+        if (!article || !container) return;
+        const articleBounds = article.getBoundingClientRect();
+        const containerBounds = container.getBoundingClientRect();
+        if (articleBounds.top < containerBounds.top) {
+            container.scrollTop -= containerBounds.top - articleBounds.top;
+        } else if (articleBounds.bottom > containerBounds.bottom) {
+            container.scrollTop += articleBounds.bottom - containerBounds.bottom;
+        }
     }
 
     async #toggleMessage(name: string) {
         if (!this.#api || !name) return;
-        if (this.#playingName === name) {
+        if (this.#playingName === name && ["preparing", "speaking", "muted_replay"].includes(this.#serviceState)) {
             await this.#api.pauseVoiceReplay();
-            this.#stopAudio();
-            this.#render();
             return;
         }
-        this.#stopAudio();
-        this.#playingName = name;
-        this.#render();
         try {
-            const result = await this.#api.replayVoiceMessage(name);
-            if (!result.ok) this.#stopAudio();
+            await this.#api.replayVoiceMessage(name);
         } catch {
-            this.#stopAudio();
+            return;
         }
-        this.#render();
     }
 
     #stopAudio() {
@@ -175,6 +435,11 @@ export class MessagesView extends HTMLElement {
 
     #formatTime(value: string) {
         return new Intl.DateTimeFormat("es", { hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+    }
+
+    #monthLabel(value: string) {
+        const date = new Date(2026, Number(value) - 1, 1);
+        return new Intl.DateTimeFormat("es", { month: "long" }).format(date);
     }
 
     #formatBytes(value: number) {

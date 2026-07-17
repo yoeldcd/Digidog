@@ -62,7 +62,6 @@ class VectorStoreManager:
             }
 
         ids = []
-        documents = []
         metadatas = []
         embeddings = []
 
@@ -71,14 +70,12 @@ class VectorStoreManager:
                 continue
             emb = get_embedding(text)
             ids.append(chunk_id)
-            documents.append(text)
-            metadatas.append(meta)
+            metadatas.append({**meta, "vector_reference": chunk_id})
             embeddings.append(emb)
 
         if ids:
             self.collection.add(
                 ids=ids,
-                documents=documents,
                 metadatas=metadatas,
                 embeddings=embeddings,
             )
@@ -110,15 +107,25 @@ class VectorStoreManager:
             metadata={"hnsw:space": "cosine"},
         )
 
+    def close(self) -> None:
+        """Release Chroma resources so a vectorstore directory can be moved safely."""
+        close_client = getattr(self.client, "close", None)
+        if callable(close_client):
+            close_client()
+
     def add_record(self, doc_id: str, text: str, metadata: dict, embedding: list[float] | None = None) -> None:
-        """Add or update a single record in the collection (reusable format)."""
+        """Add or update a reference-only vector record.
+
+        ``text`` is used transiently to calculate the embedding. Canonical
+        content remains in Markdown or SQLite and is recovered through the
+        reference metadata when a query returns this record.
+        """
         self.delete_record(doc_id)
         if embedding is None:
             embedding = get_embedding(text)
         self.collection.add(
             ids=[doc_id],
-            documents=[text],
-            metadatas=[metadata],
+            metadatas=[{**metadata, "vector_reference": doc_id}],
             embeddings=[embedding],
         )
 
@@ -169,9 +176,11 @@ class VectorStoreManager:
         if not results or not results["ids"] or not results["ids"][0]:
             return formatted
 
+        documents = results.get("documents") or [[]]
+        document_row = documents[0] if documents else []
         for index in range(len(results["ids"][0])):
             doc_id = results["ids"][0][index]
-            doc_text = results["documents"][0][index]
+            doc_text = document_row[index] if index < len(document_row) and document_row[index] else ""
             meta = results["metadatas"][0][index]
             dist = results["distances"][0][index]
             similarity = 1.0 - dist

@@ -56,6 +56,8 @@ class VoiceService:
         emotion: str = "",
         signal_key: str = "",
         codex_thread_id: str = "",
+        source_command: str = "",
+        source_phase: str = "",
     ) -> None:
         """Enqueue one visual and spoken projection without exposing an engine."""
         VoiceDaemonClient().speak(
@@ -65,6 +67,8 @@ class VoiceService:
             emotion=emotion,
             signal_key=signal_key,
             codex_thread_id=codex_thread_id,
+            source_command=source_command,
+            source_phase=source_phase,
         )
 
     def repeat_last(self, emotion: str = "", codex_thread_id: str = "") -> None:

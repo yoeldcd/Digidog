@@ -17,6 +17,7 @@ from pathlib import Path
 from brain.application.logs.index_service import migrate_log_files_to_database
 from brain.application.logs.store import get_logs_database_path
 from brain.infrastructure.runtime.paths import get_core_cli_path, get_core_root
+from brain.infrastructure.messages.repository import MessageRepository
 
 
 AGENT_DIRECTORY_NAMES = {"$agent", ".agent", "agent"}
@@ -41,6 +42,68 @@ WORKSPACE_README_TEXT = (
 """Default workspace README content."""
 
 
+WORKSPACE_CODEX_CONFIG_TEXT = """# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
+# --------------------------------------------------------------------------- #
+# --- WOSP CODEX POLICY BINDING --------------------------------------------- #
+# --------------------------------------------------------------------------- #
+# This project-local file defines and selects the agent-specific profile.
+# Codex requires default_permissions when a custom profile is declared. Auto
+# Review handles escalations while project trust remains owned by Codex.
+
+approval_policy = "on-request"
+approvals_reviewer = "auto_review"
+default_permissions = "{{AGENT_PROFILE_NAME}}"
+allow_login_shell = false
+
+[permissions.{{AGENT_PROFILE_NAME}}]
+description = "Agent-local access for this WoSP and its canonical agent directory."
+extends = ":read-only"
+
+[permissions.{{AGENT_PROFILE_NAME}}.filesystem]
+"{{AGENT_DIR}}" = "write"
+"~/.ssh" = "deny"
+"~/.aws" = "deny"
+"~/.azure" = "deny"
+glob_scan_max_depth = 6
+
+[permissions.{{AGENT_PROFILE_NAME}}.filesystem.":workspace_roots"]
+"." = "write"
+".env" = "deny"
+".env.*" = "deny"
+"*.env" = "deny"
+"**/.env" = "deny"
+"**/.env.*" = "deny"
+"**/*.env" = "deny"
+"""
+"""Restrictive project-local Codex configuration created for every WoSP."""
+
+
+WORKSPACE_CODEX_RULES_TEXT = r'''# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
+# Brain is the agent-owned control plane. This narrow prefix permits every
+# Brain subcommand to run outside the sandbox without review, including local
+# services and model-backed commands that require network access. It does not
+# authorize generic Python or any other script.
+prefix_rule(
+    pattern = ["py", ".\\$agent\\scripts\\brain.py"],
+    decision = "allow",
+    justification = "The workspace Brain CLI is an agent-owned trusted control plane.",
+    match = [
+        "py .\\$agent\\scripts\\brain.py avatar-service-status --json",
+        "py .\\$agent\\scripts\\brain.py query example --json",
+    ],
+    not_match = [
+        "py arbitrary.py",
+        "py -c print('not Brain')",
+    ],
+)
+'''
+"""Project-local command rule that trusts only the Brain CLI prefix."""
+
+
 @dataclass(frozen=True)
 class GitInspectionResult:
     """Git repository inspection result."""
@@ -56,6 +119,7 @@ class WorkspaceStructureResult:
     scripts_dir: Path
     logs_dir: Path
     data_dir: Path
+    messages_database: Path
 
 
 @dataclass(frozen=True)
@@ -205,9 +269,19 @@ def ensure_workspace_structure(workspace: Path) -> WorkspaceStructureResult:
     scripts_dir: Path = workspace / "$agent" / "scripts"
     logs_dir: Path = workspace / "$agent" / "logs"
     data_dir: Path = workspace / "$agent" / "data"
-    for directory in (scripts_dir, logs_dir, data_dir):
+    database_dir: Path = workspace / "$agent" / "database"
+    for directory in (scripts_dir, logs_dir, data_dir, database_dir):
         directory.mkdir(parents=True, exist_ok=True)
-    return WorkspaceStructureResult(scripts_dir=scripts_dir, logs_dir=logs_dir, data_dir=data_dir)
+    messages_database: Path = MessageRepository(
+        consumer_path=workspace,
+        require_registered=False,
+    ).initialize()
+    return WorkspaceStructureResult(
+        scripts_dir=scripts_dir,
+        logs_dir=logs_dir,
+        data_dir=data_dir,
+        messages_database=messages_database,
+    )
 
 
 def ensure_workspace_readme(workspace: Path) -> bool:
@@ -224,6 +298,50 @@ def ensure_workspace_readme(workspace: Path) -> bool:
     if readme_file.exists():
         return False
     readme_file.write_text(WORKSPACE_README_TEXT, encoding="utf-8")
+    return True
+
+
+def ensure_workspace_codex_config(workspace: Path, agent_name: str, agent_dir: Path) -> bool:
+    """
+    Create a restrictive project-local `.codex/config.toml` when missing.
+
+    The local file only selects the global permission profile and approval
+    behavior. It deliberately defines no permissions, writable roots, network
+    access, command rules, or environment-variable overrides.
+
+    Args:
+        workspace (Path): Workspace root.
+        agent_name (str): Canonical agent name used to derive the local profile.
+        agent_dir (Path): Canonical agent directory required by Brain and avatar services.
+
+    Returns:
+        bool: True when the configuration file was created.
+    """
+    config_file: Path = workspace / ".codex" / "config.toml"
+    if config_file.exists():
+        return False
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    normalized_name = re.sub(r"[^a-z0-9]+", "_", agent_name.lstrip("@").casefold()).strip("_")
+    if not normalized_name:
+        raise ValueError("agent_name cannot derive a local Codex permission profile")
+    content = WORKSPACE_CODEX_CONFIG_TEXT.replace(
+        "{{AGENT_PROFILE_NAME}}",
+        f"{normalized_name}_workspace_guard",
+    ).replace(
+        "{{AGENT_DIR}}",
+        agent_dir.resolve().as_posix(),
+    )
+    config_file.write_text(content, encoding="utf-8")
+    return True
+
+
+def ensure_workspace_codex_rules(workspace: Path) -> bool:
+    """Create the narrow Brain CLI allow rule when the WoSP lacks one."""
+    rules_file = workspace / ".codex" / "rules" / "default.rules"
+    if rules_file.exists():
+        return False
+    rules_file.parent.mkdir(parents=True, exist_ok=True)
+    rules_file.write_text(WORKSPACE_CODEX_RULES_TEXT, encoding="utf-8")
     return True
 
 

@@ -11,6 +11,10 @@ from pathlib import Path
 from brain.application.knowledge.vector_sync import sync_all_knowledge_vectorstores
 from brain.application.memory.paths import MEMORY_ROOT
 from brain.infrastructure.vectorstores.manager import VectorStoreManager
+from brain.infrastructure.vectorstores.messages import sync_all_message_vectors
+from brain.infrastructure.vectorstores.pictures import sync_picture_vectors
+from brain.infrastructure.vectorstores.generations import replace_vectorstore_generation, validate_vectorstore_generation
+from brain.infrastructure.runtime.paths import get_vectorstore_dir
 from brain.presentation.terminal import render_placeholders, log_step
 
 
@@ -32,79 +36,36 @@ def handle(args: argparse.Namespace) -> int:
             print("Aborted: Confirmation required. Run with --yes flag in non-interactive environments.")
             return 1
 
-    log_step(args, '[1/2] Resetting semantic database...')
+    log_step(args, '[1/2] Building a temporary semantic database generation...')
     try:
-        manager = VectorStoreManager()
-        entries_deleted = manager.count_records()
-        manager.reset_store()
-
-        indexed_count = 0
-        entries_created = 0
-        file_stats = []
-        knowledge_stats = []
-        knowledge_warnings = []
-        memory_dir = Path(MEMORY_ROOT)
-
-        # Discover all .md files under memory/
-        md_files = []
-        for p in memory_dir.rglob("*.md"):
-            # Skip metadata index files at the root
-            if p.parent == memory_dir:
-                continue
-            md_files.append(p)
-
-        total_files = len(md_files)
-
-        # Index each file
-        log_step(args, '[2/2] Indexing all memory files...')
-        for p in md_files:
-            # Resolve category and key from path
-            rel = p.relative_to(memory_dir)
-            parts = rel.parts
-
-            if len(parts) >= 2:
-                category = ".".join(parts[:-1])
-                key = p.stem
-            else:
-                continue
-
-            content = p.read_text(encoding="utf-8")
-            stats = manager.add_or_update_file(category, key, content)
-            file_stats.append(stats)
-            entries_created += int(stats.get("entries_created") or 0)
-            indexed_count += 1
-            if not args.json and getattr(args, "verbose_log", False):
-                print(
-                    render_placeholders(
-                        "  vectorized __CYAN__{path}__RESET__: entries __GREEN__{entries}__RESET__".format(
-                            path=stats.get("path") or p.as_posix(),
-                            entries=stats.get("entries_created") or 0,
-                        ),
-                        color_enabled,
-                    ),
-                )
-
-        knowledge_stats, knowledge_warnings = sync_all_knowledge_vectorstores()
+        active_path: Path = get_vectorstore_dir(scope="global", create=False)
+        generation_stats = replace_vectorstore_generation(
+            active_path=active_path,
+            builder=lambda generation_path: build_vectorstore_generation(
+                generation_path=generation_path,
+                args=args,
+                color_enabled=color_enabled,
+            ),
+            validator=lambda generation_path: validate_vectorstore_generation(
+                generation_path=generation_path,
+                expected_collections={"memories", "knowledge", "messages", "pictures"},
+            ),
+        )
+        build_stats = dict(generation_stats["build"])
 
         if args.json:
             print(json.dumps({
                 "ok": True,
                 "message": "Vector store rebuilt successfully.",
-                "indexed_files": indexed_count,
-                "entries_created": entries_created,
-                "entries_deleted": entries_deleted,
-                "total_discovered": total_files,
-                "files": file_stats,
-                "knowledge": knowledge_stats,
-                "warnings": knowledge_warnings,
+                **build_stats,
+                "generation": generation_stats,
             }, ensure_ascii=False))
         else:
-            for warning in knowledge_warnings:
-                print(render_placeholders(f"  __YELLOW__{warning}__RESET__", color_enabled))
             msg = (
                 "__GREEN__Successfully rebuilt vector store__RESET__: "
-                f"indexed __CYAN__{indexed_count}__RESET__ / {total_files} files; "
-                f"entries created __GREEN__{entries_created}__RESET__, entries deleted __YELLOW__{entries_deleted}__RESET__."
+                f"indexed __CYAN__{build_stats['indexed_files']}__RESET__ / {build_stats['total_discovered']} files; "
+                f"entries created __GREEN__{build_stats['entries_created']}__RESET__; "
+                "the prior generation was retired after the validated atomic swap."
             )
             print(render_placeholders(msg, color_enabled))
         return 0
@@ -115,3 +76,56 @@ def handle(args: argparse.Namespace) -> int:
             msg = f"__RED__Error rebuilding vector store: {exc}__RESET__"
             print(render_placeholders(msg, color_enabled))
         return 1
+
+
+def build_vectorstore_generation(
+    generation_path: Path,
+    args: argparse.Namespace,
+    color_enabled: bool,
+) -> dict[str, object]:
+    """Build every global vector collection inside an isolated directory."""
+    manager = VectorStoreManager(db_path=generation_path, collection_name="memories")
+    indexed_count: int = 0
+    entries_created: int = 0
+    file_stats: list[dict[str, int | str]] = []
+    memory_dir = Path(MEMORY_ROOT)
+    md_files: list[Path] = [path for path in memory_dir.rglob("*.md") if path.parent != memory_dir]
+    log_step(args, '[2/2] Indexing all memory, knowledge, message, and picture records...')
+    try:
+        for path in md_files:
+            relative_path: Path = path.relative_to(memory_dir)
+            if len(relative_path.parts) < 2:
+                continue
+            category: str = ".".join(relative_path.parts[:-1])
+            stats = manager.add_or_update_file(category, path.stem, path.read_text(encoding="utf-8"))
+            file_stats.append(stats)
+            entries_created += int(stats.get("entries_created") or 0)
+            indexed_count += 1
+            if not args.json and getattr(args, "verbose_log", False):
+                print(
+                    render_placeholders(
+                        "  vectorized __CYAN__{path}__RESET__: entries __GREEN__{entries}__RESET__".format(
+                            path=stats.get("path") or path.as_posix(),
+                            entries=stats.get("entries_created") or 0,
+                        ),
+                        color_enabled,
+                    ),
+                )
+    finally:
+        manager.close()
+    knowledge_stats, knowledge_warnings = sync_all_knowledge_vectorstores(vectorstore_path=generation_path)
+    if knowledge_warnings:
+        raise RuntimeError("; ".join(knowledge_warnings))
+    message_stats = sync_all_message_vectors(db_path=generation_path, reset=False)
+    picture_stats = sync_picture_vectors(db_path=generation_path, reset=False)
+    return {
+        "indexed_files": indexed_count,
+        "entries_created": entries_created,
+        "entries_deleted": 0,
+        "total_discovered": len(md_files),
+        "files": file_stats,
+        "knowledge": knowledge_stats,
+        "messages": message_stats,
+        "pictures": picture_stats,
+        "warnings": [],
+    }

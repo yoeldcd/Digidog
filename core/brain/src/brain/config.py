@@ -35,6 +35,14 @@ GLOBAL_LOGS_DIR_NAME = "logs"
 """Core database subdirectory reserved for global log stores."""
 
 GLOBAL_VECTORSTORES_DIR_NAME = "vectorstores"
+PICTURE_STORAGE_DIR_NAME = "picture_storage"
+"""Core database subdirectory that owns the picture registry."""
+
+PICTURE_STORAGE_DB_NAME = "pictures.db"
+"""SQLite filename for picture metadata and descriptions."""
+
+PICTURES_DIR_NAME = "pictures"
+"""Agent-owned image library whose folders form picture domains."""
 INSTRUCTION_MIRRORS_DIR_NAME = "instruction_mirrors"
 INSTRUCTION_MIRRORS_FILE_NAME = "agent_prompt_mirrors.txt"
 """Core database subdirectory that owns global vector collections."""

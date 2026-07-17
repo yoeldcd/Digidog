@@ -27,7 +27,7 @@ function bootstrapBrainExplorer() {
     }
     app.context = {
         api,
-        state: new AppState()
+        state: new AppState(activePath || "")
     };
 }
 bootstrapBrainExplorer();
@@ -192,8 +192,13 @@ class BrainApiClient extends EventTarget {
         return this.request("/api/wikis", options);
     }
     /** Read persisted paid-voice messages. */
-    getVoiceMessages(options = {}) {
-        return this.request("/api/voice/messages", options);
+    getVoiceMessages(params = {}, options = {}) {
+        const query = toQueryString(params);
+        return this.request(`/api/voice/messages${query ? `?${query}` : ""}`, options);
+    }
+    /** Poll the daemon-confirmed avatar playback identity. */
+    getVoiceStatus(options = {}) {
+        return this.request("/api/voice/status", options);
     }
     /** Replay one retained daemon message without regenerating speech. */
     replayVoiceMessage(name) {
@@ -206,6 +211,14 @@ class BrainApiClient extends EventTarget {
     /** Stop active daemon replay without removing retained audio. */
     pauseVoiceReplay() {
         return this.request("/api/voice/pause", { method: "POST", forceRefresh: true });
+    }
+    /** Generate and immediately play audio for one persisted message. */
+    synthesizeVoiceMessage(messageId) {
+        return this.request("/api/voice/synthesize", {
+            method: "POST",
+            body: JSON.stringify({ messageId }),
+            forceRefresh: true
+        });
     }
     /** Build the safe media URL for one stored voice message. */
     voiceMessageUrl(name) {
@@ -341,6 +354,23 @@ class BrainApiClient extends EventTarget {
         const query = toQueryString(params);
         return this.request(`/api/query?${query}`, options);
     }
+    /** Read the canonical picture registry. */
+    pictures(params = {}, options = {}) {
+        const query = toQueryString(params);
+        return this.request(`/api/pictures${query ? `?${query}` : ""}`, options);
+    }
+    /** Persist one manual picture description. */
+    describePicture(pictureId, description) {
+        return this.request("/api/pictures/description", {
+            method: "POST",
+            body: JSON.stringify({ pictureId, description }),
+            forceRefresh: true
+        });
+    }
+    /** Build the opaque registry-backed URL for one picture. */
+    pictureUrl(pictureId) {
+        return `/api/pictures/file?id=${encodeURIComponent(pictureId)}`;
+    }
     /**
      * Read profile list.
      *
@@ -433,11 +463,36 @@ const __brainExplorerModule2=(()=>{let cache;return()=>{if(cache)return cache;
  * Lightweight event-driven presentation state for Brain Explorer.
  */
 const THEME_STORAGE_KEY = "brain_explorer_theme_v2";
+const PROJECT_ROUTE_STORAGE_PREFIX = "brain_explorer_project_route_v1:";
+const PERSISTABLE_ROUTES = [
+    "dashboard",
+    "messages",
+    "memory",
+    "knowledge",
+    "pictures",
+    "profiles",
+    "logs",
+    "backlog",
+    "wikis",
+    "settings"
+];
+/** Build the isolated local-storage key for one workspace's active view. */
+function projectRouteStorageKey(projectPath) {
+    return `${PROJECT_ROUTE_STORAGE_PREFIX}${projectPath.trim().toLocaleLowerCase()}`;
+}
+/** Restore one stable project route while rejecting stale or transient values. */
+function restoreProjectRoute(projectPath) {
+    if (!projectPath.trim())
+        return "dashboard";
+    const storedRoute = localStorage.getItem(projectRouteStorageKey(projectPath));
+    return storedRoute && PERSISTABLE_ROUTES.includes(storedRoute) ? storedRoute : "dashboard";
+}
 /**
  * AppState coordinates route, theme, and latest CLI result.
  */
 class AppState extends EventTarget {
-    #route = "dashboard";
+    #route;
+    #projectPath;
     #theme = this.#initialTheme();
     #lastResult = null;
     #pendingQuery = "";
@@ -447,6 +502,11 @@ class AppState extends EventTarget {
     #activeCommand = null;
     #diagnosticsOpen = false;
     #sidebarOpen = false;
+    constructor(projectPath = "") {
+        super();
+        this.#projectPath = projectPath.trim();
+        this.#route = restoreProjectRoute(this.#projectPath);
+    }
     /**
      * Get active route.
      *
@@ -538,6 +598,7 @@ class AppState extends EventTarget {
             return;
         }
         this.#route = route;
+        this.#persistProjectRoute(route);
         this.#emitChange("route");
     }
     /**
@@ -553,6 +614,7 @@ class AppState extends EventTarget {
             target: { ...target }
         };
         this.#route = route;
+        this.#persistProjectRoute(route);
         this.#emitChange("route");
     }
     /**
@@ -752,6 +814,12 @@ class AppState extends EventTarget {
         this.dispatchEvent(new CustomEvent(type, { detail: { type } }));
         this.dispatchEvent(new CustomEvent("change", { detail: { type } }));
     }
+    /** Persist only stable navigation views under the active project identity. */
+    #persistProjectRoute(route) {
+        if (!this.#projectPath || !PERSISTABLE_ROUTES.includes(route))
+            return;
+        localStorage.setItem(projectRouteStorageKey(this.#projectPath), route);
+    }
     /**
      * Resolve initial theme from local preference.
      *
@@ -766,7 +834,7 @@ class AppState extends EventTarget {
     }
 }
 
-cache=(()=>{return { AppState: AppState };})();return cache;};})();
+cache=(()=>{return { projectRouteStorageKey: projectRouteStorageKey, restoreProjectRoute: restoreProjectRoute, AppState: AppState };})();return cache;};})();
 const __brainExplorerModule3=(()=>{let cache;return()=>{if(cache)return cache;
 const { DashboardView } = __brainExplorerModule4();
 const { MemoryView } = __brainExplorerModule5();
@@ -778,13 +846,15 @@ const { BacklogView } = __brainExplorerModule10();
 const { SettingsView } = __brainExplorerModule11();
 const { WikisView } = __brainExplorerModule12();
 const { MessagesView } = __brainExplorerModule13();
-const { codeBlock, escapeHtml } = __brainExplorerModule14();
-const { icon } = __brainExplorerModule15();
-const { notificationText } = __brainExplorerModule16();
+const { PicturesView } = __brainExplorerModule14();
+const { codeBlock, escapeHtml } = __brainExplorerModule15();
+const { icon } = __brainExplorerModule16();
+const { notificationText } = __brainExplorerModule17();
 /**
  * @author Yoel David <yoeldcd@gmail.com>
  * @see https://x.com/SAY6267
  */
+
 
 
 
@@ -803,6 +873,7 @@ const ROUTES = [
     { id: "messages", label: "Mensajes", icon: "messageCircle", element: MessagesView.selector },
     { id: "memory", label: "Memoria", icon: "database", element: MemoryView.selector },
     { id: "knowledge", label: "Conocimiento", icon: "graph", element: KnowledgeView.selector },
+    { id: "pictures", label: "Pictures", icon: "camera", element: PicturesView.selector },
     { id: "query", label: "Resultados", icon: "search", element: QueryView.selector, nav: false },
     { id: "profiles", label: "Perfiles", icon: "users", element: ProfilesView.selector },
     { id: "logs", label: "Logs", icon: "document", element: LogsView.selector },
@@ -907,6 +978,8 @@ class BrainExplorerApp extends HTMLElement {
                                     <legend>Fuentes</legend>
                                     <label><input type="checkbox" name="search-source" value="memory" checked>Memoria</label>
                                     <label><input type="checkbox" name="search-source" value="knowledge" checked>Conocimiento</label>
+                                    <label><input type="checkbox" name="search-source" value="messages" checked>Mensajes</label>
+                                    <label><input type="checkbox" name="search-source" value="pictures" checked>Pictures</label>
                                 </fieldset>
                                 <fieldset>
                                     <legend>Modos</legend>
@@ -1530,8 +1603,8 @@ customElements.define(BrainExplorerApp.selector, BrainExplorerApp);
 
 cache=(()=>{return { BrainExplorerApp: BrainExplorerApp };})();return cache;};})();
 const __brainExplorerModule4=(()=>{let cache;return()=>{if(cache)return cache;
-const { escapeHtml } = __brainExplorerModule14();
-const { icon } = __brainExplorerModule15();
+const { escapeHtml } = __brainExplorerModule15();
+const { icon } = __brainExplorerModule16();
 /**
  * @author Yoel David <yoeldcd@gmail.com>
  * @see https://x.com/SAY6267
@@ -1997,9 +2070,9 @@ customElements.define(DashboardView.selector, DashboardView);
 
 cache=(()=>{return { DashboardView: DashboardView };})();return cache;};})();
 const __brainExplorerModule5=(()=>{let cache;return()=>{if(cache)return cache;
-const { compactLabel, escapeHtml, renderMarkdown } = __brainExplorerModule14();
-const { icon } = __brainExplorerModule15();
-const { StructureTree } = __brainExplorerModule17();
+const { compactLabel, escapeHtml, renderMarkdown } = __brainExplorerModule15();
+const { icon } = __brainExplorerModule16();
+const { StructureTree } = __brainExplorerModule18();
 /**
  * @author Yoel David <yoeldcd@gmail.com>
  * @see https://x.com/SAY6267
@@ -2868,9 +2941,9 @@ customElements.define(MemoryView.selector, MemoryView);
 
 cache=(()=>{return { MemoryView: MemoryView };})();return cache;};})();
 const __brainExplorerModule6=(()=>{let cache;return()=>{if(cache)return cache;
-const { escapeHtml } = __brainExplorerModule14();
-const { icon } = __brainExplorerModule15();
-const { StructureTree } = __brainExplorerModule17();
+const { escapeHtml } = __brainExplorerModule15();
+const { icon } = __brainExplorerModule16();
+const { StructureTree } = __brainExplorerModule18();
 /**
  * @author Yoel David <yoeldcd@gmail.com>
  * @see https://x.com/SAY6267
@@ -4899,15 +4972,15 @@ customElements.define(KnowledgeView.selector, KnowledgeView);
 
 cache=(()=>{return { KnowledgeView: KnowledgeView };})();return cache;};})();
 const __brainExplorerModule7=(()=>{let cache;return()=>{if(cache)return cache;
-const { escapeHtml, renderMarkdown } = __brainExplorerModule14();
-const { icon } = __brainExplorerModule15();
+const { escapeHtml, renderMarkdown } = __brainExplorerModule15();
+const { icon } = __brainExplorerModule16();
 /**
  * @author Yoel David <yoeldcd@gmail.com>
  * @see https://x.com/SAY6267
  */
 
 
-const DEFAULT_SOURCES = ["memory", "knowledge"];
+const DEFAULT_SOURCES = ["memory", "knowledge", "messages", "pictures"];
 const DEFAULT_MECHANISMS = ["graph", "vector", "text"];
 /** Render global search answers and grouped, traceable source results. */
 class QueryView extends HTMLElement {
@@ -4986,10 +5059,15 @@ class QueryView extends HTMLElement {
                 <main class="search-results-column scroll-area">${this.#renderResult()}</main>
             </section>
         `;
+        this.querySelectorAll("[data-open-picture]").forEach(button => {
+            button.addEventListener("click", () => {
+                this.#state?.setRouteTarget("pictures", { pictureId: button.getAttribute("data-open-picture") || "" });
+            });
+        });
     }
     #renderResult() {
         if (this.#result?.loading) {
-            return `<div class="loading-state search-loading"><span></span><strong>Buscando en memoria y conocimiento</strong><small>Preparando resultados...</small></div>`;
+            return `<div class="loading-state search-loading"><span></span><strong>Buscando en memoria, conocimiento y mensajes</strong><small>Preparando resultados...</small></div>`;
         }
         if (!this.#result) {
             return `<section class="search-empty">${icon("search")}<h2>Resultados</h2><p>Escribe una consulta en el buscador del encabezado para comenzar.</p></section>`;
@@ -5040,6 +5118,7 @@ class QueryView extends HTMLElement {
                                         <small>${escapeHtml(this.#resultOrigin(item))}</small>
                                     </div>
                                     ${item.rank !== undefined ? `<span class="result-rank" title="Relevancia">${Number(item.rank).toFixed(2)}</span>` : ""}
+                                    ${item.source === "pictures" && item.data?.id ? `<button class="result-open-button" data-open-picture="${escapeHtml(item.data.id)}">Abrir</button>` : ""}
                                 </li>
                             `).join("")}
                         </ol>
@@ -5052,7 +5131,15 @@ class QueryView extends HTMLElement {
         return item.sourceRef?.path || item.source_ref?.path || item.path || item.domain || item.kind || "Origen no especificado";
     }
     #sourceLabel(source) {
-        return source === "memory" ? "Memoria" : source === "knowledge" ? "Conocimiento" : "Otros resultados";
+        if (source === "memory")
+            return "Memoria";
+        if (source === "knowledge")
+            return "Conocimiento";
+        if (source === "messages")
+            return "Mensajes";
+        if (source === "pictures")
+            return "Pictures";
+        return "Otros resultados";
     }
     #mechanismLabel(mechanism) {
         return mechanism === "graph" ? "Grafo" : mechanism === "vector" ? "Vectorial" : mechanism === "text" ? "Texto" : mechanism;
@@ -5062,8 +5149,8 @@ customElements.define(QueryView.selector, QueryView);
 
 cache=(()=>{return { QueryView: QueryView };})();return cache;};})();
 const __brainExplorerModule8=(()=>{let cache;return()=>{if(cache)return cache;
-const { escapeHtml, renderMarkdown } = __brainExplorerModule14();
-const { icon } = __brainExplorerModule15();
+const { escapeHtml, renderMarkdown } = __brainExplorerModule15();
+const { icon } = __brainExplorerModule16();
 /**
  * @author Yoel David <yoeldcd@gmail.com>
  * @see https://x.com/SAY6267
@@ -5297,9 +5384,9 @@ customElements.define(ProfilesView.selector, ProfilesView);
 
 cache=(()=>{return { ProfilesView: ProfilesView };})();return cache;};})();
 const __brainExplorerModule9=(()=>{let cache;return()=>{if(cache)return cache;
-const { escapeHtml, optionTags, renderMarkdown } = __brainExplorerModule14();
-const { icon } = __brainExplorerModule15();
-const { StructureTree } = __brainExplorerModule17();
+const { escapeHtml, optionTags, renderMarkdown } = __brainExplorerModule15();
+const { icon } = __brainExplorerModule16();
+const { StructureTree } = __brainExplorerModule18();
 /**
  * @author Yoel David <yoeldcd@gmail.com>
  * @see https://x.com/SAY6267
@@ -5308,6 +5395,7 @@ const { StructureTree } = __brainExplorerModule17();
 
 
 void StructureTree;
+const LOG_MONTH_LABELS = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 /**
  * LogsView renders log domains as a structural tree plus one focused content pane.
  */
@@ -5326,6 +5414,8 @@ class LogsView extends HTMLElement {
     #hourFrom = "";
     #hourTo = "";
     #sortOrder = "desc";
+    #treeMode = "domain";
+    #selectedDatePath = "";
     #filtersOpen = false;
     #expandedNodes = new Set();
     #pendingTarget = null;
@@ -5549,23 +5639,29 @@ class LogsView extends HTMLElement {
             return `<p class="empty-state">No hay entradas para esos filtros.</p>`;
         }
         return entries.map(entry => `
-            <article class="log-entry-card">
-                <header>
-                    <div>
+            <details class="log-entry-card">
+                <summary class="log-entry-summary">
+                    <time class="log-date-badge">
+                        <strong>${escapeHtml(entry.date)}</strong>
+                        <span>${escapeHtml(entry.time)}</span>
+                    </time>
+                    <span class="log-entry-heading">
                         <strong>${escapeHtml(entry.title)}</strong>
-                        <small>${escapeHtml(entry.domain || this.#selectedDomain || "logs")}</small>
-                    </div>
-                    <time>${escapeHtml(`${entry.date} ${entry.time}`)}</time>
-                </header>
-                <div class="tag-row">
-                    <span>${escapeHtml(entry.type || "log")}</span>
-                    <span>${escapeHtml(entry.changeType || "registro")}</span>
+                        <span class="log-entry-tags">
+                            <span>${escapeHtml(entry.domain || this.#selectedDomain || "logs")}</span>
+                            <span>${escapeHtml(entry.type || "log")}</span>
+                            <span>${escapeHtml(entry.changeType || "registro")}</span>
+                        </span>
+                    </span>
+                    <span class="log-entry-chevron">${icon("chevronDown")}</span>
+                </summary>
+                <div class="log-entry-body">
+                    ${entry.why ? `<section><h2>Why</h2><div>${renderMarkdown(entry.why)}</div></section>` : ""}
+                    ${entry.description ? `<section><h2>Description</h2><div>${renderMarkdown(entry.description)}</div></section>` : ""}
+                    ${entry.impact ? `<section><h2>Impact</h2><div>${renderMarkdown(entry.impact)}</div></section>` : ""}
+                    ${this.#renderPictures(entry.pictures)}
                 </div>
-                ${entry.why ? `<section><h2>Why</h2><div>${renderMarkdown(entry.why)}</div></section>` : ""}
-                ${entry.description ? `<section><h2>Description</h2><div>${renderMarkdown(entry.description)}</div></section>` : ""}
-                ${entry.impact ? `<section><h2>Impact</h2><div>${renderMarkdown(entry.impact)}</div></section>` : ""}
-                ${this.#renderPictures(entry.pictures)}
-            </article>
+            </details>
         `).join("");
     }
     /**
@@ -5791,11 +5887,16 @@ class LogsView extends HTMLElement {
         }
         treeElement.model = {
             nodes: this.#treeNodes(),
-            selectedPath: this.#selectedDomain,
+            selectedPath: this.#treeMode === "date" ? this.#selectedDatePath : this.#selectedDomain,
             expandedPaths: this.#expandedNodes,
             toggleOnBranchSelect: true,
             title: "Logs",
-            toolbarActions: [{ id: "refresh-index", label: "Actualizar indice", icon: "refresh" }],
+            toolbarActions: [
+                { id: "tree-domain", label: "Agrupar por dominios", icon: "folder", active: this.#treeMode === "domain" },
+                { id: "tree-date", label: "Agrupar por fechas", icon: "clock", active: this.#treeMode === "date" },
+                { id: "refresh-index", label: "Actualizar indice", icon: "refresh" }
+            ],
+            sortDirection: this.#treeMode === "date" ? "desc" : "asc",
             defaultBranchIcon: "folder",
             defaultLeafIcon: "terminal",
             searchQuery: this.#filter,
@@ -5824,6 +5925,9 @@ class LogsView extends HTMLElement {
      * @returns {object[]} Tree node list.
      */
     #treeNodes() {
+        if (this.#treeMode === "date") {
+            return this.#dateTreeNodes();
+        }
         const toNode = node => {
             const children = Array.from(node.children.values())
                 .filter(child => this.#matchesTree(child))
@@ -5848,14 +5952,93 @@ class LogsView extends HTMLElement {
             .map(toNode);
     }
     /**
+     * Group the complete log index into year, month, day, and entry nodes.
+     *
+     * @returns {object[]} Shared tree nodes ordered from newest to oldest.
+     */
+    #dateTreeNodes() {
+        const years = new Map();
+        this.#indexEntries.forEach((entry, index) => {
+            const [date = "", ...timeParts] = String(entry.timestamp || "").split(" ");
+            const match = date.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+            if (!match) {
+                return;
+            }
+            const [, day, month, year] = match;
+            const time = timeParts.join(" ");
+            const yearNode = this.#ensureDateGroup(years, `logs-date:${year}`, year, "folder");
+            const monthNode = this.#ensureDateGroup(yearNode.children, `logs-date:${year}-${month}`, LOG_MONTH_LABELS[Number(month)] || month, "folder");
+            const dayNode = this.#ensureDateGroup(monthNode.children, `logs-date:${year}-${month}-${day}`, `${day} ${LOG_MONTH_LABELS[Number(month)] || month}`, "clock");
+            dayNode.entries.push({
+                id: `logs-date-entry:${index}:${date}:${time}:${entry.domain || "logs"}`,
+                path: `logs-date-entry:${date}:${time}:${entry.domain || "logs"}`,
+                label: entry.title || "Entrada de log",
+                timestamp: time,
+                sortKey: String(this.#hourValue(time)).padStart(4, "0"),
+                detail: entry.domain || "logs",
+                presentation: "log",
+                domain: entry.domain || "",
+                date,
+                time,
+                children: []
+            });
+        });
+        const project = group => {
+            const groups = Array.from(group.children.values())
+                .sort((left, right) => right.id.localeCompare(left.id))
+                .map(project);
+            const entries = [...group.entries].sort((left, right) => right.timestamp.localeCompare(left.timestamp));
+            return {
+                id: group.id,
+                path: group.id,
+                label: group.label,
+                sortKey: group.id,
+                icon: group.icon,
+                count: this.#countDateEntries(group),
+                sortDirection: "desc",
+                children: [...groups, ...entries]
+            };
+        };
+        return Array.from(years.values())
+            .sort((left, right) => right.id.localeCompare(left.id))
+            .map(project);
+    }
+    /**
+     * Create or return one mutable date-group accumulator.
+     *
+     * @param {Map<string, object>} groups Sibling group map.
+     * @param {string} id Stable tree identity.
+     * @param {string} label Visible group label.
+     * @param {string} iconName Registered icon name.
+     * @returns {object} Mutable group accumulator.
+     */
+    #ensureDateGroup(groups, id, label, iconName) {
+        if (!groups.has(id)) {
+            groups.set(id, { id, label, icon: iconName, children: new Map(), entries: [] });
+        }
+        return groups.get(id);
+    }
+    /**
+     * Count terminal log entries below one date group.
+     *
+     * @param {object} group Date-group accumulator.
+     * @returns {number} Descendant entry count.
+     */
+    #countDateEntries(group) {
+        return group.entries.length + Array.from(group.children.values())
+            .reduce((total, child) => total + this.#countDateEntries(child), 0);
+    }
+    /**
      * Count terminal records below one parsed tree node.
      *
      * @param {object} node Parsed node.
      * @returns {number} Descendant entry count.
      */
     #countTreeEntries(node) {
-        return (node.entryCount || 0) + Array.from(node.children.values())
-            .reduce((total, child) => total + this.#countTreeEntries(child), 0);
+        return this.#indexEntries.filter(entry => {
+            const domain = String(entry.domain || "");
+            return domain === node.path || domain.startsWith(`${node.path}.`);
+        }).length;
     }
     /**
      * Handle selection emitted by the shared tree.
@@ -5864,8 +6047,18 @@ class LogsView extends HTMLElement {
      * @returns {Promise<void>} Resolves after a selected domain loads.
      */
     async #onTreeSelected(event) {
-        const { path, branch } = event.detail;
+        const { path, branch, node } = event.detail;
         if (branch) {
+            return;
+        }
+        if (this.#treeMode === "date" && node?.date) {
+            this.#selectedDatePath = path;
+            this.#selectedDomain = node.domain;
+            this.#from = node.date;
+            this.#to = node.date;
+            this.#hourFrom = node.time || "";
+            this.#hourTo = node.time || "";
+            await this.#loadLogs(true, false);
             return;
         }
         const alreadySelected = path === this.#selectedDomain;
@@ -5891,6 +6084,16 @@ class LogsView extends HTMLElement {
      * @returns {void}
      */
     #onTreeToolbarAction(event) {
+        if (event.detail.action === "tree-domain" || event.detail.action === "tree-date") {
+            const nextMode = event.detail.action === "tree-date" ? "date" : "domain";
+            if (nextMode === this.#treeMode) {
+                return;
+            }
+            this.#treeMode = nextMode;
+            this.#expandedNodes.clear();
+            this.#render();
+            return;
+        }
         if (event.detail.action === "refresh-index") {
             this.#loadIndex(true);
         }
@@ -6120,10 +6323,10 @@ customElements.define(LogsView.selector, LogsView);
 
 cache=(()=>{return { LogsView: LogsView };})();return cache;};})();
 const __brainExplorerModule10=(()=>{let cache;return()=>{if(cache)return cache;
-const { escapeHtml } = __brainExplorerModule14();
-const { icon } = __brainExplorerModule15();
-const { BacklogPip } = __brainExplorerModule18();
-const { StructureTree } = __brainExplorerModule17();
+const { escapeHtml } = __brainExplorerModule15();
+const { icon } = __brainExplorerModule16();
+const { BacklogPip } = __brainExplorerModule19();
+const { StructureTree } = __brainExplorerModule18();
 /**
  * @author Yoel David <yoeldcd@gmail.com>
  * @see https://x.com/SAY6267
@@ -7600,8 +7803,8 @@ customElements.define(BacklogView.selector, BacklogView);
 
 cache=(()=>{return { BacklogView: BacklogView };})();return cache;};})();
 const __brainExplorerModule11=(()=>{let cache;return()=>{if(cache)return cache;
-const { escapeHtml } = __brainExplorerModule14();
-const { icon } = __brainExplorerModule15();
+const { escapeHtml } = __brainExplorerModule15();
+const { icon } = __brainExplorerModule16();
 /**
  * @author Yoel David <yoeldcd@gmail.com>
  * @see https://x.com/SAY6267
@@ -7696,8 +7899,8 @@ customElements.define(SettingsView.selector, SettingsView);
 
 cache=(()=>{return { SettingsView: SettingsView };})();return cache;};})();
 const __brainExplorerModule12=(()=>{let cache;return()=>{if(cache)return cache;
-const { escapeHtml } = __brainExplorerModule14();
-const { icon } = __brainExplorerModule15();
+const { escapeHtml } = __brainExplorerModule15();
+const { icon } = __brainExplorerModule16();
 /**
  * @author Yoel David <yoeldcd@gmail.com>
  * @see https://x.com/SAY6267
@@ -7918,12 +8121,14 @@ customElements.define(WikisView.selector, WikisView);
 
 cache=(()=>{return { WikisView: WikisView };})();return cache;};})();
 const __brainExplorerModule13=(()=>{let cache;return()=>{if(cache)return cache;
-const { escapeHtml, renderMarkdown } = __brainExplorerModule14();
-const { icon } = __brainExplorerModule15();
+const { StructureTree } = __brainExplorerModule18();
+const { escapeHtml, renderMarkdown } = __brainExplorerModule15();
+const { icon } = __brainExplorerModule16();
 /**
  * @author Yoel David <yoeldcd@gmail.com>
  * @see https://x.com/SAY6267
  */
+
 
 
 /** Browse, inspect, copy, download, and replay persisted voice messages. */
@@ -7935,14 +8140,24 @@ class MessagesView extends HTMLElement {
     #state = null;
     #messages = [];
     #speaks = [];
+    #history = [];
+    #sessions = [];
+    #selectedSessionId = "";
     #loading = false;
     #playingName = "";
     #refreshTimer = null;
+    #statusTimer = null;
+    #activeSpeakId = "";
+    #serviceState = "stopped";
     #expandedIds = new Set();
+    #expandedTreePaths = new Set();
+    #generatingAudioIds = new Set();
+    #generatedAudioSpeakIds = new Map();
     set context(context) {
         this.#api = context.api;
         this.#state = context.state;
         void this.#loadMessages();
+        void this.#pollVoiceStatus();
     }
     connectedCallback() {
         this.#render();
@@ -7951,6 +8166,38 @@ class MessagesView extends HTMLElement {
         this.#stopAudio();
         if (this.#refreshTimer !== null)
             window.clearTimeout(this.#refreshTimer);
+        if (this.#statusTimer !== null)
+            window.clearTimeout(this.#statusTimer);
+    }
+    /** Synchronize playback controls exclusively from the daemon's latest status. */
+    async #pollVoiceStatus() {
+        if (!this.#api)
+            return;
+        if (this.#statusTimer !== null)
+            window.clearTimeout(this.#statusTimer);
+        this.#statusTimer = null;
+        try {
+            const response = await this.#api.getVoiceStatus({ forceRefresh: true, silent: true });
+            const activeSpeakId = response.data?.activeSpeakId ?? "";
+            const serviceState = response.data?.state ?? "stopped";
+            const playbackActive = ["preparing", "speaking", "muted_replay"].includes(serviceState);
+            const playingName = playbackActive
+                ? this.#messages.find(message => message.speakId === activeSpeakId)?.name ?? ""
+                : "";
+            if (activeSpeakId !== this.#activeSpeakId
+                || serviceState !== this.#serviceState
+                || playingName !== this.#playingName) {
+                this.#activeSpeakId = activeSpeakId;
+                this.#serviceState = serviceState;
+                this.#playingName = playingName;
+                this.#render();
+            }
+        }
+        finally {
+            if (this.isConnected) {
+                this.#statusTimer = window.setTimeout(() => void this.#pollVoiceStatus(), 750);
+            }
+        }
     }
     async #loadMessages(silent = false) {
         if (!this.#api)
@@ -7963,9 +8210,19 @@ class MessagesView extends HTMLElement {
             this.#render();
         }
         try {
-            const response = await this.#api.getVoiceMessages({ forceRefresh: true, silent });
+            const selected = this.#sessions.find(session => session.id === this.#selectedSessionId);
+            const params = selected ? { date: selected.date, chatId: selected.chatId } : {};
+            const response = await this.#api.getVoiceMessages(params, { forceRefresh: true, silent });
             this.#messages = response.data?.messages ?? [];
             this.#speaks = response.data?.speaks ?? [];
+            this.#history = response.data?.history ?? [];
+            this.#sessions = response.data?.sessions ?? [];
+            if (!this.#selectedSessionId && this.#sessions.length) {
+                this.#selectedSessionId = this.#sessions[0].id;
+                this.#expandSessionPath(this.#sessions[0]);
+                await this.#loadMessages(true);
+                return;
+            }
             this.#state?.setLastResult(response);
         }
         finally {
@@ -7978,23 +8235,29 @@ class MessagesView extends HTMLElement {
     #render() {
         this.innerHTML = `
             <section class="page-surface messages-console">
-                <header class="view-header messages-header">
-                    <h2>Registro de Messages</h2>
-                    <button data-action="refresh-messages" class="compact-action" title="Actualizar mensajes" aria-label="Actualizar mensajes">${icon("refresh")}</button>
-                </header>
-                <main class="voice-message-list">
-                    ${this.#loading ? `<div class="loading-state"><span></span><strong>Cargando mensajes...</strong></div>` : this.#renderMessages()}
-                </main>
+                <div class="structure-layout messages-structure">
+                    <aside class="structure-tree" aria-label="Sesiones de mensajes">
+                        <brain-structure-tree data-role="message-session-tree"></brain-structure-tree>
+                    </aside>
+                    <main class="structure-content">
+                        <header class="content-head">
+                            <strong>${escapeHtml(this.#selectedSessionLabel())}</strong>
+                            <span>${this.#selectedSessionId && this.#history.length ? `${this.#history.length} mensajes` : ""}</span>
+                        </header>
+                        <section class="voice-message-list" aria-label="Mensajes de la sesion">
+                            ${this.#loading ? `<div class="loading-state"><span></span><strong>Cargando mensajes...</strong></div>` : this.#renderMessages()}
+                        </section>
+                    </main>
+                </div>
             </section>
         `;
-        this.querySelector("[data-action='refresh-messages']")?.addEventListener("click", () => void this.#loadMessages());
         this.querySelectorAll("[data-action='play-message']").forEach(button => {
             button.addEventListener("click", () => void this.#toggleMessage(button.getAttribute("data-name") || ""));
         });
         this.querySelectorAll(".voice-message-item").forEach(item => {
             item.addEventListener("click", event => {
                 const target = event.target instanceof Element ? event.target : null;
-                if (target?.closest(".voice-message-actions"))
+                if (target?.closest(".voice-message-actions, .voice-message-leading-action"))
                     return;
                 this.#toggleExpandedMessage(item.getAttribute("data-message-id") || "");
             });
@@ -8002,97 +8265,295 @@ class MessagesView extends HTMLElement {
         this.querySelectorAll("[data-action='copy-message']").forEach(button => {
             button.addEventListener("click", () => void this.#copyMessage(button));
         });
+        this.querySelectorAll("[data-action='generate-message-audio']").forEach(button => {
+            button.addEventListener("click", () => {
+                void this.#generateMessageAudio(button.getAttribute("data-message-id") || "");
+            });
+        });
+        this.#configureTree();
     }
     #renderMessages() {
-        if (!this.#messages.length && !this.#speaks.length) {
-            return `<div class="voice-empty-state">${icon("messageCircle")}<strong>No hay mensajes almacenados</strong></div>`;
+        if (!this.#selectedSessionId) {
+            return `<div class="voice-empty-state">${icon("messageCircle")}<strong>Selecciona una sesion</strong></div>`;
+        }
+        if (!this.#history.length) {
+            return `<div class="voice-empty-state">${icon("messageCircle")}<strong>Esta sesion no contiene mensajes</strong></div>`;
         }
         const pairedNames = new Set();
-        const retainedItems = this.#speaks.map(speak => {
-            const message = this.#messages.find(candidate => candidate.speakId === speak.id);
+        const persistedItems = this.#history.map(record => {
+            const speak = this.#speaks.find(candidate => candidate.id === record.id) ?? null;
+            const generatedSpeakId = this.#generatedAudioSpeakIds.get(record.id);
+            const message = this.#messages.find(candidate => candidate.speakId === record.id || candidate.speakId === generatedSpeakId);
             if (message)
                 pairedNames.add(message.name);
-            return this.#renderMessageItem(speak.id, speak, message);
+            return this.#renderMessageItem(record, speak, message);
         });
-        const legacyItems = this.#messages
-            .filter(message => !pairedNames.has(message.name))
-            .map(message => this.#renderMessageItem(message.id ?? message.name, null, message));
-        return [...retainedItems, ...legacyItems].join("");
+        return persistedItems.join("");
     }
-    #renderMessageItem(id, speak, message) {
+    /** Project durable summaries into the shared Explorer tree contract. */
+    #sessionTreeNodes() {
+        const years = new Map();
+        this.#sessions.forEach(session => {
+            const [year, month, day] = session.date.split("-");
+            if (!years.has(year))
+                years.set(year, new Map());
+            const months = years.get(year);
+            if (!months.has(month))
+                months.set(month, new Map());
+            const days = months.get(month);
+            if (!days.has(day))
+                days.set(day, []);
+            days.get(day).push(session);
+        });
+        return [...years.entries()].map(([year, months]) => ({
+            id: `messages/${year}`,
+            path: `messages/${year}`,
+            label: year,
+            icon: "folder",
+            count: [...months.values()].reduce((total, days) => total + [...days.values()].flat().length, 0),
+            children: [...months.entries()].map(([month, days]) => ({
+                id: `messages/${year}/${month}`,
+                path: `messages/${year}/${month}`,
+                label: this.#monthLabel(month),
+                icon: "folder",
+                count: [...days.values()].flat().length,
+                children: [...days.entries()].map(([day, sessions]) => ({
+                    id: `messages/${year}/${month}/${day}`,
+                    path: `messages/${year}/${month}/${day}`,
+                    label: `Dia ${day}`,
+                    icon: "folder",
+                    count: sessions.length,
+                    children: sessions.map(session => ({
+                        id: session.id,
+                        path: session.id,
+                        label: session.chatId ? session.label : `Sesion ${this.#formatTime(session.startedAt)}`,
+                        icon: "messageCircle",
+                        count: session.messageCount
+                    }))
+                }))
+            }))
+        }));
+    }
+    /** Configure the reusable structural tree with message session nodes. */
+    #configureTree() {
+        const tree = this.querySelector("[data-role='message-session-tree']");
+        if (!(tree instanceof StructureTree))
+            return;
+        tree.model = {
+            nodes: this.#sessionTreeNodes(),
+            selectedPath: this.#selectedSessionId,
+            expandedPaths: this.#expandedTreePaths,
+            toggleOnBranchSelect: true,
+            title: "Mensajes",
+            toolbarActions: [{ id: "refresh", label: "Actualizar mensajes", icon: "refresh" }],
+            defaultBranchIcon: "folder",
+            defaultLeafIcon: "messageCircle",
+            searchPlaceholder: "Buscar sesiones...",
+            emptyText: this.#loading ? "Cargando sesiones..." : "No hay sesiones almacenadas."
+        };
+        tree.addEventListener("brain-tree-select", event => {
+            if (!event.detail.branch)
+                void this.#selectSession(event.detail.path);
+        });
+        tree.addEventListener("brain-tree-toolbar-action", event => {
+            if (event.detail.action === "refresh")
+                void this.#loadMessages();
+        });
+    }
+    /** Expand the ancestors of the active session in the shared tree. */
+    #expandSessionPath(session) {
+        const [year, month, day] = session.date.split("-");
+        this.#expandedTreePaths.add(`messages/${year}`);
+        this.#expandedTreePaths.add(`messages/${year}/${month}`);
+        this.#expandedTreePaths.add(`messages/${year}/${month}/${day}`);
+    }
+    /** Return the content-panel heading for the selected session. */
+    #selectedSessionLabel() {
+        const session = this.#sessions.find(candidate => candidate.id === this.#selectedSessionId);
+        if (!session)
+            return "Selecciona una sesion";
+        return session.chatId ? session.label : `Sesion del ${session.date} a las ${this.#formatTime(session.startedAt)}`;
+    }
+    /** Select a durable session and request only its messages. */
+    async #selectSession(id) {
+        if (!id || id === this.#selectedSessionId)
+            return;
+        this.#selectedSessionId = id;
+        const selected = this.#sessions.find(session => session.id === id);
+        if (selected)
+            this.#expandSessionPath(selected);
+        this.#history = [];
+        await this.#loadMessages();
+    }
+    #renderMessageItem(record, speak, message) {
+        const id = record.id;
         const expanded = this.#expandedIds.has(id);
         const name = message?.name ?? "";
-        const createdAt = message?.createdAt ?? speak?.createdAt ?? "";
-        const text = speak?.text ?? message?.text ?? "Mensaje histórico sin transcripción";
+        const createdAt = record.created_at;
+        const text = record.text;
         const status = speak?.status ?? "DONE";
+        const generatingAudio = this.#generatingAudioIds.has(id);
+        const sourceLabel = record.source_command
+            ? `${record.source_command}:${record.source_phase || "output"}`
+            : record.emotion || "speak";
         return `
             <article class="voice-message-item ${name === this.#playingName ? "is-playing" : ""} ${expanded ? "is-expanded" : ""}" data-message-id="${escapeHtml(id)}">
-                <button class="voice-message-summary" data-action="toggle-message-details" data-id="${escapeHtml(id)}" aria-expanded="${expanded}">
-                    ${icon(expanded ? "chevronDown" : "chevronRight")}
-                    ${expanded ? `<span class="voice-message-spacer"></span>` : `<span class="voice-message-preview">${escapeHtml(text)}</span>`}
-                    <span class="voice-speak-status is-${status.toLowerCase()}">${escapeHtml(status)}</span>
-                </button>
+                <div class="voice-message-header">
+                    ${expanded
+            ? `<span class="voice-message-leading-placeholder" aria-hidden="true"></span>`
+            : this.#renderLeadingAudioAction(id, name, generatingAudio)}
+                    <button class="voice-message-summary" data-action="toggle-message-details" data-id="${escapeHtml(id)}" aria-expanded="${expanded}">
+                        ${expanded ? `<span class="voice-message-spacer"></span>` : `<span class="voice-message-preview">${escapeHtml(text)}</span>`}
+                        <span class="voice-speak-status is-${status.toLowerCase()}">${escapeHtml(sourceLabel)}</span>
+                        <time class="voice-message-time" datetime="${escapeHtml(createdAt)}">${escapeHtml(this.#formatTime(createdAt))}</time>
+                    </button>
+                </div>
                 ${expanded ? `
                     <div class="voice-message-detail">
                         <div class="voice-message-markdown">${renderMarkdown(text)}</div>
                         ${speak?.error ? `<section class="voice-error-detail" role="alert"><strong>Detalle del error</strong><pre>${escapeHtml(speak.error)}</pre></section>` : ""}
                         <footer class="voice-message-footer">
                             <div class="voice-message-actions">
-                                <button class="voice-icon-action" data-action="play-message" data-name="${escapeHtml(name)}" ${name ? "" : "disabled"} title="Reproducir mensaje" aria-label="Reproducir mensaje">${icon(name === this.#playingName ? "pause" : "play")}</button>
+                                ${name
+            ? `<button class="voice-icon-action" data-action="play-message" data-name="${escapeHtml(name)}" title="Reproducir mensaje" aria-label="Reproducir mensaje">${icon(name === this.#playingName ? "pause" : "play")}</button>`
+            : `<button class="voice-icon-action" data-action="generate-message-audio" data-message-id="${escapeHtml(id)}" ${generatingAudio ? "disabled" : ""} title="Generar audio" aria-label="Generar audio">${icon("volume")}</button>`}
                                 ${message ? `<a class="voice-download-button labeled" href="${this.#api?.voiceMessageUrl(message.name) ?? "#"}" download="${escapeHtml(message.name)}" title="Descargar mensaje">${icon("download")} ${this.#formatBytes(message.sizeBytes)}</a>` : ""}
                                 <button class="voice-icon-action" data-action="copy-message" data-text="${escapeHtml(text)}" title="Copiar mensaje" aria-label="Copiar mensaje">${icon("copy")}</button>
                             </div>
-                            <time datetime="${escapeHtml(createdAt)}">${escapeHtml(this.#formatTime(createdAt))}</time>
                         </footer>
                     </div>
                 ` : ""}
             </article>
         `;
     }
+    #renderLegacyMessageItem(message) {
+        const createdAt = message.createdAt;
+        const text = message.text ?? "Audio histórico sin transcripción";
+        const id = message.id ?? message.name;
+        const expanded = this.#expandedIds.has(id);
+        return `
+            <article class="voice-message-item ${message.name === this.#playingName ? "is-playing" : ""} ${expanded ? "is-expanded" : ""}" data-message-id="${escapeHtml(id)}">
+                <div class="voice-message-header">
+                    ${expanded
+            ? `<span class="voice-message-leading-placeholder" aria-hidden="true"></span>`
+            : this.#renderLeadingAudioAction(id, message.name, false)}
+                    <button class="voice-message-summary" data-action="toggle-message-details" data-id="${escapeHtml(id)}" aria-expanded="${expanded}">
+                        <span class="voice-message-preview">${escapeHtml(text)}</span>
+                        <span class="voice-speak-status is-done">audio</span>
+                        <time class="voice-message-time" datetime="${escapeHtml(createdAt)}">${escapeHtml(this.#formatTime(createdAt))}</time>
+                    </button>
+                </div>
+                ${expanded ? `
+                    <div class="voice-message-detail">
+                        <div class="voice-message-markdown">${renderMarkdown(text)}</div>
+                        <footer class="voice-message-footer">
+                            <div class="voice-message-actions">
+                                <button class="voice-icon-action" data-action="play-message" data-name="${escapeHtml(message.name)}" title="Reproducir mensaje" aria-label="Reproducir mensaje">${icon(message.name === this.#playingName ? "pause" : "play")}</button>
+                                <a class="voice-download-button labeled" href="${this.#api?.voiceMessageUrl(message.name) ?? "#"}" download="${escapeHtml(message.name)}" title="Descargar mensaje">${icon("download")} ${this.#formatBytes(message.sizeBytes)}</a>
+                                <button class="voice-icon-action" data-action="copy-message" data-text="${escapeHtml(text)}" title="Copiar mensaje" aria-label="Copiar mensaje">${icon("copy")}</button>
+                            </div>
+                        </footer>
+                    </div>
+                ` : ""}
+            </article>
+        `;
+    }
+    /** Render the primary list action as replay or on-demand audio generation. */
+    #renderLeadingAudioAction(id, name, generatingAudio) {
+        if (name) {
+            const playing = name === this.#playingName;
+            return `<button class="voice-icon-action voice-message-leading-action" data-action="play-message" data-name="${escapeHtml(name)}" title="${playing ? "Pausar mensaje" : "Reproducir mensaje"}" aria-label="${playing ? "Pausar mensaje" : "Reproducir mensaje"}">${icon(playing ? "pause" : "play")}</button>`;
+        }
+        return `<button class="voice-icon-action voice-message-leading-action" data-action="generate-message-audio" data-message-id="${escapeHtml(id)}" ${generatingAudio ? "disabled" : ""} title="Generar y reproducir audio" aria-label="Generar y reproducir audio">${icon("play")}</button>`;
+    }
     async #copyMessage(button) {
         await navigator.clipboard.writeText(button.getAttribute("data-text") || "");
         button.setAttribute("title", "Copiado");
+    }
+    /** Request one non-persistent audio rendering for a historical message. */
+    async #generateMessageAudio(id) {
+        if (!this.#api || !id || this.#generatingAudioIds.has(id))
+            return;
+        this.#generatingAudioIds.add(id);
+        this.#render();
+        try {
+            const result = await this.#api.synthesizeVoiceMessage(id);
+            this.#state?.setLastResult(result);
+            const speakId = result.data?.speakId ?? "";
+            if (result.ok && speakId) {
+                this.#generatedAudioSpeakIds.set(id, speakId);
+                await this.#waitForGeneratedAudio(speakId);
+            }
+        }
+        finally {
+            this.#generatingAudioIds.delete(id);
+            this.#render();
+        }
+    }
+    /** Refresh briefly until the daemon exposes the newly retained MP3. */
+    async #waitForGeneratedAudio(speakId) {
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+            await new Promise(resolve => window.setTimeout(resolve, 500));
+            await this.#loadMessages(true);
+            if (this.#messages.some(message => message.speakId === speakId))
+                return;
+        }
     }
     /** Toggle one bubble while restoring keyboard focus after the DOM refresh. */
     #toggleExpandedMessage(id) {
         if (!id)
             return;
-        if (this.#expandedIds.has(id))
-            this.#expandedIds.delete(id);
-        else
+        const willExpand = !this.#expandedIds.has(id);
+        if (willExpand)
             this.#expandedIds.add(id);
+        else
+            this.#expandedIds.delete(id);
         this.#render();
+        requestAnimationFrame(() => this.#focusMessage(id, willExpand));
+    }
+    /** Focus one summary and keep its expanded card inside the message viewport. */
+    #focusMessage(id, expanded) {
         const summary = Array.from(this.querySelectorAll(".voice-message-summary"))
             .find(candidate => candidate.getAttribute("data-id") === id);
         summary?.focus({ preventScroll: true });
+        if (!expanded)
+            return;
+        const article = summary?.closest(".voice-message-item");
+        const container = article?.closest(".voice-message-list");
+        if (!article || !container)
+            return;
+        const articleBounds = article.getBoundingClientRect();
+        const containerBounds = container.getBoundingClientRect();
+        if (articleBounds.top < containerBounds.top) {
+            container.scrollTop -= containerBounds.top - articleBounds.top;
+        }
+        else if (articleBounds.bottom > containerBounds.bottom) {
+            container.scrollTop += articleBounds.bottom - containerBounds.bottom;
+        }
     }
     async #toggleMessage(name) {
         if (!this.#api || !name)
             return;
-        if (this.#playingName === name) {
+        if (this.#playingName === name && ["preparing", "speaking", "muted_replay"].includes(this.#serviceState)) {
             await this.#api.pauseVoiceReplay();
-            this.#stopAudio();
-            this.#render();
             return;
         }
-        this.#stopAudio();
-        this.#playingName = name;
-        this.#render();
         try {
-            const result = await this.#api.replayVoiceMessage(name);
-            if (!result.ok)
-                this.#stopAudio();
+            await this.#api.replayVoiceMessage(name);
         }
         catch {
-            this.#stopAudio();
+            return;
         }
-        this.#render();
     }
     #stopAudio() {
         this.#playingName = "";
     }
     #formatTime(value) {
         return new Intl.DateTimeFormat("es", { hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+    }
+    #monthLabel(value) {
+        const date = new Date(2026, Number(value) - 1, 1);
+        return new Intl.DateTimeFormat("es", { month: "long" }).format(date);
     }
     #formatBytes(value) {
         return `${Math.max(1, Math.round(value / 1024))} KB`;
@@ -8102,6 +8563,465 @@ customElements.define(MessagesView.selector, MessagesView);
 
 cache=(()=>{return { MessagesView: MessagesView };})();return cache;};})();
 const __brainExplorerModule14=(()=>{let cache;return()=>{if(cache)return cache;
+const { escapeHtml } = __brainExplorerModule15();
+const { icon } = __brainExplorerModule16();
+const { StructureTree } = __brainExplorerModule18();
+/** Modern registry-backed picture browser and carousel. */
+
+
+
+void StructureTree;
+class PicturesView extends HTMLElement {
+    static get selector() {
+        return "brain-pictures-view";
+    }
+    #api = null;
+    #state = null;
+    #pictures = [];
+    #picturesByDomain = new Map();
+    #domains = {};
+    #domain = "";
+    #domainFocused = false;
+    #selectedId = "";
+    #loading = false;
+    #search = "";
+    #expandedDomains = new Set(["pictures:all"]);
+    #imageHydrationToken = 0;
+    #viewerOpen = false;
+    #viewerScale = 1;
+    #viewerX = 0;
+    #viewerY = 0;
+    #viewerPointerId = null;
+    #viewerScaleTimer = null;
+    #viewerPointerStart = { x: 0, y: 0, originX: 0, originY: 0 };
+    #handleKeyDown = (event) => {
+        if (this.#viewerOpen) {
+            if (event.key === "Escape")
+                this.#closeViewer();
+            if (event.key === "+" || event.key === "=")
+                this.#zoomViewer(0.25);
+            if (event.key === "-")
+                this.#zoomViewer(-0.25);
+            if (event.key === "0")
+                this.#resetViewer();
+            return;
+        }
+        if (event.key === "ArrowLeft")
+            this.#selectRelative(-1);
+        if (event.key === "ArrowRight")
+            this.#selectRelative(1);
+    };
+    set context(context) {
+        this.#api = context.api;
+        this.#state = context.state;
+        const target = this.#state?.consumeRouteTarget?.("pictures") || null;
+        this.#selectedId = String(target?.pictureId || "");
+        this.#render();
+        void this.#loadStructure();
+    }
+    connectedCallback() {
+        window.addEventListener("keydown", this.#handleKeyDown);
+        this.#render();
+    }
+    disconnectedCallback() {
+        window.removeEventListener("keydown", this.#handleKeyDown);
+        if (this.#viewerScaleTimer !== null)
+            clearTimeout(this.#viewerScaleTimer);
+    }
+    /** Load the complete hierarchy once without eagerly returning picture records. */
+    async #loadStructure(forceRefresh = false) {
+        if (!this.#api)
+            return;
+        this.#loading = true;
+        this.#render();
+        const response = await this.#api.pictures({ structure_only: true, refresh: forceRefresh }, { forceRefresh: true, commandLabel: "Pictures structure" });
+        this.#domains = response.data?.domains ?? {};
+        if (forceRefresh)
+            this.#picturesByDomain.clear();
+        this.#state?.setLastResult(response);
+        this.#loading = false;
+        this.#render();
+        if (this.#selectedId)
+            await this.#loadPictureTarget(this.#selectedId);
+    }
+    /** Resolve a routed picture to its domain without loading the global registry. */
+    async #loadPictureTarget(pictureId) {
+        if (!this.#api)
+            return;
+        const response = await this.#api.pictures({ picture_id: pictureId }, { forceRefresh: true, commandLabel: "Picture target", silent: true });
+        const target = response.data?.pictures?.[0];
+        if (!target) {
+            this.#selectedId = "";
+            return;
+        }
+        this.#domain = target.domain;
+        this.#domainFocused = true;
+        await this.#loadDomain(target.domain, false, pictureId);
+    }
+    /** Hydrate and cache one domain only when its tree item receives focus. */
+    async #loadDomain(domain, forceRefresh = false, preferredId = "") {
+        if (!this.#api)
+            return;
+        const cached = this.#picturesByDomain.get(domain);
+        if (cached && !forceRefresh) {
+            this.#pictures = cached;
+            this.#selectLoadedDomain(preferredId);
+            this.#render();
+            return;
+        }
+        this.#loading = true;
+        this.#render();
+        const response = await this.#api.pictures({ domain }, { forceRefresh: true, commandLabel: `Pictures domain: ${domain || "all"}` });
+        this.#pictures = response.data?.pictures ?? [];
+        this.#picturesByDomain.set(domain, this.#pictures);
+        this.#selectLoadedDomain(preferredId);
+        this.#state?.setLastResult(response);
+        this.#loading = false;
+        this.#render();
+    }
+    /** Preserve a routed/current selection when it belongs to the loaded domain. */
+    #selectLoadedDomain(preferredId = "") {
+        const candidate = preferredId || this.#selectedId;
+        this.#selectedId = this.#pictures.some(picture => picture.id === candidate)
+            ? candidate
+            : this.#pictures[0]?.id ?? "";
+    }
+    #selected() {
+        return this.#pictures.find(picture => picture.id === this.#selectedId) ?? null;
+    }
+    #selectRelative(delta) {
+        if (!this.#pictures.length)
+            return;
+        const index = Math.max(0, this.#pictures.findIndex(picture => picture.id === this.#selectedId));
+        const next = (index + delta + this.#pictures.length) % this.#pictures.length;
+        this.#selectPicture(this.#pictures[next].id);
+    }
+    /** Update an existing carousel in place and hydrate its raster when ready. */
+    #selectPicture(pictureId) {
+        const picture = this.#pictures.find(candidate => candidate.id === pictureId);
+        if (!picture || picture.id === this.#selectedId)
+            return;
+        this.#selectedId = picture.id;
+        this.#hydrateSelection(picture);
+        this.#focusSelectedThumbnail();
+    }
+    #render() {
+        const selected = this.#selected();
+        const selectedIndex = selected ? this.#pictures.findIndex(picture => picture.id === selected.id) : -1;
+        this.innerHTML = `
+            <section class="page-surface pictures-console">
+                <div class="structure-layout pictures-layout">
+                    <aside class="structure-tree pictures-domains" aria-label="Dominios de pictures">
+                        <div class="tree-list scroll-list">
+                            <brain-structure-tree data-role="pictures-domain-tree"></brain-structure-tree>
+                        </div>
+                    </aside>
+                    <main class="pictures-stage">
+                    ${this.#loading ? `<div class="loading-state"><span></span><strong>Sincronizando pictures...</strong></div>` : selected ? `
+                        <section class="picture-carousel" aria-label="Carrusel de pictures">
+                            <header>
+                                <div><span class="status-pill" data-role="picture-domain">${escapeHtml(selected.domain)}</span><strong data-role="picture-filename">${escapeHtml(selected.filename)}</strong></div>
+                                <span data-role="picture-position">${selectedIndex + 1} / ${this.#pictures.length}</span>
+                            </header>
+                            <div class="picture-viewport">
+                                <button class="carousel-arrow is-previous" data-action="previous-picture" aria-label="Picture anterior">${icon("chevronRight")}</button>
+                                <div class="picture-render-layer">
+                                    <button class="picture-render-trigger" data-action="open-picture-viewer" aria-label="Abrir ${escapeHtml(selected.filename)} en visor fullscreen">
+                                        <img data-role="selected-picture-image" src="${this.#api?.pictureUrl(selected.id) ?? ""}" alt="${escapeHtml(selected.description || selected.filename)}" loading="eager" decoding="async" fetchpriority="high">
+                                    </button>
+                                </div>
+                                <button class="carousel-arrow is-next" data-action="next-picture" aria-label="Picture siguiente">${icon("chevronRight")}</button>
+                            </div>
+                            <div class="picture-thumbnails" role="listbox" aria-label="Miniaturas">
+                                ${this.#pictures.map(picture => `
+                                    <button role="option" aria-selected="${picture.id === selected.id}" data-picture-id="${escapeHtml(picture.id)}" title="${escapeHtml(picture.filename)}">
+                                        <img src="${this.#api?.pictureUrl(picture.id) ?? ""}" alt="" loading="lazy" decoding="async" fetchpriority="low">
+                                    </button>
+                                `).join("")}
+                            </div>
+                        </section>
+                        <aside class="picture-inspector">
+                            <header><strong>Inspector</strong><span data-role="picture-dimensions">${selected.width} × ${selected.height}</span></header>
+                            <dl>
+                                <div><dt>Ruta</dt><dd data-role="picture-path">${escapeHtml(selected.relative_path)}</dd></div>
+                                <div><dt>Tipo</dt><dd data-role="picture-mime">${escapeHtml(selected.mime_type)}</dd></div>
+                                <div><dt>Tamaño</dt><dd data-role="picture-size">${this.#formatBytes(selected.size_bytes)}</dd></div>
+                                <div><dt>Descripción</dt><dd data-role="picture-description-source">${escapeHtml(selected.description_source || "pendiente")}</dd></div>
+                            </dl>
+                            <label>Descripción
+                                <textarea data-role="picture-description" placeholder="Describe personas, escena, objetos, texto y contexto...">${escapeHtml(selected.description)}</textarea>
+                            </label>
+                            <button class="primary-button" data-action="save-picture-description">${icon("save")} Guardar descripción</button>
+                        </aside>
+                    ` : `<section class="search-empty">${icon("camera")}<h2>${this.#domainFocused ? "Sin pictures" : "Selecciona un dominio"}</h2><p>${this.#domainFocused ? "No hay imágenes registradas en este dominio." : "El árbol ya está disponible; las imágenes se cargarán al enfocar un elemento."}</p></section>`}
+                    </main>
+                </div>
+                ${selected ? this.#renderViewer(selected) : ""}
+            </section>
+        `;
+        this.#configureDomainTree();
+        this.#bindEvents();
+    }
+    /** Center and focus the active option without rebuilding or animating from scroll origin. */
+    #focusSelectedThumbnail() {
+        const selected = this.querySelector('.picture-thumbnails [role="option"][aria-selected="true"]');
+        selected?.scrollIntoView({ behavior: "auto", block: "nearest", inline: "center" });
+        selected?.focus({ preventScroll: true });
+    }
+    /** Patch carousel metadata immediately and replace only the raster after it loads. */
+    #hydrateSelection(picture) {
+        const position = this.#pictures.findIndex(candidate => candidate.id === picture.id) + 1;
+        this.#setText("picture-domain", picture.domain);
+        this.#setText("picture-filename", picture.filename);
+        this.#setText("picture-position", `${position} / ${this.#pictures.length}`);
+        this.#setText("picture-dimensions", `${picture.width} × ${picture.height}`);
+        this.#setText("picture-path", picture.relative_path);
+        this.#setText("picture-mime", picture.mime_type);
+        this.#setText("picture-size", this.#formatBytes(picture.size_bytes));
+        this.#setText("picture-description-source", picture.description_source || "pendiente");
+        const textarea = this.querySelector("[data-role='picture-description']");
+        if (textarea)
+            textarea.value = picture.description;
+        const trigger = this.querySelector("[data-action='open-picture-viewer']");
+        trigger?.setAttribute("aria-label", `Abrir ${picture.filename} en visor fullscreen`);
+        this.querySelectorAll("[data-picture-id]").forEach(option => {
+            option.setAttribute("aria-selected", String(option.dataset.pictureId === picture.id));
+        });
+        this.#hydrateSelectedRaster(picture);
+    }
+    /** Load the next raster off-DOM and commit only the newest completed request. */
+    #hydrateSelectedRaster(picture) {
+        const token = ++this.#imageHydrationToken;
+        const source = this.#api?.pictureUrl(picture.id) ?? "";
+        const pending = new Image();
+        pending.decoding = "async";
+        pending.onload = () => {
+            if (token !== this.#imageHydrationToken || picture.id !== this.#selectedId)
+                return;
+            const mounted = this.querySelector("[data-role='selected-picture-image']");
+            if (!mounted)
+                return;
+            mounted.src = source;
+            mounted.alt = picture.description || picture.filename;
+        };
+        pending.src = source;
+    }
+    /** Replace one render field without reconstructing its surrounding component. */
+    #setText(role, value) {
+        const element = this.querySelector(`[data-role='${role}']`);
+        if (element)
+            element.textContent = value;
+    }
+    /** Render the fullscreen viewer for the selected canonical picture. */
+    #renderViewer(selected) {
+        if (!this.#viewerOpen)
+            return "";
+        return `
+            <section class="picture-viewer" role="dialog" aria-modal="true" aria-label="Visor fullscreen de ${escapeHtml(selected.filename)}">
+                <strong class="picture-viewer-title">${escapeHtml(selected.filename)}</strong>
+                <button class="picture-viewer-close" data-action="close-picture-viewer" aria-label="Cerrar visor">${icon("close")}</button>
+                <div class="picture-viewer-zoom-fabs" aria-label="Controles de zoom">
+                    <button data-action="viewer-zoom-in" aria-label="Acercar">${icon("plus")}</button>
+                    <button data-action="viewer-zoom-out" aria-label="Alejar">${icon("minus")}</button>
+                    <button data-action="viewer-reset" aria-label="Restablecer zoom y posicion">${icon("refresh")}</button>
+                </div>
+                <output class="picture-viewer-scale" data-role="viewer-scale">${Math.round(this.#viewerScale * 100)}%</output>
+                <div class="picture-viewer-viewport" data-role="picture-viewer-viewport">
+                    <img data-role="picture-viewer-image" src="${this.#api?.pictureUrl(selected.id) ?? ""}" alt="${escapeHtml(selected.description || selected.filename)}" draggable="false"
+                        style="transform: translate3d(${this.#viewerX}px, ${this.#viewerY}px, 0) scale(${this.#viewerScale})">
+                </div>
+            </section>
+        `;
+    }
+    /** Open the selected picture in the fullscreen viewer. */
+    #openViewer() {
+        const selected = this.#selected();
+        if (!selected || this.#viewerOpen)
+            return;
+        this.#viewerOpen = true;
+        this.#resetViewerState();
+        this.querySelector(".pictures-console")?.insertAdjacentHTML("beforeend", this.#renderViewer(selected));
+        this.#bindViewerEvents();
+        requestAnimationFrame(() => this.querySelector("[data-action='close-picture-viewer']")?.focus());
+    }
+    /** Close the fullscreen viewer and return focus to the carousel image. */
+    #closeViewer() {
+        this.#viewerOpen = false;
+        this.#viewerPointerId = null;
+        if (this.#viewerScaleTimer !== null)
+            clearTimeout(this.#viewerScaleTimer);
+        this.#viewerScaleTimer = null;
+        this.querySelector(".picture-viewer")?.remove();
+        requestAnimationFrame(() => this.querySelector("[data-action='open-picture-viewer']")?.focus());
+    }
+    /** Clamp and apply one relative viewer zoom step. */
+    #zoomViewer(delta) {
+        this.#viewerScale = Math.min(8, Math.max(0.5, this.#viewerScale + delta));
+        if (this.#viewerScale === 1) {
+            this.#viewerX = 0;
+            this.#viewerY = 0;
+        }
+        this.#applyViewerTransform(true);
+    }
+    /** Restore the fullscreen image transform. */
+    #resetViewer() {
+        this.#resetViewerState();
+        this.#applyViewerTransform(true);
+    }
+    /** Reset viewer coordinates without causing a component render. */
+    #resetViewerState() {
+        this.#viewerScale = 1;
+        this.#viewerX = 0;
+        this.#viewerY = 0;
+    }
+    /** Apply the current pan and zoom state to the mounted fullscreen image. */
+    #applyViewerTransform(showScale = false) {
+        const image = this.querySelector("[data-role='picture-viewer-image']");
+        if (image)
+            image.style.transform = `translate3d(${this.#viewerX}px, ${this.#viewerY}px, 0) scale(${this.#viewerScale})`;
+        const scale = this.querySelector("[data-role='viewer-scale']");
+        if (scale)
+            scale.value = `${Math.round(this.#viewerScale * 100)}%`;
+        if (showScale)
+            this.#showViewerScale();
+    }
+    /** Reveal the scale indicator and hide it three seconds after the latest zoom change. */
+    #showViewerScale() {
+        const scale = this.querySelector("[data-role='viewer-scale']");
+        scale?.classList.add("is-visible");
+        if (this.#viewerScaleTimer !== null)
+            clearTimeout(this.#viewerScaleTimer);
+        this.#viewerScaleTimer = setTimeout(() => {
+            scale?.classList.remove("is-visible");
+            this.#viewerScaleTimer = null;
+        }, 3000);
+    }
+    /** Begin one mouse, pen, or touch panning gesture. */
+    #startViewerPan(event, viewport) {
+        this.#viewerPointerId = event.pointerId;
+        this.#viewerPointerStart = { x: event.clientX, y: event.clientY, originX: this.#viewerX, originY: this.#viewerY };
+        viewport.setPointerCapture(event.pointerId);
+        viewport.classList.add("is-panning");
+    }
+    /** Continue the active panning gesture without rebuilding the carousel. */
+    #moveViewerPan(event) {
+        if (this.#viewerPointerId !== event.pointerId)
+            return;
+        this.#viewerX = this.#viewerPointerStart.originX + event.clientX - this.#viewerPointerStart.x;
+        this.#viewerY = this.#viewerPointerStart.originY + event.clientY - this.#viewerPointerStart.y;
+        this.#applyViewerTransform();
+    }
+    /** Finish the active panning gesture. */
+    #endViewerPan(event, viewport) {
+        if (this.#viewerPointerId !== event.pointerId)
+            return;
+        this.#viewerPointerId = null;
+        if (viewport.hasPointerCapture(event.pointerId))
+            viewport.releasePointerCapture(event.pointerId);
+        viewport.classList.remove("is-panning");
+    }
+    /** Project dot-separated picture domains into the shared Explorer tree contract. */
+    #domainTreeNodes() {
+        const root = { label: "Todo", path: "", ownCount: 0, children: new Map() };
+        Object.entries(this.#domains).forEach(([domain, count]) => {
+            let parent = root;
+            const parts = domain.split(".").filter(Boolean);
+            parts.forEach((label, index) => {
+                const path = parts.slice(0, index + 1).join(".");
+                if (!parent.children.has(label)) {
+                    parent.children.set(label, { label, path, ownCount: 0, children: new Map() });
+                }
+                parent = parent.children.get(label);
+            });
+            parent.ownCount += count;
+        });
+        const project = (node) => {
+            const children = [...node.children.values()].map(project);
+            const count = node.ownCount + children.reduce((total, child) => total + child.count, 0);
+            return { id: `pictures:${node.path || "all"}`, path: node.path, label: node.label, icon: "folder", count, children };
+        };
+        return [project(root)];
+    }
+    /** Configure Pictures with the standardized structural tree component. */
+    #configureDomainTree() {
+        const tree = this.querySelector("[data-role='pictures-domain-tree']");
+        if (!(tree instanceof StructureTree))
+            return;
+        tree.model = {
+            nodes: this.#domainTreeNodes(),
+            selectedPath: this.#domain,
+            expandedPaths: this.#expandedDomains,
+            toggleOnBranchSelect: true,
+            title: "Pictures",
+            toolbarActions: [{ id: "refresh", label: "Actualizar pictures", icon: "refresh" }],
+            searchQuery: this.#search,
+            searchPlaceholder: "Buscar pictures...",
+            emptyText: this.#loading ? "Sincronizando pictures..." : "No hay dominios registrados.",
+            defaultBranchIcon: "folder",
+            defaultLeafIcon: "folder"
+        };
+        tree.addEventListener("brain-tree-select", event => {
+            if (event.detail.clickedCaret)
+                return;
+            this.#domain = String(event.detail.path || "");
+            this.#domainFocused = true;
+            void this.#loadDomain(this.#domain);
+        });
+        tree.addEventListener("brain-tree-toolbar-action", event => {
+            if (event.detail.action === "refresh")
+                void this.#loadStructure(true);
+        });
+        tree.addEventListener("brain-tree-search", event => {
+            this.#search = String(event.detail.query || "").trim();
+        });
+    }
+    #bindEvents() {
+        this.querySelector("[data-action='previous-picture']")?.addEventListener("click", () => this.#selectRelative(-1));
+        this.querySelector("[data-action='next-picture']")?.addEventListener("click", () => this.#selectRelative(1));
+        this.querySelectorAll("[data-picture-id]").forEach(button => button.addEventListener("click", () => {
+            this.#selectPicture(button.getAttribute("data-picture-id") || "");
+        }));
+        this.querySelector("[data-action='save-picture-description']")?.addEventListener("click", () => void this.#saveDescription());
+        this.querySelector("[data-action='open-picture-viewer']")?.addEventListener("click", () => this.#openViewer());
+        this.#bindViewerEvents();
+    }
+    /** Bind controls owned only by a mounted fullscreen viewer. */
+    #bindViewerEvents() {
+        this.querySelector("[data-action='close-picture-viewer']")?.addEventListener("click", () => this.#closeViewer());
+        this.querySelector("[data-action='viewer-zoom-in']")?.addEventListener("click", () => this.#zoomViewer(0.25));
+        this.querySelector("[data-action='viewer-zoom-out']")?.addEventListener("click", () => this.#zoomViewer(-0.25));
+        this.querySelector("[data-action='viewer-reset']")?.addEventListener("click", () => this.#resetViewer());
+        const viewer = this.querySelector("[data-role='picture-viewer-viewport']");
+        viewer?.addEventListener("wheel", event => {
+            event.preventDefault();
+            this.#zoomViewer(event.deltaY < 0 ? 0.25 : -0.25);
+        }, { passive: false });
+        viewer?.addEventListener("dblclick", () => this.#viewerScale === 1 ? this.#zoomViewer(1) : this.#resetViewer());
+        viewer?.addEventListener("pointerdown", event => this.#startViewerPan(event, viewer));
+        viewer?.addEventListener("pointermove", event => this.#moveViewerPan(event));
+        viewer?.addEventListener("pointerup", event => this.#endViewerPan(event, viewer));
+        viewer?.addEventListener("pointercancel", event => this.#endViewerPan(event, viewer));
+    }
+    async #saveDescription() {
+        const selected = this.#selected();
+        const textarea = this.querySelector("[data-role='picture-description']");
+        if (!selected || !textarea || !this.#api)
+            return;
+        const response = await this.#api.describePicture(selected.id, textarea.value.trim());
+        this.#state?.setLastResult(response);
+        if (response.ok)
+            await this.#loadDomain(this.#domain, true, selected.id);
+    }
+    #formatBytes(bytes) {
+        if (bytes < 1024 * 1024)
+            return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    }
+}
+customElements.define(PicturesView.selector, PicturesView);
+
+cache=(()=>{return { PicturesView: PicturesView };})();return cache;};})();
+const __brainExplorerModule15=(()=>{let cache;return()=>{if(cache)return cache;
 
 /**
  * @author Yoel David <yoeldcd@gmail.com>
@@ -8321,7 +9241,7 @@ function inlineMarkdown(value) {
 }
 
 cache=(()=>{return { escapeHtml: escapeHtml, prettyJson: prettyJson, codeBlock: codeBlock, renderMarkdown: renderMarkdown, compactLabel: compactLabel, optionTags: optionTags };})();return cache;};})();
-const __brainExplorerModule15=(()=>{let cache;return()=>{if(cache)return cache;
+const __brainExplorerModule16=(()=>{let cache;return()=>{if(cache)return cache;
 
 /**
  * @author Yoel David <yoeldcd@gmail.com>
@@ -8380,7 +9300,7 @@ function icon(name) {
 }
 
 cache=(()=>{return { icon: icon, SVG_ICONS: SVG_ICONS };})();return cache;};})();
-const __brainExplorerModule16=(()=>{let cache;return()=>{if(cache)return cache;
+const __brainExplorerModule17=(()=>{let cache;return()=>{if(cache)return cache;
 
 /**
  * @author Yoel David <yoeldcd@gmail.com>
@@ -8487,9 +9407,9 @@ function quoted(value) {
 }
 
 cache=(()=>{return { notificationText: notificationText };})();return cache;};})();
-const __brainExplorerModule17=(()=>{let cache;return()=>{if(cache)return cache;
-const { escapeHtml } = __brainExplorerModule14();
-const { icon } = __brainExplorerModule15();
+const __brainExplorerModule18=(()=>{let cache;return()=>{if(cache)return cache;
+const { escapeHtml } = __brainExplorerModule15();
+const { icon } = __brainExplorerModule16();
 /**
  * @author Yoel David <yoeldcd@gmail.com>
  * @see https://x.com/SAY6267
@@ -8535,6 +9455,7 @@ class StructureTree extends HTMLElement {
         toolbarActions: [],
         showSearch: true,
         searchPlaceholder: "Buscar...",
+        sortDirection: "asc",
         emptyText: "No hay elementos todavia."
     };
     #openActionNodeId = "";
@@ -8544,7 +9465,7 @@ class StructureTree extends HTMLElement {
     /**
      * Assign the full tree presentation model.
      *
-     * @param {{nodes: StructureTreeNode[], selectedPath?: string, expandedPaths?: Set<string>, toggleOnBranchSelect?: boolean, title?: string, toolbarActions?: object[], searchQuery?: string, disableFilter?: boolean, showSearch?: boolean, searchPlaceholder?: string, emptyText?: string}} value Tree model.
+     * @param {{nodes: StructureTreeNode[], selectedPath?: string, expandedPaths?: Set<string>, toggleOnBranchSelect?: boolean, title?: string, toolbarActions?: object[], searchQuery?: string, disableFilter?: boolean, showSearch?: boolean, searchPlaceholder?: string, sortDirection?: "asc"|"desc", emptyText?: string}} value Tree model.
      */
     set model(value) {
         this.#model = {
@@ -8556,6 +9477,7 @@ class StructureTree extends HTMLElement {
             toolbarActions: Array.isArray(value?.toolbarActions) ? value.toolbarActions : [],
             showSearch: value?.showSearch !== false,
             searchPlaceholder: value?.searchPlaceholder || "Buscar...",
+            sortDirection: value?.sortDirection === "desc" ? "desc" : "asc",
             emptyText: value?.emptyText || "No hay elementos todavia."
         };
         if (typeof value?.searchQuery === "string") {
@@ -8596,13 +9518,14 @@ class StructureTree extends HTMLElement {
         return false;
     }
     #render() {
+        const rootDirection = this.#model.sortDirection === "desc" ? -1 : 1;
         const sortedRootNodes = [...this.#model.nodes].sort((left, right) => {
             const leftHas = Array.isArray(left.children) && left.children.length > 0;
             const rightHas = Array.isArray(right.children) && right.children.length > 0;
             if (leftHas !== rightHas) {
                 return leftHas ? -1 : 1;
             }
-            return (left.label || "").localeCompare(right.label || "");
+            return rootDirection * String(left.sortKey || left.label || "").localeCompare(String(right.sortKey || right.label || ""));
         });
         const visibleNodes = sortedRootNodes.filter(node => this.#matchesFilter(node));
         this.innerHTML = `
@@ -8635,7 +9558,7 @@ class StructureTree extends HTMLElement {
                 ${this.#model.title ? `<strong>${escapeHtml(this.#model.title)}</strong>` : "<span></span>"}
                 <div>
                     ${this.#model.toolbarActions.map(action => `
-                        <button class="icon-action" data-tree-toolbar-action="${escapeHtml(action.id)}" title="${escapeHtml(action.label)}" aria-label="${escapeHtml(action.label)}">
+                    <button class="icon-action ${action.active ? "is-active" : ""}" data-tree-toolbar-action="${escapeHtml(action.id)}" title="${escapeHtml(action.label)}" aria-label="${escapeHtml(action.label)}" ${action.active !== undefined ? `aria-pressed="${String(!!action.active)}"` : ""}>
                             ${icon(action.icon || "more")}
                         </button>
                     `).join("")}
@@ -8680,13 +9603,14 @@ class StructureTree extends HTMLElement {
                 </div>
             `;
         }
+        const childDirection = node.sortDirection === "desc" ? -1 : 1;
         const sortedChildren = [...children].sort((left, right) => {
             const leftHas = Array.isArray(left.children) && left.children.length > 0;
             const rightHas = Array.isArray(right.children) && right.children.length > 0;
             if (leftHas !== rightHas) {
                 return leftHas ? -1 : 1;
             }
-            return (left.label || "").localeCompare(right.label || "");
+            return childDirection * String(left.sortKey || left.label || "").localeCompare(String(right.sortKey || right.label || ""));
         });
         return `
             <div class="tree-node-wrap" role="treeitem" aria-level="${depth}" ${hasChildren ? `aria-expanded="${expanded}"` : ""} aria-selected="${active}" style="--depth: ${depth};">
@@ -8767,13 +9691,14 @@ class StructureTree extends HTMLElement {
         filterInput?.addEventListener("input", event => {
             this.#searchQuery = event.target.value;
             // Render only nodes container to keep focus and cursor position!
+            const rootDirection = this.#model.sortDirection === "desc" ? -1 : 1;
             const sortedRootNodes = [...this.#model.nodes].sort((left, right) => {
                 const leftHas = Array.isArray(left.children) && left.children.length > 0;
                 const rightHas = Array.isArray(right.children) && right.children.length > 0;
                 if (leftHas !== rightHas) {
                     return leftHas ? -1 : 1;
                 }
-                return (left.label || "").localeCompare(right.label || "");
+                return rootDirection * String(left.sortKey || left.label || "").localeCompare(String(right.sortKey || right.label || ""));
             });
             const nodesContainer = this.querySelector(".structure-tree-nodes");
             if (nodesContainer) {
@@ -8955,9 +9880,9 @@ _a = StructureTree;
 customElements.define(StructureTree.selector, StructureTree);
 
 cache=(()=>{return { StructureTree: StructureTree };})();return cache;};})();
-const __brainExplorerModule18=(()=>{let cache;return()=>{if(cache)return cache;
-const { escapeHtml } = __brainExplorerModule14();
-const { icon } = __brainExplorerModule15();
+const __brainExplorerModule19=(()=>{let cache;return()=>{if(cache)return cache;
+const { escapeHtml } = __brainExplorerModule15();
+const { icon } = __brainExplorerModule16();
 /**
  * @author Yoel David <yoeldcd@gmail.com>
  * @see https://x.com/SAY6267

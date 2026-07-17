@@ -35,7 +35,7 @@ vectorstore maintenance, and memory indexing stay in their own modules.
 | `get-context` | none | `--limit-diary` | Prints the context hydration payload without the full initialization sequence. |
 | `check-workspace` | none | `--json` | Validates memory structure and nesting compliance. |
 | `create-brain` | workspace_path | `--workspace`, `--limit` | Creates a local workspace brain wrapper and supporting directories. |
-| `query` | domain, query | `--limit`, `--source`, `--scope`, `--mechanism`, `--knowledge-scope`, `--deep`, `--explain`, `--json` | Searches memory and knowledge through the global query point. |
+| `query` | domain, query | `--limit`, `--source`, `--messages`, `--scope`, `--mechanism`, `--knowledge-scope`, `--deep`, `--explain`, `--json` | Searches memory, knowledge, and persisted messages through the global query point. |
 | `serve-explorer` | none | `--host`, `--port`, `--api-timeout` | Serves the Brain Explorer static UI and local JSON API. |
 | `wiki` | mode, documentation_path | `--log-domain`, `--host`, `--port`, `--json` | Checks, generates, or serves a documentation wiki through the core-owned utility. |
 | `propagate-agent-prompt` | none | `--source`, `--mirrors-file`, `--dry-run`, `--json` | Verifies or synchronizes canonical prompt mirrors through the core-owned utility. |
@@ -161,12 +161,18 @@ has already been prepared.
 
 #### `create-brain`
 
-**What It Does:** Creates or verifies a local workspace brain script and supporting directories in a target
-workspace.
+**What It Does:** Creates or verifies a local workspace brain script, supporting directories,
+`.codex/config.toml`, and `.codex/rules/default.rules`. The config declares and selects a
+replicated `<agent>_workspace_guard`, grants access to the canonical agent directory, and
+combines `on-request` approvals with Auto Review. The rules file trusts only the
+local Brain CLI prefix.
 
 **Use It When:** Preparing another workspace to use the shared brain utilities.
 
-**Result:** Writes workspace-local files under the target workspace and reports created or reused paths.
+**Result:** Writes workspace-local files under the target workspace and reports created or reused paths. An existing
+`.codex/config.toml` is preserved without modification.
+Mirror registration affects Brain only. The command never changes the global
+Codex TOML or Codex-owned project trust.
 
 **Arguments & Flags:**
 
@@ -204,7 +210,8 @@ query, answer, subqueries, results, and warnings.
 | domain | No | all | Optional memory domain filter. If query text is omitted, this positional value is treated as the query text. |
 | query | No | none | Query text when a domain was supplied first. |
 | `--limit` | No | 5 | Limits matches per selected backend. |
-| `--source` | No | all | Selects all, memory, or knowledge sources. |
+| `--source` | No | all | Selects all, memory, knowledge, or messages sources. |
+| `--messages` | No | false | Searches only persisted avatar messages; equivalent to `--source messages`. |
 | `--scope` | No | none | Backward-compatible alias for source selection. |
 | `--mechanism` | No | all | Selects all, graph, vector, or direct text retrieval. |
 | `--knowledge-scope` | No | all | Selects all, global, or local knowledge graph databases when graph retrieval is enabled. |
@@ -1545,3 +1552,56 @@ repository writes still require deterministic validation and interactive delta s
 
 **Contract:** The command prints current repository status first and then requires the exact interactive
 confirmation RECREATE. JSON mode reports that confirmation is required and does not prune.
+### `list-messages`
+
+**What It Does:** Reads persisted avatar words from the active consumer's
+`$agent/database/messages.db`.
+
+**Use It When:** Recovering an avatar statement, filtering one Codex chat, or
+inspecting the selected operation narrations retained for knowledge.
+
+**Result:** Returns newest-first message records with `id`, `created_at`,
+`date`, `time`, `text`, `emotion`, `chat_id`, language, and source
+metadata.
+
+| Parameter | Required | Default | Description |
+|---|---|---|---|
+| `--query` | No | empty | Literal text substring. |
+| `--chat-id` | No | empty | Exact Codex chat identifier. |
+| `--emotion` | No | empty | Exact emotion label. |
+| `--source-command` | No | empty | Exact retained operation command. |
+| `--limit` | No | `100` | Maximum records, bounded to 1-500. |
+| `--offset` | No | `0` | Pagination offset. |
+| `--json` | No | false | Emit the DTO envelope. |
+
+### Picture knowledge commands
+
+The picture registry treats `pictures/` as the canonical image tree. Folder hierarchy becomes dot-separated
+domains, while SQLite stores file identity, dimensions, content hash, `mtime_ns`, description provenance, and
+vector indexing state in `core/database/picture_storage/pictures.db`.
+
+#### `scan-pictures`
+
+Incrementally detects added, changed, moved, unchanged, and deleted images. Use `--index` to synchronize the
+reference-only `pictures` vector collection after the scan. A normal scan never deletes or rebuilds other vector
+collections.
+
+#### `list-pictures`
+
+Lists active canonical picture records. Filter with `--id`, `--domain`, `--query`, `--limit`, or include inactive
+records with `--all`.
+
+#### `describe-picture PICTURE_ID [DESCRIPTION]`
+
+Stores a manual description when `DESCRIPTION` is provided. Without it, the command uses the optional
+OpenAI-compatible `pictures.image_model` configuration and an optional `--prompt`. Model generation is disabled
+by default; enable it deliberately in `core/configs/brain_configs.json` after configuring provider credentials.
+
+#### `picture-status`
+
+Reports registry location, picture root, active record count, domain counts, description coverage, and image-model
+configuration without sending image data to a provider.
+
+The global `query` command accepts `--source pictures`. Text mode searches filenames, domains, paths, and
+descriptions; vector mode searches transient canonical search text, then hydrates results from SQLite. Persisted
+vector metadata contains only `source_kind`, `picture_id`, and the manager-provided `vector_reference`.

@@ -20,6 +20,8 @@ from brain.application.querying.backends.knowledge import (
     run_source_index_fast_pass,
 )
 from brain.application.querying.backends.memory import query_memory_backend, query_memory_text_backend
+from brain.application.querying.backends.messages import query_messages_backend, query_messages_vector_backend
+from brain.application.querying.backends.pictures import query_pictures_backend, query_pictures_vector_backend
 from brain.application.querying.planning import plan_deep_subqueries
 from brain.application.querying.ranking import (
     deduplicate_query_results,
@@ -67,14 +69,16 @@ def query_global(
     normalized_scope: str = selected_source.casefold().strip()
     normalized_mechanism: str = mechanism.casefold().strip()
     if normalized_scope not in QUERY_SOURCE_VALUES:
-        raise ValueError(f"Unsupported query source `{selected_source}`. Use one of: all, memory, knowledge.")
+        raise ValueError(
+            f"Unsupported query source `{selected_source}`. Use one of: all, memory, knowledge, messages, pictures."
+        )
     if normalized_mechanism not in QUERY_MECHANISM_VALUES:
         raise ValueError(f"Unsupported query mechanism `{mechanism}`. Use one of: all, graph, vector, text.")
     normalized_knowledge_scope: str = normalize_knowledge_scope(scope=knowledge_scope, allow_all=True)
 
     bounded_limit: int = max(1, limit)
     results: list[GlobalQueryResultDTO] = []
-    if refresh_sources:
+    if refresh_sources and normalized_scope in ("all", "knowledge"):
         results.extend(run_source_index_fast_pass())
 
     if normalized_scope in ("all", "knowledge") and normalized_mechanism in ("all", "graph"):
@@ -100,6 +104,14 @@ def query_global(
 
     if normalized_scope in ("all", "memory") and normalized_mechanism in ("all", "text"):
         results.extend(query_memory_text_backend(text=text, domain=domain, limit=bounded_limit))
+    if normalized_scope in ("all", "messages") and normalized_mechanism in ("all", "vector"):
+        results.extend(query_messages_vector_backend(text=text, limit=bounded_limit))
+    if normalized_scope in ("all", "messages") and normalized_mechanism in ("all", "text"):
+        results.extend(query_messages_backend(text=text, limit=bounded_limit))
+    if normalized_scope in ("all", "pictures") and normalized_mechanism in ("all", "text"):
+        results.extend(query_pictures_backend(text=text, domain=domain, limit=bounded_limit))
+    if normalized_scope in ("all", "pictures") and normalized_mechanism in ("all", "vector"):
+        results.extend(query_pictures_vector_backend(text=text, limit=bounded_limit))
 
     if not results and not has_selected_backend(
         source=normalized_scope,

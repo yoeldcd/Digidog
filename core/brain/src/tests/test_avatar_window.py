@@ -374,15 +374,17 @@ def test_avatar_poll_applies_daemon_mute_state() -> None:
     assert "self._toggle_mute()" in click_source
 
 
-def test_second_click_queues_reacting_speech_with_one_second_prelude() -> None:
-    """Only the second consecutive click requests the reacting speaking mode."""
+def test_avatar_click_preserves_single_playback_and_double_reaction() -> None:
+    """The avatar body distinguishes delayed single-click playback from reactions."""
     import inspect
 
     source = inspect.getsource(AvatarWindow._avatar_click)
-    assert "self.click_count >= 2" in source
-    assert '"emotion": "reacting"' in source
-    assert '"preludeSeconds": 1' in source
-    assert 'avatar_asset("reacting")' not in source
+    commit_source = inspect.getsource(AvatarWindow._commit_avatar_single_click)
+    reaction_source = inspect.getsource(AvatarWindow._speak_reaction)
+    assert "after_cancel" in source
+    assert "_speak_reaction()" in source
+    assert "self._toggle_playback()" in commit_source
+    assert '"emotion": "reacting"' in reaction_source
     window = object.__new__(AvatarWindow)
     window.awaiting_quota_animation = ""
     assert window._animation_for_state("preparing", "reacting") == ("reacting", "speaking")

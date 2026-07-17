@@ -9,6 +9,8 @@ import { StructureTree } from "./structure-tree.ts";
 
 void StructureTree;
 
+const LOG_MONTH_LABELS = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+
 /**
  * LogsView renders log domains as a structural tree plus one focused content pane.
  */
@@ -28,6 +30,8 @@ export class LogsView extends HTMLElement {
     #hourFrom = "";
     #hourTo = "";
     #sortOrder = "desc";
+    #treeMode = "domain";
+    #selectedDatePath = "";
     #filtersOpen = false;
     #expandedNodes = new Set();
     #pendingTarget = null;
@@ -262,23 +266,29 @@ export class LogsView extends HTMLElement {
             return `<p class="empty-state">No hay entradas para esos filtros.</p>`;
         }
         return entries.map(entry => `
-            <article class="log-entry-card">
-                <header>
-                    <div>
+            <details class="log-entry-card">
+                <summary class="log-entry-summary">
+                    <time class="log-date-badge">
+                        <strong>${escapeHtml(entry.date)}</strong>
+                        <span>${escapeHtml(entry.time)}</span>
+                    </time>
+                    <span class="log-entry-heading">
                         <strong>${escapeHtml(entry.title)}</strong>
-                        <small>${escapeHtml(entry.domain || this.#selectedDomain || "logs")}</small>
-                    </div>
-                    <time>${escapeHtml(`${entry.date} ${entry.time}`)}</time>
-                </header>
-                <div class="tag-row">
-                    <span>${escapeHtml(entry.type || "log")}</span>
-                    <span>${escapeHtml(entry.changeType || "registro")}</span>
+                        <span class="log-entry-tags">
+                            <span>${escapeHtml(entry.domain || this.#selectedDomain || "logs")}</span>
+                            <span>${escapeHtml(entry.type || "log")}</span>
+                            <span>${escapeHtml(entry.changeType || "registro")}</span>
+                        </span>
+                    </span>
+                    <span class="log-entry-chevron">${icon("chevronDown")}</span>
+                </summary>
+                <div class="log-entry-body">
+                    ${entry.why ? `<section><h2>Why</h2><div>${renderMarkdown(entry.why)}</div></section>` : ""}
+                    ${entry.description ? `<section><h2>Description</h2><div>${renderMarkdown(entry.description)}</div></section>` : ""}
+                    ${entry.impact ? `<section><h2>Impact</h2><div>${renderMarkdown(entry.impact)}</div></section>` : ""}
+                    ${this.#renderPictures(entry.pictures)}
                 </div>
-                ${entry.why ? `<section><h2>Why</h2><div>${renderMarkdown(entry.why)}</div></section>` : ""}
-                ${entry.description ? `<section><h2>Description</h2><div>${renderMarkdown(entry.description)}</div></section>` : ""}
-                ${entry.impact ? `<section><h2>Impact</h2><div>${renderMarkdown(entry.impact)}</div></section>` : ""}
-                ${this.#renderPictures(entry.pictures)}
-            </article>
+            </details>
         `).join("");
     }
 
@@ -516,11 +526,16 @@ export class LogsView extends HTMLElement {
         }
         treeElement.model = {
             nodes: this.#treeNodes(),
-            selectedPath: this.#selectedDomain,
+            selectedPath: this.#treeMode === "date" ? this.#selectedDatePath : this.#selectedDomain,
             expandedPaths: this.#expandedNodes,
             toggleOnBranchSelect: true,
             title: "Logs",
-            toolbarActions: [{ id: "refresh-index", label: "Actualizar indice", icon: "refresh" }],
+            toolbarActions: [
+                { id: "tree-domain", label: "Agrupar por dominios", icon: "folder", active: this.#treeMode === "domain" },
+                { id: "tree-date", label: "Agrupar por fechas", icon: "clock", active: this.#treeMode === "date" },
+                { id: "refresh-index", label: "Actualizar indice", icon: "refresh" }
+            ],
+            sortDirection: this.#treeMode === "date" ? "desc" : "asc",
             defaultBranchIcon: "folder",
             defaultLeafIcon: "terminal",
             searchQuery: this.#filter,
@@ -550,6 +565,9 @@ export class LogsView extends HTMLElement {
      * @returns {object[]} Tree node list.
      */
     #treeNodes() {
+        if (this.#treeMode === "date") {
+            return this.#dateTreeNodes();
+        }
         const toNode = node => {
             const children = Array.from(node.children.values())
                 .filter(child => this.#matchesTree(child))
@@ -575,14 +593,96 @@ export class LogsView extends HTMLElement {
     }
 
     /**
+     * Group the complete log index into year, month, day, and entry nodes.
+     *
+     * @returns {object[]} Shared tree nodes ordered from newest to oldest.
+     */
+    #dateTreeNodes() {
+        const years = new Map();
+        this.#indexEntries.forEach((entry, index) => {
+            const [date = "", ...timeParts] = String(entry.timestamp || "").split(" ");
+            const match = date.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+            if (!match) {
+                return;
+            }
+            const [, day, month, year] = match;
+            const time = timeParts.join(" ");
+            const yearNode = this.#ensureDateGroup(years, `logs-date:${year}`, year, "folder");
+            const monthNode = this.#ensureDateGroup(yearNode.children, `logs-date:${year}-${month}`, LOG_MONTH_LABELS[Number(month)] || month, "folder");
+            const dayNode = this.#ensureDateGroup(monthNode.children, `logs-date:${year}-${month}-${day}`, `${day} ${LOG_MONTH_LABELS[Number(month)] || month}`, "clock");
+            dayNode.entries.push({
+                id: `logs-date-entry:${index}:${date}:${time}:${entry.domain || "logs"}`,
+                path: `logs-date-entry:${date}:${time}:${entry.domain || "logs"}`,
+                label: entry.title || "Entrada de log",
+                timestamp: time,
+                sortKey: String(this.#hourValue(time)).padStart(4, "0"),
+                detail: entry.domain || "logs",
+                presentation: "log",
+                domain: entry.domain || "",
+                date,
+                time,
+                children: []
+            });
+        });
+        const project = group => {
+            const groups = Array.from(group.children.values())
+                .sort((left, right) => right.id.localeCompare(left.id))
+                .map(project);
+            const entries = [...group.entries].sort((left, right) => right.timestamp.localeCompare(left.timestamp));
+            return {
+                id: group.id,
+                path: group.id,
+                label: group.label,
+                sortKey: group.id,
+                icon: group.icon,
+                count: this.#countDateEntries(group),
+                sortDirection: "desc",
+                children: [...groups, ...entries]
+            };
+        };
+        return Array.from(years.values())
+            .sort((left, right) => right.id.localeCompare(left.id))
+            .map(project);
+    }
+
+    /**
+     * Create or return one mutable date-group accumulator.
+     *
+     * @param {Map<string, object>} groups Sibling group map.
+     * @param {string} id Stable tree identity.
+     * @param {string} label Visible group label.
+     * @param {string} iconName Registered icon name.
+     * @returns {object} Mutable group accumulator.
+     */
+    #ensureDateGroup(groups, id, label, iconName) {
+        if (!groups.has(id)) {
+            groups.set(id, { id, label, icon: iconName, children: new Map(), entries: [] });
+        }
+        return groups.get(id);
+    }
+
+    /**
+     * Count terminal log entries below one date group.
+     *
+     * @param {object} group Date-group accumulator.
+     * @returns {number} Descendant entry count.
+     */
+    #countDateEntries(group) {
+        return group.entries.length + Array.from(group.children.values())
+            .reduce((total, child) => total + this.#countDateEntries(child), 0);
+    }
+
+    /**
      * Count terminal records below one parsed tree node.
      *
      * @param {object} node Parsed node.
      * @returns {number} Descendant entry count.
      */
     #countTreeEntries(node) {
-        return (node.entryCount || 0) + Array.from(node.children.values())
-            .reduce((total, child) => total + this.#countTreeEntries(child), 0);
+        return this.#indexEntries.filter(entry => {
+            const domain = String(entry.domain || "");
+            return domain === node.path || domain.startsWith(`${node.path}.`);
+        }).length;
     }
 
     /**
@@ -592,8 +692,18 @@ export class LogsView extends HTMLElement {
      * @returns {Promise<void>} Resolves after a selected domain loads.
      */
     async #onTreeSelected(event) {
-        const { path, branch } = event.detail;
+        const { path, branch, node } = event.detail;
         if (branch) {
+            return;
+        }
+        if (this.#treeMode === "date" && node?.date) {
+            this.#selectedDatePath = path;
+            this.#selectedDomain = node.domain;
+            this.#from = node.date;
+            this.#to = node.date;
+            this.#hourFrom = node.time || "";
+            this.#hourTo = node.time || "";
+            await this.#loadLogs(true, false);
             return;
         }
         const alreadySelected = path === this.#selectedDomain;
@@ -620,6 +730,16 @@ export class LogsView extends HTMLElement {
      * @returns {void}
      */
     #onTreeToolbarAction(event) {
+        if (event.detail.action === "tree-domain" || event.detail.action === "tree-date") {
+            const nextMode = event.detail.action === "tree-date" ? "date" : "domain";
+            if (nextMode === this.#treeMode) {
+                return;
+            }
+            this.#treeMode = nextMode;
+            this.#expandedNodes.clear();
+            this.#render();
+            return;
+        }
         if (event.detail.action === "refresh-index") {
             this.#loadIndex(true);
         }

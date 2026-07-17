@@ -23,7 +23,12 @@ SCHEMA = CommandSchema(
         ArgumentSchema(
             flags=["--source"],
             default="all",
-            help="Query source: all, memory, or knowledge. Defaults to all.",
+            help="Query source: all, memory, knowledge, messages, or pictures. Defaults to all.",
+        ),
+        ArgumentSchema(
+            flags=["--messages"],
+            action="store_true",
+            help="Search only persisted avatar messages. Equivalent to --source messages.",
         ),
         ArgumentSchema(
             flags=["--scope"],

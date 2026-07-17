@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 
 
-QUERY_SOURCE_VALUES: set[str] = {"all", "memory", "knowledge"}
+QUERY_SOURCE_VALUES: set[str] = {"all", "memory", "knowledge", "messages", "pictures"}
 """Supported global query sources."""
 
 QUERY_MECHANISM_VALUES: set[str] = {"all", "graph", "vector", "text"}

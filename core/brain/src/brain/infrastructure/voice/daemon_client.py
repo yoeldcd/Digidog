@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import json
-import ctypes
 import os
 import subprocess
 import sys
@@ -35,12 +34,20 @@ def consumer_repository_path(start: Path | None = None) -> str:
     return str(current)
 
 
+def runs_inside_codex_sandbox() -> bool:
+    """Return whether Windows assigned this process to a Codex sandbox account."""
+    username = os.environ.get("USERNAME", "")
+    return sys.platform == "win32" and username.casefold().startswith("codexsandbox")
+
 class VoiceDaemonClient:
     """Dispatch voice work and read in-memory outputs from one warm daemon."""
 
-    def start(self) -> dict[str, Any]:
+    def start(self, mode: str = "light") -> dict[str, Any]:
         """Idempotently start the daemon and return its ready status snapshot."""
+        if mode not in {"dark", "light"}:
+            raise ValueError(f"Unsupported avatar theme: {mode}")
         self._ensure_daemon()
+        self._request_json(path="/theme", method="POST", payload={"mode": mode})
         return self._request_json(path="/status")
 
     def speak(
@@ -52,7 +59,9 @@ class VoiceDaemonClient:
         display_text: str = "",
         consumer_path: str = "",
         codex_thread_id: str = "",
-    ) -> None:
+        source_command: str = "",
+        source_phase: str = "",
+    ) -> dict[str, Any]:
         """Enqueue one message after lazily ensuring the daemon exists."""
         self._ensure_daemon()
         payload = {
@@ -63,8 +72,10 @@ class VoiceDaemonClient:
             "signalKey": signal_key,
             "consumerPath": consumer_path or consumer_repository_path(),
             "codexThreadId": codex_thread_id or os.environ.get("CODEX_THREAD_ID", ""),
+            "sourceCommand": source_command,
+            "sourcePhase": source_phase,
         }
-        self._request_json(path="/speak", method="POST", payload=payload)
+        return self._request_json(path="/speak", method="POST", payload=payload)
 
     def set_ambient_state(self, state: str) -> dict[str, Any]:
         """Persist the avatar state to restore after transient voice activity."""
@@ -104,6 +115,12 @@ class VoiceDaemonClient:
         status.update(self._request_json(path="/messages"))
         return status
 
+    def status(self) -> dict[str, Any]:
+        """Return the last daemon-owned playback state without starting it."""
+        if not self._is_healthy():
+            return {"ok": False, "state": "stopped", "activeSpeakId": ""}
+        return self._request_json(path="/status")
+
     def stop(self) -> bool:
         """Request graceful shutdown without starting a missing daemon."""
         if not self._is_healthy():
@@ -124,26 +141,28 @@ class VoiceDaemonClient:
         if self._is_healthy():
             return
         daemon_path = Path(__file__).with_name("daemon.py")
-        process: subprocess.Popen[Any] | None = None
+        if runs_inside_codex_sandbox():
+            raise RuntimeError(
+                "The avatar service is not running. Start it once from the interactive user CLI with "
+                "py '.\\$agent\\scripts\\brain.py' start-avatar-service --json. "
+                "Brain will not create an invisible GUI inside the Codex sandbox desktop."
+            )
+        popen_kwargs: dict[str, Any] = {
+            "cwd": str(daemon_path.parent),
+            "stdin": subprocess.DEVNULL,
+            "stdout": subprocess.DEVNULL,
+            "stderr": subprocess.DEVNULL,
+            "close_fds": True,
+        }
         if sys.platform == "win32":
-            result = ctypes.windll.shell32.ShellExecuteW(
-                None,
-                "runas",
-                sys.executable,
-                subprocess.list2cmdline([str(daemon_path)]),
-                str(daemon_path.parent),
-                0,
+            popen_kwargs["creationflags"] = (
+                subprocess.CREATE_NO_WINDOW
+                | subprocess.CREATE_NEW_PROCESS_GROUP
+                | subprocess.DETACHED_PROCESS
             )
-            if result <= 32:
-                raise RuntimeError(f"Elevated voice daemon launch failed with ShellExecute code {result}.")
         else:
-            process = subprocess.Popen(
-                [sys.executable, str(daemon_path)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                close_fds=True,
-                start_new_session=True,
-            )
+            popen_kwargs["start_new_session"] = True
+        process = subprocess.Popen([sys.executable, str(daemon_path)], **popen_kwargs)
         deadline = time.monotonic() + VOICE_DAEMON_STARTUP_TIMEOUT_SECONDS
         while time.monotonic() < deadline:
             if self._is_healthy():

@@ -15,8 +15,8 @@ from urllib.request import Request, urlopen
 from brain.infrastructure.voice.daemon_client import VOICE_DAEMON_URL
 from brain.presentation.avatar.tk.animated_gif import AnimatedGif, mute_button_geometry, playback_button_geometry, quota_ring_geometry
 from brain.presentation.avatar.window.config import DAEMON_LOSS_GRACE_SECONDS, MIN_HEIGHT, MIN_WIDTH, POLL_INTERVAL_MS, TRANSPARENT_COLOR, avatar_asset, default_geometry
-from brain.presentation.avatar.interactivity.reactions import ReactionPhraseBag
 from brain.presentation.avatar.interactivity.emotions import emotion_emoji
+from brain.presentation.avatar.interactivity.reactions import ReactionPhraseBag
 from brain.presentation.avatar.window.native import NativeWindowPriority
 from brain.infrastructure.codex.quota_client import CodexQuotaClient
 
@@ -156,6 +156,8 @@ class AvatarWindow:
         self.label.place(x=0, y=0, relwidth=1, relheight=1)
         self.player = AnimatedGif(self.label)
         self.state, self.last_seen = "", time.monotonic()
+        self.reaction_bag = ReactionPhraseBag()
+        self.avatar_click_job = None
         self.daemon_instance_id = os.environ.get("BRAIN_VOICE_DAEMON_INSTANCE_ID", "")
         self.is_pinned, self.is_visible = True, True
         self.controls_visible = False
@@ -163,8 +165,6 @@ class AvatarWindow:
         self.last_quota_remaining: tuple[int, int] | None = None
         self.announced_quota_deciles: tuple[int, int] | None = None
         self.root.attributes("-topmost", True)
-        self.reaction_bag = ReactionPhraseBag()
-        self.click_count, self.last_click_at = 0, 0.0
         self.emotion = ""
         self.speech_text = ""
         self.quota_client = CodexQuotaClient()
@@ -542,23 +542,28 @@ class AvatarWindow:
             self._avatar_click(event)
 
     def _avatar_click(self, _event) -> None:
-        if self.state in {"preparing", "speaking"}:
+        """Disambiguate one-click playback from the preserved double-click reaction."""
+        if self.avatar_click_job is not None:
+            self.root.after_cancel(self.avatar_click_job)
+            self.avatar_click_job = None
+            self._speak_reaction()
             return
-        now = time.monotonic()
-        self.click_count = self.click_count + 1 if now - self.last_click_at <= 2.0 else 1
-        self.last_click_at = now
-        if self.click_count >= 2:
-            self.click_count = 0
-            try:
-                phrase = self.reaction_bag.draw()
-                request = Request(
-                    f"{VOICE_DAEMON_URL}/speak",
-                    data=json.dumps({"text": phrase, "lang": "es", "emotion": "reacting", "preludeSeconds": 1}).encode("utf-8"),
-                    method="POST",
-                    headers={"Content-Type":"application/json"},
-                )
-                urlopen(request,timeout=.5).close()
-            except Exception: pass
+        self.avatar_click_job = self.root.after(400, self._commit_avatar_single_click)
+
+    def _commit_avatar_single_click(self) -> None:
+        """Execute Play/Pause after the double-click interval expires."""
+        self.avatar_click_job = None
+        self._toggle_playback()
+
+    def _speak_reaction(self) -> None:
+        """Queue one playful reaction after a confirmed double click."""
+        phrase = self.reaction_bag.draw()
+        payload = json.dumps({"text": phrase, "lang": "es", "emotion": "reacting", "preludeSeconds": 1}).encode("utf-8")
+        request = Request(f"{VOICE_DAEMON_URL}/speak", data=payload, method="POST", headers={"Content-Type": "application/json"})
+        try:
+            urlopen(request, timeout=.5).close()
+        except OSError:
+            pass
 
     def _refresh_quotas(self) -> None:
         """Read Codex quotas outside Tk's render thread once per minute."""

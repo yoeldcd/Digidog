@@ -1,0 +1,34 @@
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
+# --------------------------------------------------------------------------- #
+# --- WOSP CODEX POLICY BINDING --------------------------------------------- #
+# --------------------------------------------------------------------------- #
+# This project-local file defines and selects the agent-specific profile.
+# Codex requires default_permissions when a custom profile is declared. Auto
+# Review handles escalations while project trust remains owned by Codex.
+
+approval_policy = "on-request"
+approvals_reviewer = "auto_review"
+default_permissions = "mia_workspace_guard"
+allow_login_shell = false
+
+[permissions.mia_workspace_guard]
+description = "Agent-local access for this WoSP and its canonical agent directory."
+extends = ":read-only"
+
+[permissions.mia_workspace_guard.filesystem]
+"D:/.agents/@Mia" = "write"
+"~/.ssh" = "deny"
+"~/.aws" = "deny"
+"~/.azure" = "deny"
+glob_scan_max_depth = 6
+
+[permissions.mia_workspace_guard.filesystem.":workspace_roots"]
+"." = "write"
+".env" = "deny"
+".env.*" = "deny"
+"*.env" = "deny"
+"**/.env" = "deny"
+"**/.env.*" = "deny"
+"**/*.env" = "deny"

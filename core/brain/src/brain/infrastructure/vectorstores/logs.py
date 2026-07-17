@@ -85,7 +85,6 @@ def index_log_file(manager: LogVectorManagerProtocol, file_path: Path) -> dict[s
             "entry_title": title,
             "entry_time": entry_time,
             "read_command": read_command,
-            "body": doc_text,
             "type": git_type,
             "timestamp": entry_ts,
             "timestamp_sec": timestamp_sec,
@@ -102,40 +101,20 @@ def index_log_file(manager: LogVectorManagerProtocol, file_path: Path) -> dict[s
 
 def index_log_entries(manager: LogVectorManagerProtocol, entries: list[object]) -> dict[str, int | str]:
     """Index DB-backed log records into the local logs collection."""
-    from brain.application.logs.parsing import parse_log_timestamp
-
     deleted_count = manager.delete_by_metadata({"source_kind": "log"})
     created_count = 0
     for entry in entries:
-        entry_ts = str(getattr(entry, "timestamp", ""))
-        domain = str(getattr(entry, "domain", "unknown"))
-        title = str(getattr(entry, "title", ""))
-        git_type = str(getattr(entry, "change_type", ""))
-        source_path = str(getattr(entry, "source_path", "") or "")
-        rel_path = source_path.replace("$agent/logs/", "", 1) if source_path else "database/brain_logs.db"
+        record_id = int(getattr(entry, "record_id", 0) or 0)
+        if record_id <= 0:
+            continue
         doc_text = log_record_text(entry=entry)
         if not doc_text:
             continue
-
-        parsed_dt = parse_log_timestamp(entry_ts)
-        timestamp_sec = parsed_dt.timestamp() if parsed_dt != datetime.datetime.min else 0.0
-        entry_time = normalized_entry_time(entry_ts)
-        read_command = reader_command_for_entry(command_name="read-log", date_text=entry_ts[:10], entry_time=entry_time)
-        chunk_id = f"log.db#{_log_record_slug(entry_ts=entry_ts, domain=domain, title=title)}"
+        chunk_id = f"log.db#{record_id}"
         metadata = {
-            "path": rel_path,
             "source_kind": "log",
             "source_backend": "sqlite",
-            "domain": domain,
-            "title": title,
-            "entry_title": title,
-            "entry_time": entry_time,
-            "read_command": read_command,
-            "body": doc_text,
-            "type": git_type,
-            "timestamp": entry_ts,
-            "timestamp_sec": timestamp_sec,
-            "mtime": float(getattr(entry, "source_mtime", 0.0) or 0.0),
+            "record_id": record_id,
         }
         manager.add_record(chunk_id, doc_text, metadata)
         created_count += 1
@@ -159,12 +138,6 @@ def log_record_text(entry: object) -> str:
     return "\n".join(part.strip() for part in parts if part and part.strip())
 
 
-def _log_record_slug(entry_ts: str, domain: str, title: str) -> str:
-    """Return a stable vector id suffix for one log record."""
-    raw_slug = f"{entry_ts}-{domain}-{title}"
-    return re.sub(r"[^a-zA-Z0-9]", "-", raw_slug).strip("-")
-
-
 def search_logs(
     manager: LogVectorManagerProtocol,
     query: str,
@@ -172,6 +145,10 @@ def search_logs(
     limit: int = 5,
 ) -> list[dict]:
     """Perform semantic search on logs with optional domain filtering and recency decay."""
+    from brain.application.logs.parsing import parse_log_timestamp
+    from brain.application.logs.store import get_log_entry_by_id
+    from brain.infrastructure.runtime.paths import get_workspace_root
+
     raw_limit = limit * 4 if domain_filter else limit * 2
     results = manager.search(query, limit=raw_limit)
 
@@ -180,14 +157,21 @@ def search_logs(
 
     for result in results:
         meta = result["metadata"]
-        log_domain = meta.get("domain", "unknown")
+        record = get_log_entry_by_id(
+            workspace_root=get_workspace_root(),
+            record_id=int(meta.get("record_id") or 0),
+        )
+        if record is None:
+            continue
+        log_domain = record.domain
 
         if domain_filter:
             if not (log_domain == domain_filter or log_domain.startswith(f"{domain_filter}.")):
                 continue
 
         similarity = result["similarity"]
-        timestamp_sec = meta.get("timestamp_sec", 0.0)
+        parsed_dt = parse_log_timestamp(record.timestamp)
+        timestamp_sec = parsed_dt.timestamp() if parsed_dt != datetime.datetime.min else 0.0
 
         age_days = max(0.0, (now_sec - timestamp_sec) / (24 * 3600))
         recency_factor = 1.0 / (1.0 + 0.01 * age_days)
@@ -195,13 +179,17 @@ def search_logs(
 
         formatted.append({
             "id": result["id"],
-            "text": result["text"],
-            "path": meta.get("path"),
+            "text": log_record_text(entry=record),
+            "path": record.source_path or "database/brain_logs.db",
             "domain": log_domain,
-            "title": meta.get("title"),
-            "type": meta.get("type"),
-            "timestamp": meta.get("timestamp"),
-            "read_command": meta.get("read_command", ""),
+            "title": record.title,
+            "type": record.change_type,
+            "timestamp": record.timestamp,
+            "read_command": reader_command_for_entry(
+                command_name="read-log",
+                date_text=record.timestamp[:10],
+                entry_time=normalized_entry_time(record.timestamp),
+            ),
             "similarity": similarity,
             "recency_factor": recency_factor,
             "score": combined_score,

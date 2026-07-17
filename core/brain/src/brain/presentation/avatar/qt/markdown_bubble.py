@@ -5,18 +5,24 @@
 from __future__ import annotations
 
 import math
+import os
+import re
+from pathlib import Path
+from urllib.request import Request, urlopen
 
-from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, QTimer, Signal
+from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import (
     QColor,
     QCursor,
     QFont,
+    QImage,
     QPainter,
     QPainterPath,
     QPalette,
     QPen,
     QPolygonF,
     QTextCursor,
+    QTextDocument,
     QTextFrameFormat,
     QTextTable,
 )
@@ -32,7 +38,69 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from brain.presentation.avatar.interactivity.markdown_document import AVATAR_DOCUMENT_CSS, avatar_markdown_source
+from brain.presentation.avatar.interactivity.markdown_document import (
+    AVATAR_DOCUMENT_CSS,
+    avatar_document_css,
+    avatar_markdown_source,
+)
+
+
+def _qt_image_markdown(source: str) -> tuple[str, dict[str, tuple[int | None, int | None]]]:
+    """Translate HTML image tags into Qt Markdown plus bounded dimension metadata."""
+    dimensions: dict[str, tuple[int | None, int | None]] = {}
+
+    def replace_image(match) -> str:
+        attributes = {
+            name.lower(): value
+            for name, _quote, value in re.findall(
+                r"(src|alt|width|height)\s*=\s*([\"']?)([^\s>\"']+)\2",
+                match.group(1),
+                flags=re.IGNORECASE,
+            )
+        }
+        source_url = attributes.get("src", "").strip()
+        if not source_url:
+            return ""
+        width = max(16, min(1200, int(attributes["width"]))) if attributes.get("width", "").isdigit() else None
+        height = max(16, min(1200, int(attributes["height"]))) if attributes.get("height", "").isdigit() else None
+        dimensions[source_url] = (width, height)
+        markdown_url = source_url
+        if re.match(r"^[A-Za-z]:[\\/]", source_url) or source_url.startswith("\\\\"):
+            markdown_url = QUrl.fromLocalFile(source_url).toString()
+            dimensions[markdown_url] = (width, height)
+        return f'![{attributes.get("alt", "image") or "image"}]({markdown_url})'
+
+    markdown = re.sub(r"<img\s+([^>]+)>", replace_image, source, flags=re.IGNORECASE)
+    return markdown, dimensions
+
+
+class AvatarTextBrowser(QTextBrowser):
+    """Resolve bounded local and remote image resources for avatar Markdown."""
+
+    MAX_IMAGE_BYTES = 100 * 1024 * 1024
+
+    def loadResource(self, resource_type: int, name: QUrl):  # noqa: N802 - Qt API
+        """Load image resources without allowing arbitrary non-image navigation."""
+        if resource_type != QTextDocument.ResourceType.ImageResource:
+            return super().loadResource(resource_type, name)
+        scheme = name.scheme().lower()
+        if scheme in {"http", "https", "ftp", "data"}:
+            try:
+                request = Request(name.toString(), headers={"User-Agent": "Codex-Dog-Avatar/1.0"})
+                with urlopen(request, timeout=5) as response:
+                    payload = response.read(self.MAX_IMAGE_BYTES + 1)
+                if len(payload) <= self.MAX_IMAGE_BYTES:
+                    image = QImage.fromData(payload)
+                    if not image.isNull():
+                        return image
+            except (OSError, ValueError):
+                return QImage()
+        if scheme in {"", "file"} or (len(scheme) == 1 and name.toString()[1:3] in {":/", ":\\"}):
+            path = name.toLocalFile() if scheme == "file" else name.toString()
+            image = QImage(path)
+            if not image.isNull():
+                return image
+        return super().loadResource(resource_type, name)
 
 
 class QtMarkdownBubble(QWidget):
@@ -59,12 +127,13 @@ class QtMarkdownBubble(QWidget):
         self._header_emotion = ""
         self._header_consumer_path = ""
         self._placed_above = True
+        self._theme_mode = "light"
         self._hover_timer = QTimer(self)
         self._hover_timer.setInterval(80)
         self._hover_timer.timeout.connect(self._sync_resize_hover)
         self._hover_timer.start()
 
-        self.document_view = QTextBrowser(self)
+        self.document_view = AvatarTextBrowser(self)
         self.document_view.setFrameShape(QTextBrowser.Shape.NoFrame)
         self.document_view.setOpenExternalLinks(False)
         self.document_view.setTextInteractionFlags(
@@ -132,6 +201,40 @@ class QtMarkdownBubble(QWidget):
         layout.addWidget(self.separator_b)
         layout.addWidget(self.footer)
         self._position_close_button()
+        self.set_theme("light")
+
+    def set_theme(self, mode: str) -> None:
+        """Apply a complete contrast-safe light or dark bubble palette."""
+        normalized = mode if mode in {"light", "dark"} else "light"
+        self._theme_mode = normalized
+        dark = normalized == "dark"
+        text = "#f9edf5" if dark else "#251a28"
+        muted = "#dec5d5" if dark else "#513445"
+        separator = "rgba(255, 155, 211, 125)" if dark else "rgba(111, 49, 88, 90)"
+        palette = self.document_view.palette()
+        palette.setColor(QPalette.ColorRole.Text, QColor(text))
+        palette.setColor(QPalette.ColorRole.WindowText, QColor(text))
+        self.document_view.setPalette(palette)
+        self.document_view.setStyleSheet(f"QTextBrowser {{ color: {text}; background: transparent; border: 0; }}")
+        self.document_view.document().setDefaultStyleSheet(avatar_document_css(normalized))
+        self.source_label.setStyleSheet(f"color: {muted}; background: transparent;")
+        self.history_label.setStyleSheet(f"color: {muted}; font: 700 10pt Arial; background: transparent;")
+        self.separator_a_line.setStyleSheet(f"background: {separator}; border: 0;")
+        self.separator_b_line.setStyleSheet(f"background: {separator}; border: 0;")
+        self.close_button.setStyleSheet(
+            f"QToolButton {{ color: {text}; background: transparent; border: 0; font: 700 16px 'Segoe UI Symbol'; }}"
+            "QToolButton:hover { color: #ff5b70; }"
+        )
+        navigation_style = (
+            "QToolButton { color: #fff4fb; background: #302832; border: 1px solid #f3d9e8; "
+            "border-radius: 12px; font: 700 16px Arial; }"
+            "QToolButton:hover { color: #ffffff; background: #493646; border-color: #ff9bd3; }"
+            "QToolButton:disabled { color: #8d7b87; background: #292229; border-color: #685a63; }"
+        )
+        self.backward_button.setStyleSheet(navigation_style)
+        self.forward_button.setStyleSheet(navigation_style)
+        self.setProperty("avatarTheme", normalized)
+        self.update()
 
     def _reply_button(self) -> QToolButton:
         """Create the action that opens the independent reply composer."""
@@ -165,9 +268,7 @@ class QtMarkdownBubble(QWidget):
         separator_layout = QHBoxLayout(container)
         separator_layout.setContentsMargins(0, 0, 0, 0)
         separator_layout.setSpacing(0)
-        separator_layout.addStretch(1)
-        separator_layout.addWidget(line, 8)
-        separator_layout.addStretch(1)
+        separator_layout.addWidget(line, 1)
         return container, line
 
     def set_vertical_placement(self, above_avatar: bool) -> None:
@@ -234,9 +335,44 @@ class QtMarkdownBubble(QWidget):
     ) -> None:
         """Render one semantic Markdown message without executing external links."""
         self._set_header(emotion_prefix, consumer_path, history_index, history_total)
-        self.document_view.setMarkdown(avatar_markdown_source(text))
+        if consumer_path:
+            base_path = Path(consumer_path).expanduser()
+            if base_path.is_file():
+                base_path = base_path.parent
+            self.document_view.document().setBaseUrl(QUrl.fromLocalFile(str(base_path.resolve()) + os.sep))
+        markdown, image_dimensions = _qt_image_markdown(avatar_markdown_source(text))
+        self.document_view.setMarkdown(markdown)
+        self._apply_image_dimensions(image_dimensions)
         self._format_tables()
         self._fit_content_height()
+
+    def _apply_image_dimensions(self, dimensions: dict[str, tuple[int | None, int | None]]) -> None:
+        """Apply extended width and height metadata to rendered Qt image fragments."""
+        if not dimensions:
+            return
+        block = self.document_view.document().begin()
+        while block.isValid():
+            iterator = block.begin()
+            while not iterator.atEnd():
+                fragment = iterator.fragment()
+                image_format = fragment.charFormat().toImageFormat()
+                if fragment.isValid() and image_format.isValid():
+                    resolved = next(
+                        (value for source, value in dimensions.items() if image_format.name() == source or image_format.name().endswith(source)),
+                        None,
+                    )
+                    if resolved:
+                        width, height = resolved
+                        if width is not None:
+                            image_format.setWidth(width)
+                        if height is not None:
+                            image_format.setHeight(height)
+                        cursor = QTextCursor(self.document_view.document())
+                        cursor.setPosition(fragment.position())
+                        cursor.setPosition(fragment.position() + fragment.length(), QTextCursor.MoveMode.KeepAnchor)
+                        cursor.setCharFormat(image_format)
+                iterator += 1
+            block = block.next()
 
     def _set_header(self, emotion: str, consumer_path: str, history_index: int, history_total: int) -> None:
         """Update provenance and bounded history navigation state."""
@@ -388,8 +524,9 @@ class QtMarkdownBubble(QWidget):
         """Paint the current pink rounded bubble and lower-right tail."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        painter.setPen(QPen(QColor("#f062b7"), 3))
-        painter.setBrush(QColor("#fff8fd"))
+        dark = self._theme_mode == "dark"
+        painter.setPen(QPen(QColor("#ff74c4" if dark else "#f062b7"), 3))
+        painter.setBrush(QColor("#1f1722" if dark else "#fff8fd"))
         tail_space = 22
         body = QRectF(tail_space, tail_space, self.width() - tail_space * 2, self.height() - tail_space * 2)
         body_path = QPainterPath()
@@ -418,7 +555,7 @@ class QtMarkdownBubble(QWidget):
         painter.drawPath(body_path.united(tail_path))
         if self._hover_corner:
             corners = {"nw": body.topLeft(), "ne": body.topRight(), "sw": body.bottomLeft(), "se": body.bottomRight()}
-            painter.setPen(QPen(QColor("#ffffff"), 1))
+            painter.setPen(QPen(QColor("#1f1722" if dark else "#ffffff"), 1))
             painter.setBrush(QColor("#f062b7"))
             painter.drawEllipse(corners[self._hover_corner], 5, 5)
         painter.end()

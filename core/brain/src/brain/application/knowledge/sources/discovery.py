@@ -11,11 +11,20 @@ from pathlib import Path
 # Application Modules Imports
 from brain.application.knowledge.models.dtos.sources import SourceDTO
 from brain.application.knowledge.runtime.scopes import normalize_knowledge_scope
-from brain.application.knowledge.sources.models import SOURCE_DOMAINS, WORKSPACE_LOG_SOURCE_TYPE, SourceCandidate
+from brain.application.knowledge.sources.models import (
+    SOURCE_DOMAINS,
+    WORKSPACE_LOG_SOURCE_TYPE,
+    WORKSPACE_MESSAGE_SOURCE_TYPE,
+    SourceCandidate,
+)
 from brain.domain.sources.classification import memory_source_type
 from brain.domain.sources.models import SourceRegistryRecordDTO
 from brain.infrastructure.runtime.paths import get_agent_home, get_workspace_root
-from brain.infrastructure.sources.scanning import scan_log_source_records, scan_memory_source_records
+from brain.infrastructure.sources.scanning import (
+    scan_log_source_records,
+    scan_memory_source_records,
+    scan_message_database_record,
+)
 
 
 def discover_sources(
@@ -55,6 +64,21 @@ def discover_sources(
     if normalized_scope == "local" and normalized_domain in ("all", "logs"):
         _ensure_log_database_for_discovery(workspace_root=resolved_workspace_root)
         discovered.extend(_discover_log_candidates(workspace_root=resolved_workspace_root))
+    if normalized_scope == "local" and normalized_domain in ("all", "messages"):
+        message_record = scan_message_database_record(workspace_root=resolved_workspace_root)
+        if message_record is not None:
+            discovered.append(
+                SourceCandidate(
+                    source_dto=SourceDTO(
+                        source_type=WORKSPACE_MESSAGE_SOURCE_TYPE,
+                        path=message_record.path,
+                        title=message_record.title,
+                        active=True,
+                    ),
+                    path=resolved_workspace_root / "$agent" / "database" / "messages.db",
+                    mtime=message_record.mtime,
+                ),
+            )
 
     discovered.sort(key=lambda candidate: candidate.mtime, reverse=True)
     if limit is not None:

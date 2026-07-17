@@ -13,9 +13,19 @@ from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtTest import QTest
 
 from brain.presentation.avatar.window.backend import requested_avatar_backend, resolve_avatar_window_class
-from brain.presentation.avatar.interactivity.markdown_document import avatar_markdown_source
+from brain.presentation.avatar.interactivity.markdown_document import (
+    avatar_markdown_source,
+    expand_avatar_images,
+    normalize_avatar_markdown,
+)
 from brain.presentation.avatar.qt.markdown_bubble import QtMarkdownBubble
-from brain.presentation.avatar.qt.window import QtAvatarWindow, bubble_position, fit_avatar_frame, quota_reset_label
+from brain.presentation.avatar.qt.window import (
+    QtAvatarWindow,
+    bubble_position,
+    fit_avatar_frame,
+    quota_reset_label,
+    reply_composer_geometry,
+)
 from brain.presentation.avatar.tk.window import AvatarWindow
 
 
@@ -26,6 +36,17 @@ def test_backend_defaults_to_qt_and_keeps_explicit_tk_fallback() -> None:
     assert requested_avatar_backend({"BRAIN_AVATAR_UI": "QT"}) == "qt"
     assert requested_avatar_backend({"BRAIN_AVATAR_UI": "unknown"}) == "qt"
     assert resolve_avatar_window_class({"BRAIN_AVATAR_UI": "qt"}) is QtAvatarWindow
+
+
+def test_qt_avatar_body_click_preserves_playback_and_reactions() -> None:
+    """Qt delays Play briefly so a double click remains a reaction gesture."""
+    import inspect
+
+    source = inspect.getsource(QtAvatarWindow._avatar_click)
+    reaction_source = inspect.getsource(QtAvatarWindow._speak_reaction)
+    assert "avatar_click_timer.isActive()" in source
+    assert "_speak_reaction()" in source
+    assert '"emotion": "reacting"' in reaction_source
 
 
 def test_avatar_markdown_preserves_narrative_and_dialogue_semantics() -> None:
@@ -49,6 +70,47 @@ def test_avatar_markdown_does_not_confuse_links_or_images_with_narrative() -> No
     assert "> *🩷 Observo el visor.*" in source
     assert "[enlace](https://example.com)" in source
     assert "![una imagen](avatar.png)" in source
+
+
+def test_avatar_markdown_materializes_explicit_newlines_and_inline_lists() -> None:
+    source = normalize_avatar_markdown(r"Validacion:\n- Uno\n- Dos")
+    assert source == "Validacion:\n- Uno\n- Dos"
+
+
+def test_avatar_markdown_projects_long_comma_enumerations_as_lists() -> None:
+    source = normalize_avatar_markdown("Incluye: uno, dos, tres, cuatro, cinco")
+    assert source == "Incluye:\n\n- uno\n- dos\n- tres\n- cuatro\n- cinco"
+
+
+def test_avatar_markdown_preserves_code_escapes_and_short_prose() -> None:
+    source = normalize_avatar_markdown(r"`valor\ncrudo` y uno, dos, tres")
+    assert r"`valor\ncrudo`" in source
+    assert "- uno" not in source
+
+
+def test_extended_markdown_images_emit_bounded_html_dimensions() -> None:
+    source = expand_avatar_images("![Vista](https://example.com/image.png){width=320 height=9999}")
+    assert source == '<img src="https://example.com/image.png" alt="Vista" width="320" height="1200">'
+
+
+def test_qt_bubble_keeps_html_image_dimensions() -> None:
+    import tempfile
+    from pathlib import Path
+    from PySide6.QtGui import QImage
+
+    app = QApplication.instance() or QApplication([])
+    with tempfile.TemporaryDirectory() as directory:
+        image_path = Path(directory) / "sample.png"
+        image = QImage(4, 4, QImage.Format.Format_ARGB32)
+        image.fill(QColor("pink"))
+        assert image.save(str(image_path))
+        bubble = QtMarkdownBubble()
+        bubble.set_message(f'<img src="{image_path.as_posix()}" width="240" height="120">')
+        html = bubble.document_view.document().toHtml()
+        assert 'width="240"' in html
+        assert 'height="120"' in html
+        bubble.close()
+    app.processEvents()
 
 
 def test_qt_bubble_renders_markdown_offscreen() -> None:
@@ -77,6 +139,26 @@ def test_qt_bubble_renders_markdown_offscreen() -> None:
     app.processEvents()
 
 
+def test_qt_bubble_applies_contrast_safe_dark_and_light_links() -> None:
+    app = QApplication.instance() or QApplication([])
+    bubble = QtMarkdownBubble()
+    bubble.set_theme("dark")
+    dark_css = bubble.document_view.document().defaultStyleSheet()
+    assert "#ff9bd3" in dark_css
+    assert bubble.property("avatarTheme") == "dark"
+    bubble.set_theme("light")
+    light_css = bubble.document_view.document().defaultStyleSheet()
+    assert "#78124e" in light_css
+    assert bubble.property("avatarTheme") == "light"
+    bubble.close()
+    app.processEvents()
+
+
+def test_avatar_image_viewer_allows_large_external_resources() -> None:
+    from brain.presentation.avatar.qt.markdown_bubble import AvatarTextBrowser
+    assert AvatarTextBrowser.MAX_IMAGE_BYTES == 100 * 1024 * 1024
+
+
 def test_bubble_header_shows_emotion_repository_and_history_position() -> None:
     app = QApplication.instance() or QApplication([])
     bubble = QtMarkdownBubble()
@@ -95,8 +177,8 @@ def test_bubble_header_shows_emotion_repository_and_history_position() -> None:
     assert bubble.source_label.font().pointSize() == 11
     assert bubble.close_button.geometry().center().y() == bubble.header.geometry().center().y()
     assert bubble.footer.y() + bubble.footer.height() <= bubble.height() - 24
-    assert .79 <= bubble.separator_a_line.width() / bubble.separator_a.width() <= .81
-    assert .79 <= bubble.separator_b_line.width() / bubble.separator_b.width() <= .81
+    assert .98 <= bubble.separator_a_line.width() / bubble.separator_a.width() <= 1
+    assert .98 <= bubble.separator_b_line.width() / bubble.separator_b.width() <= 1
     header_gap = bubble.document_view.y() - (bubble.header.y() + bubble.header.height())
     footer_gap = bubble.footer.y() - (bubble.document_view.y() + bubble.document_view.height())
     assert header_gap == footer_gap == 10
@@ -137,6 +219,10 @@ def test_qt_avatar_runtime_constructs_without_polling() -> None:
     assert window.bubble.document_view.textInteractionFlags()
     assert window.controls.pinned is True
     assert window.controls.accessibleName() == "Controles del avatar"
+    window.bubble.set_theme("dark")
+    window.reply_window.set_theme("dark")
+    assert window.bubble.property("avatarTheme") == "dark"
+    assert window.reply_window.property("avatarTheme") == "dark"
     window.controls.set_state(playing=True, muted=True)
     window.controls.set_quotas(25, 60, "14:00", "21 JUL")
     assert window.controls.playing is True
@@ -191,6 +277,20 @@ def test_bubble_placement_and_indefinite_quota_fallback() -> None:
     no_vertical_room = bubble_position(QRect(0, 0, 1200, 400), QRect(900, 100, 250, 200), QSize(500, 260))
     assert no_vertical_room.x() < 900
     assert quota_reset_label(0, False) == "--:--"
+
+
+def test_reply_composer_matches_bubble_width_and_viewport_direction() -> None:
+    screen = QRect(0, 0, 1200, 800)
+    bubble = QRect(500, 180, 620, 260)
+    above = reply_composer_geometry(screen, bubble, True)
+    assert above.width() == bubble.width()
+    assert above.x() == bubble.x()
+    assert above.top() == screen.top() + 18
+    assert above.bottom() == bubble.bottom()
+    below = reply_composer_geometry(screen, bubble, False)
+    assert below.width() == bubble.width()
+    assert below.top() == bubble.top()
+    assert below.bottom() == screen.bottom() - 18
 
 
 def test_message_height_is_temporary_but_width_is_stable() -> None:

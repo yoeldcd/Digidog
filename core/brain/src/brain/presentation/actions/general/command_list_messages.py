@@ -1,27 +1,41 @@
 # Author: Yoel David <yoeldcd@gmail.com>
 # X: https://x.com/SAY6267
 
-"""Action for listing temporary voice daemon state."""
+"""Action for listing persisted workspace avatar messages."""
 
 from __future__ import annotations
 
 import argparse
 import json
 
-from brain.infrastructure.voice.daemon_client import VoiceDaemonClient
+from brain.infrastructure.messages.repository import MessageRepository
+from brain.infrastructure.runtime.paths import get_workspace_root
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Print retained speak jobs and synthesized voice messages."""
-    snapshot = VoiceDaemonClient().snapshot()
+    """Print persisted messages using bounded workspace-local filters."""
+    repository = MessageRepository(consumer_path=get_workspace_root(), require_registered=False)
+    messages = repository.list_messages(
+        query=str(getattr(args, "query", "")),
+        chat_id=str(getattr(args, "chat_id", "")),
+        emotion=str(getattr(args, "emotion", "")),
+        source_command=str(getattr(args, "source_command", "")),
+        limit=int(getattr(args, "limit", 100)),
+        offset=int(getattr(args, "offset", 0)),
+    )
+    payload = {
+        "ok": True,
+        "command": "list-messages",
+        "database": repository.database_path.as_posix(),
+        "count": len(messages),
+        "total": repository.count(),
+        "messages": [message.as_mapping() for message in messages],
+    }
     if getattr(args, "json", False):
-        print(json.dumps(snapshot, ensure_ascii=False, indent=2))
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0
-    print("# Voice Messages")
-    print("\n## Speaks")
-    for speak in snapshot.get("speaks", []):
-        print(f"- {speak['id']} [{speak['status']}] {speak.get('text', '')}")
-    print("\n## Retained Audio")
-    for message in snapshot.get("messages", []):
-        print(f"- {message['id']} <- {message['speakId']} | {message['name']} | {message['sizeBytes']} bytes")
+    print("# Avatar Message History")
+    for message in messages:
+        operation = f" {message.source_command}:{message.source_phase}" if message.source_command else ""
+        print(f"- {message.created_at} [{message.emotion or 'neutral'}]{operation} {message.text}")
     return 0

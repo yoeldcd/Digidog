@@ -16,7 +16,7 @@ SCHEMA = CommandSchema(
         ArgumentSchema(
             flags=["--domain"],
             default="all",
-            help="Source domain: all, memory, diary, profiles, or logs.",
+            help="Source domain: all, memory, diary, profiles, logs, or messages.",
         ),
         ArgumentSchema(
             flags=["--scope"],
