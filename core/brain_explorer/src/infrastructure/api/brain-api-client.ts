@@ -3,7 +3,7 @@
  * @see https://x.com/SAY6267
  */
 
-import type { ApiRequestOptions, ApiResponse, BacklogMutation, BacklogPayload, LogsPayload, PicturesPayload, QueryParams, HealthStatus, ProjectsResponse, VoiceMessagesResponse, VoiceStatusResponse, WikisResponse } from "../../application/contracts/api-dtos.ts";
+import type { ApiRequestOptions, ApiResponse, BacklogMutation, BacklogPayload, LogsPayload, PictureDescriptionPayload, PicturesPayload, QueryParams, HealthStatus, ProjectsResponse, VoiceMessagesResponse, VoiceStatusResponse, WikisResponse } from "../../application/contracts/api-dtos.ts";
 
 interface CacheRecord {
     payload: ApiResponse;
@@ -360,13 +360,18 @@ export class BrainApiClient extends EventTarget {
         return this.request<PicturesPayload>(`/api/pictures${query ? `?${query}` : ""}`, options);
     }
 
-    /** Persist one manual picture description. */
-    describePicture(pictureId: string, description: string): Promise<ApiResponse> {
-        return this.request("/api/pictures/description", {
+    /** Persist one manual description or generate it when the text is omitted. */
+    describePicture(pictureId: string, description = ""): Promise<ApiResponse<PictureDescriptionPayload>> {
+        return this.request<PictureDescriptionPayload>("/api/pictures/description", {
             method: "POST",
             body: JSON.stringify({ pictureId, description }),
             forceRefresh: true
         });
+    }
+
+    /** Invoke the model-backed describe-picture flow for one registry record. */
+    generatePictureDescription(pictureId: string): Promise<ApiResponse<PictureDescriptionPayload>> {
+        return this.describePicture(pictureId);
     }
 
     /** Build the opaque registry-backed URL for one picture. */

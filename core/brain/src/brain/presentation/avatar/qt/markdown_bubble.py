@@ -10,7 +10,7 @@ import re
 from pathlib import Path
 from urllib.request import Request, urlopen
 
-from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import QPoint, QPointF, QRectF, QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import (
     QColor,
     QCursor,
@@ -74,6 +74,28 @@ def _qt_image_markdown(source: str) -> tuple[str, dict[str, tuple[int | None, in
     return markdown, dimensions
 
 
+def normalized_image_size(
+    intrinsic: QSize,
+    requested: tuple[int | None, int | None],
+    viewport: QSize,
+    zoom_factor: float = 1.0,
+) -> QSize:
+    """Fit one image into its requested box and viewport without distortion."""
+    natural_width = max(1, intrinsic.width())
+    natural_height = max(1, intrinsic.height())
+    requested_width, requested_height = requested
+    width_limit = requested_width or natural_width
+    height_limit = requested_height or natural_height
+    base_scale = min(width_limit / natural_width, height_limit / natural_height)
+    desired_scale = max(0.1, base_scale * max(0.1, zoom_factor))
+    viewport_scale = min(
+        max(1, viewport.width()) / natural_width,
+        max(1, viewport.height()) / natural_height,
+    )
+    scale = min(desired_scale, viewport_scale)
+    return QSize(max(1, round(natural_width * scale)), max(1, round(natural_height * scale)))
+
+
 class AvatarTextBrowser(QTextBrowser):
     """Resolve bounded local and remote image resources for avatar Markdown."""
 
@@ -128,6 +150,9 @@ class QtMarkdownBubble(QWidget):
         self._header_consumer_path = ""
         self._placed_above = True
         self._theme_mode = "light"
+        self._zoom_step = 0
+        self._last_image_dimensions: dict[str, tuple[int | None, int | None]] = {}
+        self._footer_actions_on_right = False
         self._hover_timer = QTimer(self)
         self._hover_timer.setInterval(80)
         self._hover_timer.timeout.connect(self._sync_resize_hover)
@@ -162,22 +187,19 @@ class QtMarkdownBubble(QWidget):
         self.footer = QWidget(self)
         self.footer.setFixedHeight(26)
         self.footer.setStyleSheet("background: transparent;")
-        self.backward_button = self._navigation_button("‹", "Mensaje anterior", -1)
+        self.backward_button = self._navigation_button("\u2039", "Mensaje anterior", -1)
         self.history_label = QLabel("1/1", self.footer)
         self.history_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.history_label.setFixedWidth(40)
         self.history_label.setStyleSheet("color: #765568; font: 700 10pt Arial; background: transparent;")
-        self.forward_button = self._navigation_button("›", "Mensaje siguiente", 1)
+        self.forward_button = self._navigation_button("\u203a", "Mensaje siguiente", 1)
         self.reply_button = self._reply_button()
-        footer_layout = QHBoxLayout(self.footer)
-        footer_layout.setContentsMargins(0, 0, 0, 0)
-        footer_layout.setSpacing(6)
-        footer_layout.addWidget(self.reply_button)
-        footer_layout.addStretch(1)
-        footer_layout.addWidget(self.backward_button)
-        footer_layout.addWidget(self.history_label)
-        footer_layout.addWidget(self.forward_button)
-        footer_layout.addStretch(1)
+        self.zoom_out_button = self._zoom_button("-", "Reducir mensaje", -1)
+        self.zoom_in_button = self._zoom_button("+", "Ampliar mensaje", 1)
+        self.footer_layout = QHBoxLayout(self.footer)
+        self.footer_layout.setContentsMargins(0, 0, 0, 0)
+        self.footer_layout.setSpacing(6)
+        self._rebuild_footer_layout(False)
 
         self.close_button = QToolButton(self)
         self.close_button.setText("\u00d7")
@@ -225,21 +247,20 @@ class QtMarkdownBubble(QWidget):
             f"QToolButton {{ color: {text}; background: transparent; border: 0; font: 700 16px 'Segoe UI Symbol'; }}"
             "QToolButton:hover { color: #ff5b70; }"
         )
-        navigation_style = (
-            "QToolButton { color: #fff4fb; background: #302832; border: 1px solid #f3d9e8; "
-            "border-radius: 12px; font: 700 16px Arial; }"
-            "QToolButton:hover { color: #ffffff; background: #493646; border-color: #ff9bd3; }"
-            "QToolButton:disabled { color: #8d7b87; background: #292229; border-color: #685a63; }"
-        )
+        navigation_style = self._navigation_style(dark)
+        action_style = self._action_style(dark)
         self.backward_button.setStyleSheet(navigation_style)
         self.forward_button.setStyleSheet(navigation_style)
+        self.reply_button.setStyleSheet(action_style)
+        self.zoom_out_button.setStyleSheet(action_style)
+        self.zoom_in_button.setStyleSheet(action_style)
         self.setProperty("avatarTheme", normalized)
         self.update()
 
     def _reply_button(self) -> QToolButton:
         """Create the action that opens the independent reply composer."""
         button = QToolButton(self.footer)
-        button.setText("↩")
+        button.setText("\u21a9")
         button.setAccessibleName("Responder en Codex")
         button.setToolTip("Responder a este task de Codex")
         button.setFixedSize(26, 24)
@@ -251,6 +272,81 @@ class QtMarkdownBubble(QWidget):
         button.clicked.connect(self.replyRequested.emit)
         button.setEnabled(False)
         return button
+
+    def _zoom_button(self, text: str, accessible_name: str, direction: int) -> QToolButton:
+        """Create one message-scale control beside the reply action."""
+        button = QToolButton(self.footer)
+        button.setText(text)
+        button.setAccessibleName(accessible_name)
+        button.setToolTip(accessible_name)
+        button.setFixedSize(26, 24)
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.clicked.connect(lambda _checked=False, value=direction: self._adjust_zoom(value))
+        return button
+
+    def _rebuild_footer_layout(self, actions_on_right: bool) -> None:
+        """Place reply and zoom actions nearest the avatar-facing bubble edge."""
+        while self.footer_layout.count():
+            self.footer_layout.takeAt(0)
+        actions = (self.reply_button, self.zoom_out_button, self.zoom_in_button)
+        navigation = (self.backward_button, self.history_label, self.forward_button)
+        action_width = sum(widget.width() for widget in actions) + self.footer_layout.spacing() * (len(actions) - 1)
+        if not actions_on_right:
+            for widget in actions:
+                self.footer_layout.addWidget(widget)
+        else:
+            self.footer_layout.addSpacing(action_width)
+        self.footer_layout.addStretch(1)
+        for widget in navigation:
+            self.footer_layout.addWidget(widget)
+        self.footer_layout.addStretch(1)
+        if actions_on_right:
+            for widget in reversed(actions):
+                self.footer_layout.addWidget(widget)
+        else:
+            self.footer_layout.addSpacing(action_width)
+        self._footer_actions_on_right = actions_on_right
+
+    @staticmethod
+    def _navigation_style(dark: bool) -> str:
+        """Return theme-matched circular history control styling."""
+        if dark:
+            return (
+                "QToolButton { color: #fff4fb; background: #302832; border: 1px solid #a96b91; "
+                "border-radius: 12px; font: 700 16px Arial; }"
+                "QToolButton:hover { color: #ffffff; background: #493646; border-color: #ff9bd3; }"
+                "QToolButton:disabled { color: #8d7b87; background: #292229; border-color: #685a63; }"
+            )
+        return (
+            "QToolButton { color: #6f3158; background: #fff1f8; border: 1px solid #c87aa9; "
+            "border-radius: 12px; font: 700 16px Arial; }"
+            "QToolButton:hover { color: #78124e; background: #ffe0f2; border-color: #f062b7; }"
+            "QToolButton:disabled { color: #b79aaa; background: #f4e7ef; border-color: #dbcbd5; }"
+        )
+
+    @staticmethod
+    def _action_style(dark: bool) -> str:
+        """Return theme-matched styling for reply and zoom actions."""
+        color = "#ffb6df" if dark else "#6f3158"
+        hover = "#ffffff" if dark else "#f062b7"
+        disabled = "#766571" if dark else "#c6afbd"
+        return (
+            f"QToolButton {{ color: {color}; background: transparent; border: 0; font: 700 16px Arial; }}"
+            f"QToolButton:hover {{ color: {hover}; }} QToolButton:disabled {{ color: {disabled}; }}"
+        )
+
+    def _adjust_zoom(self, direction: int) -> None:
+        """Scale narrable text and images within bounded accessibility limits."""
+        next_step = max(-3, min(4, self._zoom_step + direction))
+        if next_step == self._zoom_step:
+            return
+        delta = next_step - self._zoom_step
+        self._zoom_step = next_step
+        self.document_view.zoomIn(delta)
+        self.zoom_out_button.setEnabled(self._zoom_step > -3)
+        self.zoom_in_button.setEnabled(self._zoom_step < 4)
+        self._apply_image_dimensions(self._last_image_dimensions)
+        self._fit_content_height()
 
     def set_reply_available(self, available: bool) -> None:
         """Enable replies only when the displayed message owns a valid target."""
@@ -341,15 +437,16 @@ class QtMarkdownBubble(QWidget):
                 base_path = base_path.parent
             self.document_view.document().setBaseUrl(QUrl.fromLocalFile(str(base_path.resolve()) + os.sep))
         markdown, image_dimensions = _qt_image_markdown(avatar_markdown_source(text))
+        self._last_image_dimensions = image_dimensions
         self.document_view.setMarkdown(markdown)
         self._apply_image_dimensions(image_dimensions)
         self._format_tables()
         self._fit_content_height()
 
     def _apply_image_dimensions(self, dimensions: dict[str, tuple[int | None, int | None]]) -> None:
-        """Apply extended width and height metadata to rendered Qt image fragments."""
-        if not dimensions:
-            return
+        """Center and fit every rendered image inside the message viewport."""
+        viewport = self._image_viewport_size()
+        zoom_factor = 1.2 ** self._zoom_step
         block = self.document_view.document().begin()
         while block.isValid():
             iterator = block.begin()
@@ -359,20 +456,44 @@ class QtMarkdownBubble(QWidget):
                 if fragment.isValid() and image_format.isValid():
                     resolved = next(
                         (value for source, value in dimensions.items() if image_format.name() == source or image_format.name().endswith(source)),
-                        None,
+                        (None, None),
                     )
-                    if resolved:
-                        width, height = resolved
-                        if width is not None:
-                            image_format.setWidth(width)
-                        if height is not None:
-                            image_format.setHeight(height)
+                    resource = self.document_view.document().resource(
+                        QTextDocument.ResourceType.ImageResource,
+                        QUrl(image_format.name()),
+                    )
+                    intrinsic = resource.size() if resource is not None and hasattr(resource, "size") else QSize()
+                    if intrinsic.isEmpty():
+                        fallback_width = round(image_format.width()) or resolved[0] or viewport.width()
+                        fallback_height = round(image_format.height()) or resolved[1] or viewport.height()
+                        intrinsic = QSize(fallback_width, fallback_height)
+                    fitted = normalized_image_size(intrinsic, resolved, viewport, zoom_factor)
+                    image_format.setWidth(fitted.width())
+                    image_format.setHeight(fitted.height())
+                    block_format = block.blockFormat()
+                    block_format.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                    block_cursor = QTextCursor(block)
+                    block_cursor.setBlockFormat(block_format)
+                    if fitted.isValid():
                         cursor = QTextCursor(self.document_view.document())
                         cursor.setPosition(fragment.position())
                         cursor.setPosition(fragment.position() + fragment.length(), QTextCursor.MoveMode.KeepAnchor)
                         cursor.setCharFormat(image_format)
                 iterator += 1
             block = block.next()
+
+    def _image_viewport_size(self) -> QSize:
+        """Return the largest image layer that remains wholly inside the bubble."""
+        if self.layout():
+            self.layout().activate()
+        document_margin = round(self.document_view.document().documentMargin() * 2)
+        layout_margins = self.layout().contentsMargins() if self.layout() else None
+        horizontal_margins = layout_margins.left() + layout_margins.right() if layout_margins else 64
+        width = max(48, self.width() - horizontal_margins - document_margin)
+        vertical_margins = layout_margins.top() + layout_margins.bottom() if layout_margins else 48
+        fixed_height = sum(widget.height() for widget in (self.header, self.footer, self.separator_a, self.separator_b))
+        height = max(48, self.maximumHeight() - vertical_margins - fixed_height - 16)
+        return QSize(width, height)
 
     def _set_header(self, emotion: str, consumer_path: str, history_index: int, history_total: int) -> None:
         """Update provenance and bounded history navigation state."""
@@ -445,6 +566,9 @@ class QtMarkdownBubble(QWidget):
     def set_tail_target(self, global_target: QPoint) -> None:
         """Point the tail toward one global avatar coordinate without moving the bubble."""
         self._tail_target = QPointF(self.mapFromGlobal(global_target))
+        actions_on_right = self._tail_target.x() >= self.width() / 2
+        if actions_on_right != self._footer_actions_on_right:
+            self._rebuild_footer_layout(actions_on_right)
         self.update()
 
     def set_pinned(self, pinned: bool) -> None:
@@ -514,6 +638,8 @@ class QtMarkdownBubble(QWidget):
             self.layout().activate()
         self._position_close_button()
         self._refresh_header_label()
+        if self._last_image_dimensions or "<img" in self.document_view.document().toHtml():
+            self._apply_image_dimensions(self._last_image_dimensions)
         self.geometryChanged.emit()
 
     def moveEvent(self, event) -> None:  # noqa: N802 - Qt API

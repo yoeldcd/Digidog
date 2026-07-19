@@ -5,9 +5,22 @@ from __future__ import annotations
 from typing import Any
 
 from brain.application.pictures.descriptions import set_picture_description
+from brain.infrastructure.pictures.models import PictureRecord
 from brain.infrastructure.pictures.repository import PictureRepository
 from brain.infrastructure.pictures.scanner import scan_pictures
+from brain.infrastructure.runtime.paths import get_pictures_dir
 from brain.infrastructure.vectorstores.pictures import sync_picture_vectors
+
+
+def _picture_payload(record: PictureRecord) -> dict[str, Any]:
+    """Return one record plus its validated canonical filesystem path."""
+    pictures_root = get_pictures_dir().resolve()
+    absolute_path = (pictures_root / record.relative_path).resolve()
+    try:
+        absolute_path.relative_to(pictures_root)
+    except ValueError as exc:
+        raise ValueError("Registered picture path escapes the pictures directory.") from exc
+    return {**record.as_mapping(), "absolute_path": str(absolute_path)}
 
 
 class PictureRoutesMixin:
@@ -44,7 +57,7 @@ class PictureRoutesMixin:
             "stderr": "",
             "durationMs": 0,
             "data": {
-                "pictures": [record.as_mapping() for record in records],
+                "pictures": [_picture_payload(record) for record in records],
                 "domains": domains,
                 "scan": scan,
             },
@@ -69,5 +82,5 @@ class PictureRoutesMixin:
             "stdout": "",
             "stderr": "",
             "durationMs": 0,
-            "data": {"picture": record.as_mapping(), "vectors": vectors},
+            "data": {"picture": _picture_payload(record), "vectors": vectors},
         }

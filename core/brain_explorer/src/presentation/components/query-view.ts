@@ -99,15 +99,15 @@ export class QueryView extends HTMLElement {
 
     #renderResult() {
         if (this.#result?.loading) {
-            return `<div class="loading-state search-loading"><span></span><strong>Buscando en memoria, conocimiento y mensajes</strong><small>Preparando resultados...</small></div>`;
+            return `<div class="loading-state search-loading"><span></span><strong>Searching memory, knowledge, and messages</strong><small>Preparing results...</small></div>`;
         }
         if (!this.#result) {
-            return `<section class="search-empty">${icon("search")}<h2>Resultados</h2><p>Escribe una consulta en el buscador del encabezado para comenzar.</p></section>`;
+            return `<section class="search-empty">${icon("search")}<h2>Results</h2><p>Enter a query in the header search box to begin.</p></section>`;
         }
-        const text = this.#result.data?.response || this.#firstResultText() || this.#result.stderr || "Sin salida legible.";
+        const text = this.#result.data?.response || this.#firstResultText() || this.#result.stderr || "No readable output.";
         return `
             <article class="answer-sheet">
-                <header><span class="${this.#result.ok ? "status-pill success" : "status-pill danger"}">${this.#result.ok ? "Respuesta" : "Error"}</span></header>
+                <header><span class="${this.#result.ok ? "status-pill success" : "status-pill danger"}">${this.#result.ok ? "Response" : "Error"}</span></header>
                 <h2>${escapeHtml(this.#query || "Consulta")}</h2>
                 <div>${renderMarkdown(String(text).slice(0, 2200))}</div>
             </article>
@@ -136,8 +136,8 @@ export class QueryView extends HTMLElement {
         });
         if (!groups.size) return "";
         return `
-            <section class="search-evidence" aria-label="Fuentes de la respuesta">
-                <header><h3>Fuentes consultadas</h3><span>${this.#results().length} resultados</span></header>
+            <section class="search-evidence" aria-label="Response sources">
+                <header><h3>Sources consulted</h3><span>${this.#results().length} results</span></header>
                 ${[...groups.values()].map(group => `
                     <section class="result-group">
                         <header><h4>${escapeHtml(this.#sourceLabel(group.source))}</h4><span>${escapeHtml(this.#mechanismLabel(group.mechanism))}</span></header>
@@ -146,12 +146,12 @@ export class QueryView extends HTMLElement {
                                 <li>
                                     <span class="result-order" aria-hidden="true"></span>
                                     <div class="result-copy">
-                                        <strong>${escapeHtml(item.title || item.path || item.kind || "Resultado")}</strong>
-                                        <p>${escapeHtml(item.excerpt || item.content?.excerpt || item.data?.excerpt || item.text || item.description || "Sin extracto disponible")}</p>
+                                        <strong>${escapeHtml(item.title || item.path || item.kind || "Result")}</strong>
+                                        <p>${escapeHtml(item.excerpt || item.content?.excerpt || item.data?.excerpt || item.text || item.description || "No excerpt available")}</p>
                                         <small>${escapeHtml(this.#resultOrigin(item))}</small>
                                     </div>
                                     ${item.rank !== undefined ? `<span class="result-rank" title="Relevancia">${Number(item.rank).toFixed(2)}</span>` : ""}
-                                    ${item.source === "pictures" && item.data?.id ? `<button class="result-open-button" data-open-picture="${escapeHtml(item.data.id)}">Abrir</button>` : ""}
+                                    ${item.source === "pictures" && item.data?.id ? `<button class="result-open-button" data-open-picture="${escapeHtml(item.data.id)}">Open</button>` : ""}
                                 </li>
                             `).join("")}
                         </ol>
@@ -166,11 +166,11 @@ export class QueryView extends HTMLElement {
     }
 
     #sourceLabel(source) {
-        if (source === "memory") return "Memoria";
-        if (source === "knowledge") return "Conocimiento";
-        if (source === "messages") return "Mensajes";
+        if (source === "memory") return "Memory";
+        if (source === "knowledge") return "Knowledge";
+        if (source === "messages") return "Messages";
         if (source === "pictures") return "Pictures";
-        return "Otros resultados";
+        return "Other results";
     }
 
     #mechanismLabel(mechanism) {

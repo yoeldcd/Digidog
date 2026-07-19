@@ -45,7 +45,7 @@ class KnowledgeRoutesMixin:
         Returns:
             dict[str, Any]: CLI result payload.
         """
-        scope = safe_scope(query.get("scope", "global"), allow_all=False)
+        scope = safe_scope(query.get("scope", "all"))
         arguments = ["knowledge-show", "--scope", scope, "--json"]
         entity = query.get("entity")
         mode = query.get("mode")

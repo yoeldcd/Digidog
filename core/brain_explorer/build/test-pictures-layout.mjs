@@ -7,10 +7,12 @@ const styles = await readFile(new URL("../src/styles/views.css", import.meta.url
 const layout = await readFile(new URL("../src/styles/layout.css", import.meta.url), "utf8");
 const selectionMethod = view.match(/#selectPicture\(pictureId: string\)[\s\S]*?(?=\n    #render\(\))/)?.[0] || "";
 
-assert.match(view, /aria-label="Carrusel de pictures"/);
-assert.match(view, /aria-label="Miniaturas"/);
-assert.match(view, /Picture anterior/);
-assert.match(view, /Picture siguiente/);
+assert.match(view, /aria-label="Picture carousel"/);
+assert.match(view, /aria-label="Thumbnails"/);
+assert.match(view, /Previous picture/);
+assert.match(view, /Next picture/);
+assert.match(view, /<dt>Type<\/dt>/);
+assert.doesNotMatch(view, /Ã—|Acercar|Alejar|Restablecer/);
 assert.match(view, /class="picture-render-layer"/);
 assert.match(view, /import \{ StructureTree \}/);
 assert.match(view, /<brain-structure-tree data-role="pictures-domain-tree">/);
@@ -32,6 +34,21 @@ assert.match(view, /focus\(\{ preventScroll: true \}\)/);
 assert.match(view, /class="structure-layout pictures-layout"/);
 assert.match(view, /class="structure-tree pictures-domains"/);
 assert.match(view, /data-action="open-picture-viewer"/);
+assert.match(view, /data-action="copy-picture-path"/);
+assert.match(view, /selected\.absolute_path/);
+assert.match(view, /navigator\.clipboard\.writeText\(absolutePath\)/);
+assert.match(view, /<span>Copied<\/span>/);
+assert.match(view, /data-action="generate-picture-description"/);
+assert.match(view, /data-action="edit-picture-description"/);
+assert.match(view, /data-action="cancel-picture-description"/);
+assert.match(view, /renderDescriptionCard\(picture\.description/);
+assert.match(view, /data-action='resolve-description-entity'[\s\S]*setRouteTarget\?\.\("knowledge", \{ entityLabel:/);
+assert.match(view, /#descriptionEditing = false/);
+assert.match(view, /#mountDescriptionPanel\(picture: PictureRecord\)/);
+assert.match(view, /#descriptionRequestPending/);
+assert.match(view, /generatePictureDescription\(selected\.id\)/);
+assert.match(view, /#setDescriptionActionsBusy\(true, pendingLabel\)/);
+assert.match(view, /if \(!response\.ok \|\| !updated\) return/);
 assert.match(view, /role="dialog" aria-modal="true"/);
 assert.match(view, /#zoomViewer\(delta: number\)/);
 assert.match(view, /setPointerCapture\(event.pointerId\)/);
@@ -57,6 +74,9 @@ assert.match(styles, /\.picture-viewer\s*\{[^}]*position:\s*fixed[^}]*z-index:\s
 assert.match(styles, /\.picture-viewer-viewport\s*\{[^}]*touch-action:\s*none/s);
 assert.match(styles, /\.picture-viewer-close,[^{]*\.picture-viewer-zoom-fabs button\s*\{[^}]*border-radius:\s*50%[^}]*backdrop-filter:\s*blur/s);
 assert.match(styles, /\.picture-viewer-scale\.is-visible\s*\{[^}]*opacity:\s*1/s);
+assert.match(styles, /\.picture-description-actions\s*\{[^}]*display:\s*grid/s);
+assert.match(styles, /\.picture-description-panel\s*\{[^}]*min-width:\s*0/s);
+assert.match(styles, /\.picture-path-row dd\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto/s);
 assert.match(layout, /\.top-bar\s*\{[^}]*position:\s*relative[^}]*z-index:\s*100/s);
 
 console.log("Pictures carousel layout contract passed.");

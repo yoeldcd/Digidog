@@ -1580,22 +1580,30 @@ The picture registry treats `pictures/` as the canonical image tree. Folder hier
 domains, while SQLite stores file identity, dimensions, content hash, `mtime_ns`, description provenance, and
 vector indexing state in `core/database/picture_storage/pictures.db`.
 
-#### `scan-pictures`
+#### `scan-images`
 
 Incrementally detects added, changed, moved, unchanged, and deleted images. Use `--index` to synchronize the
 reference-only `pictures` vector collection after the scan. A normal scan never deletes or rebuilds other vector
-collections.
+collections. Use `--describe` to update registry state first and then generate descriptions only for active records
+whose description is empty. Successful descriptions trigger one picture-vector synchronization. With
+`--verbose-log`, the command reports each concrete added, changed, moved, unchanged, deleted, failed, and described
+record while keeping `--json` output as one semantic document. `scan-pictures` remains a compatibility alias.
 
 #### `list-pictures`
 
 Lists active canonical picture records. Filter with `--id`, `--domain`, `--query`, `--limit`, or include inactive
 records with `--all`.
 
-#### `describe-picture PICTURE_ID [DESCRIPTION]`
+#### `describe-image [PICTURE_ID] [DESCRIPTION]`
 
 Stores a manual description when `DESCRIPTION` is provided. Without it, the command uses the optional
 OpenAI-compatible `pictures.image_model` configuration and an optional `--prompt`. Model generation is disabled
 by default; enable it deliberately in `core/configs/brain_configs.json` after configuring provider credentials.
+Use `--all` to regenerate model descriptions for every active image, or `--undescribeds` to process only active
+records whose description is empty. The two batch flags are mutually exclusive and cannot be combined with
+`PICTURE_ID` or `DESCRIPTION`. Batch execution isolates per-image failures, refreshes picture vectors once after
+successful changes, and supports standard `--verbose-log` object-level progress. `describe-picture` remains a
+compatibility alias.
 
 #### `picture-status`
 

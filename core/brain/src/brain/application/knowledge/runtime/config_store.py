@@ -188,8 +188,36 @@ def resolve_secret(value: str) -> str:
     """
     if value.startswith("$"):
         env_name: str = value[1:]
-        return os.environ.get(env_name, value)
+        inherited: str = os.environ.get(env_name, "").strip()
+        if inherited:
+            return inherited
+        persisted: str = _resolve_windows_environment_secret(env_name)
+        return persisted or value
     return value
+
+
+def _resolve_windows_environment_secret(env_name: str) -> str:
+    """Read a persisted Windows environment value when this process inherited stale state."""
+    if os.name != "nt" or not env_name:
+        return ""
+    try:
+        import winreg
+    except ImportError:
+        return ""
+    locations = (
+        (winreg.HKEY_CURRENT_USER, r"Environment"),
+        (winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"),
+    )
+    for hive, key_path in locations:
+        try:
+            with winreg.OpenKey(hive, key_path) as key:
+                resolved, _ = winreg.QueryValueEx(key, env_name)
+        except OSError:
+            continue
+        normalized = str(resolved).strip()
+        if normalized:
+            return normalized
+    return ""
 
 
 def _backfill_knowledge_config(raw_data: dict, config_dto: KnowledgeConfigDTO) -> bool:

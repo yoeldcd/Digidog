@@ -168,7 +168,10 @@ class VectorReferenceContractTests(unittest.TestCase):
         CapturingManager.instances.clear()
         with patch("brain.infrastructure.vectorstores.pictures.scan_pictures", return_value={"unchanged": 1}), patch(
             "brain.infrastructure.vectorstores.pictures.PictureRepository", return_value=repository
-        ), patch("brain.infrastructure.vectorstores.pictures.VectorStoreManager", CapturingManager):
+        ), patch("brain.infrastructure.vectorstores.pictures.VectorStoreManager", CapturingManager), patch(
+            "brain.infrastructure.vectorstores.pictures.project_picture_descriptions",
+            return_value={"pictures": 1, "characters": 0, "tags": 0},
+        ), patch("brain.infrastructure.vectorstores.pictures.load_pictures_config"):
             stats = sync_picture_vectors(db_path=Path("D:/vectors"))
         _doc_id, text, metadata = CapturingManager.instances[0].records[0]
         self.assertIn("A shared dinner.", text)
@@ -192,7 +195,9 @@ class VectorReferenceContractTests(unittest.TestCase):
             command_update_vectorstore, "VectorStoreManager", ActionManager
         ), patch.object(command_update_vectorstore, "sync_all_knowledge_vectorstores", return_value=([], [])), patch.object(
             command_update_vectorstore, "sync_all_message_vectors", return_value={"entries_created": 1}
-        ) as update_sync, redirect_stdout(io.StringIO()):
+        ) as update_sync, patch.object(
+            command_update_vectorstore, "sync_picture_vectors", return_value={"entries_created": 1}
+        ), redirect_stdout(io.StringIO()):
             self.assertEqual(command_update_vectorstore.handle(args), 0)
             update_sync.assert_called_once_with()
         generation_result = {

@@ -18,7 +18,7 @@ from brain.presentation.avatar.interactivity.markdown_document import (
     expand_avatar_images,
     normalize_avatar_markdown,
 )
-from brain.presentation.avatar.qt.markdown_bubble import QtMarkdownBubble
+from brain.presentation.avatar.qt.markdown_bubble import QtMarkdownBubble, normalized_image_size
 from brain.presentation.avatar.qt.window import (
     QtAvatarWindow,
     bubble_position,
@@ -93,7 +93,7 @@ def test_extended_markdown_images_emit_bounded_html_dimensions() -> None:
     assert source == '<img src="https://example.com/image.png" alt="Vista" width="320" height="1200">'
 
 
-def test_qt_bubble_keeps_html_image_dimensions() -> None:
+def test_qt_bubble_normalizes_html_image_dimensions_without_distortion() -> None:
     import tempfile
     from pathlib import Path
     from PySide6.QtGui import QImage
@@ -107,10 +107,21 @@ def test_qt_bubble_keeps_html_image_dimensions() -> None:
         bubble = QtMarkdownBubble()
         bubble.set_message(f'<img src="{image_path.as_posix()}" width="240" height="120">')
         html = bubble.document_view.document().toHtml()
-        assert 'width="240"' in html
+        assert 'width="120"' in html
         assert 'height="120"' in html
+        image_block = bubble.document_view.document().begin()
+        assert image_block.blockFormat().alignment() == Qt.AlignmentFlag.AlignCenter
         bubble.close()
     app.processEvents()
+
+
+def test_normalized_image_size_fits_requested_box_and_viewport() -> None:
+    """Preserve intrinsic ratio while respecting both author and viewport bounds."""
+    square = normalized_image_size(QSize(400, 400), (240, 120), QSize(600, 300))
+    landscape = normalized_image_size(QSize(1600, 900), (None, None), QSize(500, 220))
+
+    assert square == QSize(120, 120)
+    assert landscape == QSize(391, 220)
 
 
 def test_qt_bubble_renders_markdown_offscreen() -> None:
@@ -146,10 +157,14 @@ def test_qt_bubble_applies_contrast_safe_dark_and_light_links() -> None:
     dark_css = bubble.document_view.document().defaultStyleSheet()
     assert "#ff9bd3" in dark_css
     assert bubble.property("avatarTheme") == "dark"
+    assert "background: #302832" in bubble.backward_button.styleSheet()
+    assert "color: #ffb6df" in bubble.zoom_in_button.styleSheet()
     bubble.set_theme("light")
     light_css = bubble.document_view.document().defaultStyleSheet()
     assert "#78124e" in light_css
     assert bubble.property("avatarTheme") == "light"
+    assert "background: #fff1f8" in bubble.backward_button.styleSheet()
+    assert "color: #6f3158" in bubble.zoom_in_button.styleSheet()
     bubble.close()
     app.processEvents()
 
@@ -171,6 +186,10 @@ def test_bubble_header_shows_emotion_repository_and_history_position() -> None:
     assert bubble.history_label.text() == "2/3"
     assert bubble.backward_button.isEnabled()
     assert bubble.forward_button.isEnabled()
+    assert bubble.zoom_out_button.accessibleName() == "Reducir mensaje"
+    assert bubble.zoom_in_button.accessibleName() == "Ampliar mensaje"
+    assert bubble.zoom_out_button.parentWidget() is bubble.footer
+    assert bubble.zoom_in_button.parentWidget() is bubble.footer
     assert bubble.header.height() == 26
     assert bubble.footer.height() == 26
     assert bubble.layout().spacing() == 0
@@ -182,6 +201,33 @@ def test_bubble_header_shows_emotion_repository_and_history_position() -> None:
     header_gap = bubble.document_view.y() - (bubble.header.y() + bubble.header.height())
     footer_gap = bubble.footer.y() - (bubble.document_view.y() + bubble.document_view.height())
     assert header_gap == footer_gap == 10
+    bubble.close()
+
+
+def test_bubble_zoom_controls_and_footer_actions_follow_avatar_alignment() -> None:
+    """Keep zoom bounded and group actions on the avatar-facing footer side."""
+    app = QApplication.instance() or QApplication([])
+    bubble = QtMarkdownBubble()
+    bubble.set_message("Mensaje de prueba")
+    bubble.show()
+    app.processEvents()
+
+    QTest.mouseClick(bubble.zoom_in_button, Qt.MouseButton.LeftButton)
+    assert bubble._zoom_step == 1
+    assert bubble.footer_layout.indexOf(bubble.reply_button) < bubble.footer_layout.indexOf(bubble.backward_button)
+    navigation_center = (bubble.backward_button.x() + bubble.forward_button.geometry().right()) / 2
+    assert abs(navigation_center - bubble.footer.width() / 2) <= 4
+
+    bubble.set_tail_target(bubble.mapToGlobal(QPoint(bubble.width(), bubble.height() // 2)))
+    assert bubble.footer_layout.indexOf(bubble.reply_button) > bubble.footer_layout.indexOf(bubble.forward_button)
+    app.processEvents()
+    navigation_center = (bubble.backward_button.x() + bubble.forward_button.geometry().right()) / 2
+    assert abs(navigation_center - bubble.footer.width() / 2) <= 4
+
+    for _ in range(8):
+        QTest.mouseClick(bubble.zoom_out_button, Qt.MouseButton.LeftButton)
+    assert bubble._zoom_step == -3
+    assert not bubble.zoom_out_button.isEnabled()
     bubble.close()
 
 

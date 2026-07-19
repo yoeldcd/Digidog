@@ -6,6 +6,7 @@
 - [Overview](#overview)
 - [Domains Taxonomy](#domains-taxonomy)
 - [Getting Started](#getting-started)
+- [Subsystem References](#subsystem-references)
 
 ## Overview:
 The Brain Subsystem is the local command and memory runtime used by the agent workspace. It manages editable
@@ -84,6 +85,14 @@ selection lives in `brain.application.knowledge.runtime.scopes`, and vectorstore
 under `brain.infrastructure.vectorstores`. CLI command modules are declarative metadata only; executable command
 logic lives in `brain.presentation.actions`, parser construction lives in `brain.presentation.parser`, routing
 lives in `brain.presentation.router`, and human query rendering lives in `brain.presentation.views.query`.
+
+## Subsystem References:
+
+- [Picture intelligence and img2text](brain-pictures-interfaces.md)
+- [Brain interfaces and contracts](brain-interfaces.md)
+- [Brain models and DTOs](brain-models-dto.md)
+- [Brain CLI commands](brain-cli-commands.md)
+- [Brain security](brain-security.md)
 
 ## Getting Started:
 

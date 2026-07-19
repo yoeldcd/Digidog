@@ -81,10 +81,10 @@ export class WikisView extends HTMLElement {
             <section class="page-surface settings-console wiki-console ${this.#loading ? "is-loading" : (this.#wikis.length ? "has-items" : "is-empty")}">
                 <header class="view-header" style="display: flex; justify-content: space-between; align-items: center; padding-bottom: var(--spacing-md); border-bottom: 1px solid var(--border); margin-bottom: var(--spacing-lg);">
                     <div>
-                        <h2 style="margin: 0; font-size: var(--font-size-xl); color: var(--text-strong);">Wikis de Subproyectos</h2>
-                        <small style="color: var(--text-muted);">Documentación interactiva disponible en el path activo</small>
+                        <h2 style="margin: 0; font-size: var(--font-size-xl); color: var(--text-strong);">Subproject Wikis</h2>
+                        <small style="color: var(--text-muted);">Interactive documentation available in the active path</small>
                     </div>
-                    <button data-action="refresh-wikis" class="primary-action compact-action" title="Buscar wikis">${icon("refresh")}</button>
+                    <button data-action="refresh-wikis" class="primary-action compact-action" title="Find wikis">${icon("refresh")}</button>
                 </header>
                 
                 ${this.#loading ? `
@@ -123,8 +123,8 @@ export class WikisView extends HTMLElement {
             return `
                 <div class="knowledge-empty-state wiki-empty-state">
                     ${icon("document")}
-                    <h3>No se encontraron carpetas de documentación</h3>
-                    <p>Crea una carpeta <code>documentation</code> en algún subproyecto para habilitar wikis locales.</p>
+                    <h3>No documentation folders found</h3>
+                    <p>Create a <code>documentation</code> folder in a subproject to enable local wikis.</p>
                 </div>
             `;
         }
@@ -133,12 +133,12 @@ export class WikisView extends HTMLElement {
             <main class="wiki-list">
                 ${this.#wikis.map(wiki => `
                     <article class="wiki-list-item ${wiki.hasWiki ? "is-clickable" : ""}"
-                        ${wiki.hasWiki ? `data-action="view-wiki" data-name="${escapeHtml(wiki.name)}" tabindex="0" role="button" aria-label="Abrir wiki ${escapeHtml(wiki.name)}"` : ""}>
+                        ${wiki.hasWiki ? `data-action="view-wiki" data-name="${escapeHtml(wiki.name)}" tabindex="0" role="button" aria-label="Open wiki ${escapeHtml(wiki.name)}"` : ""}>
                         <div class="wiki-list-content">
                             <div class="wiki-list-heading">
                                 <strong>${escapeHtml(wiki.name)}</strong>
                                 <span style="font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: 600; background: ${wiki.hasWiki ? "rgba(16, 185, 129, 0.15); color: #10b981;" : "rgba(156, 163, 175, 0.15); color: #9ca3af;"};">
-                                    ${wiki.hasWiki ? "Disponible" : "Sin compilar"}
+                                    ${wiki.hasWiki ? "Available" : "Not built"}
                                 </span>
                             </div>
                             <span class="wiki-list-path">
@@ -151,7 +151,7 @@ export class WikisView extends HTMLElement {
                                     ${icon("book")} Ver Wiki
                                 </button>
                             ` : `
-                                <span style="font-size: var(--font-size-sm); color: var(--text-muted); padding: 6px 0;">Ejecuta <code>generate</code> para habilitar</span>
+                                <span style="font-size: var(--font-size-sm); color: var(--text-muted); padding: 6px 0;">Run <code>generate</code> to enable</span>
                             `}
                         </div>
                     </article>
@@ -171,7 +171,7 @@ export class WikisView extends HTMLElement {
                 <header class="wiki-frame-toolbar">
                     <div style="display: flex; align-items: center; gap: 12px;">
                         <button data-action="close-wiki" class="secondary-action compact-action" style="min-height: 32px; display: flex; align-items: center; gap: 4px;">
-                            ${icon("chevronRight")} Atrás
+                            ${icon("chevronRight")} Back
                         </button>
                         <h2 style="margin: 0; font-size: var(--font-size-lg); color: var(--text-strong);">Wiki ~ ${escapeHtml(this.#activeWikiName)}</h2>
                     </div>

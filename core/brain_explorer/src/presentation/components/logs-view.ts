@@ -227,10 +227,10 @@ export class LogsView extends HTMLElement {
                     </aside>
                     <main class="structure-content">
                         <div class="content-head logs-head">
-                            <strong>${escapeHtml(this.#selectedDomain || "Indice de logs")}</strong>
-                            <span>${escapeHtml(this.#logEntries.length ? `${entries.length} entradas` : (selectedRecord?.date ? "Entrada indexada" : "Selecciona dominio"))}</span>
+                            <strong>${escapeHtml(this.#selectedDomain || "Log index")}</strong>
+                            <span>${escapeHtml(this.#logEntries.length ? `${entries.length} entries` : (selectedRecord?.date ? "Indexed entry" : "Select a domain"))}</span>
                             <details class="action-menu filter-menu" ${this.#filtersOpen ? "open" : ""}>
-                                <summary class="compact-action">${icon("filter")}<span>Filtros</span></summary>
+                                <summary class="compact-action">${icon("filter")}<span>Filters</span></summary>
                                 <div class="action-menu-panel filter-menu-panel">
                                     <label><span>Desde</span><input data-role="log-from" value="${escapeHtml(this.#from)}" placeholder="DD-MM-YYYY"></label>
                                     <label><span>Hasta</span><input data-role="log-to" value="${escapeHtml(this.#to)}" placeholder="DD-MM-YYYY"></label>
@@ -238,14 +238,14 @@ export class LogsView extends HTMLElement {
                                     <label><span>Hora fin</span><input data-role="log-hour-to" type="time" value="${escapeHtml(this.#hourTo)}"></label>
                                     <label><span>Orden</span><select data-role="log-order">${optionTags(["desc", "asc"], this.#sortOrder)}</select></label>
                                     <div class="filter-menu-actions">
-                                        <button data-action="clear-log-filters" class="ghost-action">${icon("filter")}Limpiar</button>
+                                        <button data-action="clear-log-filters" class="ghost-action">${icon("filter")}Clear</button>
                                         <button data-action="load-logs" class="primary-action">${icon("search")}Aplicar</button>
                                     </div>
                                 </div>
                             </details>
                         </div>
                         <div class="log-output log-card-list scroll-area">
-                            ${this.#logEntries.length ? this.#renderLogEntries(entries) : `<p class="empty-state">Selecciona un dominio y carga su historial.</p>`}
+                            ${this.#logEntries.length ? this.#renderLogEntries(entries) : `<p class="empty-state">Select a domain and load its history.</p>`}
                         </div>
                     </main>
                 </div>
@@ -263,7 +263,7 @@ export class LogsView extends HTMLElement {
      */
     #renderLogEntries(entries) {
         if (!entries.length) {
-            return `<p class="empty-state">No hay entradas para esos filtros.</p>`;
+            return `<p class="empty-state">No entries match these filters.</p>`;
         }
         return entries.map(entry => `
             <details class="log-entry-card">
@@ -303,10 +303,10 @@ export class LogsView extends HTMLElement {
             return "";
         }
         return `
-            <div class="log-entry-media" aria-label="Imagenes adjuntas">
+            <div class="log-entry-media" aria-label="Attached images">
                 ${pictures.map(name => {
                     const source = `/api/logs/image?name=${encodeURIComponent(name)}`;
-                    return `<a href="${source}" target="_blank" rel="noopener" title="Abrir imagen adjunta"><img src="${source}" alt="Imagen adjunta ${escapeHtml(name)}"></a>`;
+                    return `<a href="${source}" target="_blank" rel="noopener" title="Open attached image"><img src="${source}" alt="Attached image ${escapeHtml(name)}"></a>`;
                 }).join("")}
             </div>
         `;
@@ -343,7 +343,7 @@ export class LogsView extends HTMLElement {
                 hourValue: this.#hourValue(time),
                 timestamp: this.#timestamp(date, time),
                 domain: entry.domain || this.#selectedDomain,
-                title: entry.title || "Entrada de log",
+                title: entry.title || "Log entry",
                 type: "log",
                 changeType: entry.change_type || "",
                 why: entry.why || "",
@@ -531,15 +531,15 @@ export class LogsView extends HTMLElement {
             toggleOnBranchSelect: true,
             title: "Logs",
             toolbarActions: [
-                { id: "tree-domain", label: "Agrupar por dominios", icon: "folder", active: this.#treeMode === "domain" },
-                { id: "tree-date", label: "Agrupar por fechas", icon: "clock", active: this.#treeMode === "date" },
-                { id: "refresh-index", label: "Actualizar indice", icon: "refresh" }
+                { id: "tree-domain", label: "Group by domain", icon: "folder", active: this.#treeMode === "domain" },
+                { id: "tree-date", label: "Group by date", icon: "clock", active: this.#treeMode === "date" },
+                { id: "refresh-index", label: "Refresh index", icon: "refresh" }
             ],
             sortDirection: this.#treeMode === "date" ? "desc" : "asc",
             defaultBranchIcon: "folder",
             defaultLeafIcon: "terminal",
             searchQuery: this.#filter,
-            emptyText: "Sin indice cargado. Actualiza para consultar logs."
+            emptyText: "No index loaded. Refresh to browse logs."
         };
         treeElement.addEventListener("brain-tree-select", event => this.#onTreeSelected(event));
         treeElement.addEventListener("brain-tree-toolbar-action", event => this.#onTreeToolbarAction(event));
@@ -550,11 +550,11 @@ export class LogsView extends HTMLElement {
             const selectedRecord = this.#recordForPath(this.#selectedDomain);
             const countSpan = this.querySelector(".logs-head span");
             if (countSpan) {
-                countSpan.textContent = this.#logEntries.length ? `${entries.length} entradas` : (selectedRecord?.date ? "Entrada indexada" : "Selecciona dominio");
+                countSpan.textContent = this.#logEntries.length ? `${entries.length} entries` : (selectedRecord?.date ? "Indexed entry" : "Select a domain");
             }
             const logOutput = this.querySelector(".log-output");
             if (logOutput) {
-                logOutput.innerHTML = this.#logEntries.length ? this.#renderLogEntries(entries) : `<p class="empty-state">Selecciona un dominio y carga su historial.</p>`;
+                logOutput.innerHTML = this.#logEntries.length ? this.#renderLogEntries(entries) : `<p class="empty-state">Select a domain and load its history.</p>`;
             }
         });
     }
@@ -613,7 +613,7 @@ export class LogsView extends HTMLElement {
             dayNode.entries.push({
                 id: `logs-date-entry:${index}:${date}:${time}:${entry.domain || "logs"}`,
                 path: `logs-date-entry:${date}:${time}:${entry.domain || "logs"}`,
-                label: entry.title || "Entrada de log",
+                label: entry.title || "Log entry",
                 timestamp: time,
                 sortKey: String(this.#hourValue(time)).padStart(4, "0"),
                 detail: entry.domain || "logs",

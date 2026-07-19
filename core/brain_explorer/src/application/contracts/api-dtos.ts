@@ -93,6 +93,7 @@ export interface MemoryEntry {
 export interface PictureRecord {
     id: string;
     relative_path: string;
+    absolute_path: string;
     domain: string;
     filename: string;
     extension: string;
@@ -112,6 +113,11 @@ export interface PicturesPayload {
     pictures: PictureRecord[];
     domains: Record<string, number>;
     scan: Record<string, unknown>;
+}
+
+export interface PictureDescriptionPayload {
+    picture: PictureRecord;
+    vectors: Record<string, unknown>;
 }
 
 export interface KnowledgeStatus {

@@ -85,10 +85,31 @@ class MemoryConfigDTO(BaseModel):
     """Text model configuration used by memory helpers."""
 
 
+class PictureGuidanceConfigDTO(BaseModel):
+    """
+    Recognition guidance supplied to the configured img2text model.
+
+    Attributes:
+        tags: Named semantic labels mapped to observable identification rules.
+        characters: Known character names mapped to visual descriptions.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    tags: dict[str, str] = Field(default_factory=dict)
+    """Semantic labels and the visible evidence required to apply them."""
+
+    characters: dict[str, str] = Field(default_factory=dict)
+    """Known character identities and their distinguishing visible traits."""
+
+
 class PicturesConfigDTO(BaseModel):
     """Runtime configuration for picture discovery and img2text descriptions."""
 
     model_config = ConfigDict(extra="forbid")
+
+    guidance: PictureGuidanceConfigDTO = Field(default_factory=PictureGuidanceConfigDTO)
+    """Optional environment-specific recognition rules added to img2text prompts."""
 
     image_model: StageModelConfigDTO = Field(
         default_factory=lambda: StageModelConfigDTO(

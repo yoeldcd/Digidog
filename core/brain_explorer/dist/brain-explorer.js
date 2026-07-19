@@ -22,9 +22,6 @@ function bootstrapBrainExplorer() {
     }
     const api = new BrainApiClient();
     const activePath = localStorage.getItem("active_project_path");
-    if (activePath) {
-        api.setWorkspaceRootOverride(activePath);
-    }
     app.context = {
         api,
         state: new AppState(activePath || "")
@@ -359,13 +356,17 @@ class BrainApiClient extends EventTarget {
         const query = toQueryString(params);
         return this.request(`/api/pictures${query ? `?${query}` : ""}`, options);
     }
-    /** Persist one manual picture description. */
-    describePicture(pictureId, description) {
+    /** Persist one manual description or generate it when the text is omitted. */
+    describePicture(pictureId, description = "") {
         return this.request("/api/pictures/description", {
             method: "POST",
             body: JSON.stringify({ pictureId, description }),
             forceRefresh: true
         });
+    }
+    /** Invoke the model-backed describe-picture flow for one registry record. */
+    generatePictureDescription(pictureId) {
+        return this.describePicture(pictureId);
     }
     /** Build the opaque registry-backed URL for one picture. */
     pictureUrl(pictureId) {
@@ -869,17 +870,17 @@ const { notificationText } = __brainExplorerModule17();
 
 
 const ROUTES = [
-    { id: "dashboard", label: "Proyecto", icon: "home", element: DashboardView.selector },
-    { id: "messages", label: "Mensajes", icon: "messageCircle", element: MessagesView.selector },
-    { id: "memory", label: "Memoria", icon: "database", element: MemoryView.selector },
-    { id: "knowledge", label: "Conocimiento", icon: "graph", element: KnowledgeView.selector },
+    { id: "dashboard", label: "Project", icon: "home", element: DashboardView.selector },
+    { id: "messages", label: "Messages", icon: "messageCircle", element: MessagesView.selector },
+    { id: "memory", label: "Memory", icon: "database", element: MemoryView.selector },
+    { id: "knowledge", label: "Knowledge", icon: "graph", element: KnowledgeView.selector },
     { id: "pictures", label: "Pictures", icon: "camera", element: PicturesView.selector },
-    { id: "query", label: "Resultados", icon: "search", element: QueryView.selector, nav: false },
-    { id: "profiles", label: "Perfiles", icon: "users", element: ProfilesView.selector },
+    { id: "query", label: "Results", icon: "search", element: QueryView.selector, nav: false },
+    { id: "profiles", label: "Profiles", icon: "users", element: ProfilesView.selector },
     { id: "logs", label: "Logs", icon: "document", element: LogsView.selector },
     { id: "backlog", label: "Backlog", icon: "checkSquare", element: BacklogView.selector },
     { id: "wikis", label: "Wikis", icon: "book", element: WikisView.selector },
-    { id: "settings", label: "Ajustes", icon: "settings", element: SettingsView.selector }
+    { id: "settings", label: "Settings", icon: "settings", element: SettingsView.selector }
 ];
 /**
  * BrainExplorerApp composes the persistent shell around route-level Web Components.
@@ -958,7 +959,7 @@ class BrainExplorerApp extends HTMLElement {
                             Brain ~&nbsp;
                             <details class="action-menu project-selector-menu" style="position: relative; display: inline-block;">
                                 <summary style="cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: 4px; padding-right: 14px; background-image: url(&quot;data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23888888' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>&quot;); background-repeat: no-repeat; background-position: right center; background-size: 10px; outline: none; user-select: none;" data-role="project-selector-summary">
-                                    Cargando...
+                                    Loading...
                                 </summary>
                                 <div class="action-menu-panel project-selector-panel" data-role="project-selector-options">
                                 </div>
@@ -968,37 +969,37 @@ class BrainExplorerApp extends HTMLElement {
                     <div class="global-search-cluster">
                         <div class="global-search">
                             ${icon("search")}
-                            <input data-role="global-shell-search" placeholder="Buscar en todo el conocimiento...">
+                            <input data-role="global-shell-search" placeholder="Search all knowledge...">
                             <kbd>Ctrl + Alt + S</kbd>
                         </div>
                         <details class="action-menu search-options-menu">
-                            <summary title="Fuentes y modos de búsqueda" aria-label="Fuentes y modos de búsqueda">${icon("sliders")}</summary>
+                            <summary title="Search sources and modes" aria-label="Search sources and modes">${icon("sliders")}</summary>
                             <div class="action-menu-panel search-options-panel">
                                 <fieldset>
-                                    <legend>Fuentes</legend>
-                                    <label><input type="checkbox" name="search-source" value="memory" checked>Memoria</label>
-                                    <label><input type="checkbox" name="search-source" value="knowledge" checked>Conocimiento</label>
-                                    <label><input type="checkbox" name="search-source" value="messages" checked>Mensajes</label>
+                                    <legend>Sources</legend>
+                                    <label><input type="checkbox" name="search-source" value="memory" checked>Memory</label>
+                                    <label><input type="checkbox" name="search-source" value="knowledge" checked>Knowledge</label>
+                                    <label><input type="checkbox" name="search-source" value="messages" checked>Messages</label>
                                     <label><input type="checkbox" name="search-source" value="pictures" checked>Pictures</label>
                                 </fieldset>
                                 <fieldset>
-                                    <legend>Modos</legend>
-                                    <label><input type="checkbox" name="search-mechanism" value="graph" checked>Grafo</label>
-                                    <label><input type="checkbox" name="search-mechanism" value="vector" checked>Vectorial</label>
-                                    <label><input type="checkbox" name="search-mechanism" value="text" checked>Texto</label>
+                                    <legend>Modes</legend>
+                                    <label><input type="checkbox" name="search-mechanism" value="graph" checked>Graph</label>
+                                    <label><input type="checkbox" name="search-mechanism" value="vector" checked>Vector</label>
+                                    <label><input type="checkbox" name="search-mechanism" value="text" checked>Text</label>
                                 </fieldset>
                             </div>
                         </details>
                     </div>
                     <div class="header-actions">
-                        <button class="voice-header-toggle" data-action="play-latest-voice" title="Reproducir último mensaje" aria-label="Reproducir último mensaje">${icon("volume")}</button>
-                        <button class="theme-toggle" data-action="toggle-theme" title="Cambiar tema"></button>
+                        <button class="voice-header-toggle" data-action="play-latest-voice" title="Replay latest message" aria-label="Replay latest message">${icon("volume")}</button>
+                        <button class="theme-toggle" data-action="toggle-theme" title="Change theme"></button>
                     </div>
                 </header>
 
                 <aside class="side-nav">
                     <button class="sidebar-collapse" data-action="toggle-sidebar"></button>
-                    <nav data-role="side-nav-list" aria-label="Navegacion principal">
+                    <nav data-role="side-nav-list" aria-label="Main navigation">
                         ${this.#renderNav()}
                     </nav>
                 </aside>
@@ -1011,12 +1012,12 @@ class BrainExplorerApp extends HTMLElement {
                     <span data-role="footer-route"></span>
                     <span data-role="footer-call"></span>
                     <button data-action="toggle-diagnostics" class="footer-link">${icon("terminal")}CLI</button>
-                    <span>Sistema local <i class="live-dot"></i></span>
+                    <span>Local system <i class="live-dot"></i></span>
                 </footer>
 
                 <div data-command-overlay-host></div>
                 <div data-diagnostics-host></div>
-                <section class="notification-stack" data-notification-stack aria-live="polite" aria-label="Notificaciones"></section>
+                <section class="notification-stack" data-notification-stack aria-live="polite" aria-label="Notifications"></section>
             </div>
         `;
         this.#bindShellEvents();
@@ -1046,7 +1047,8 @@ class BrainExplorerApp extends HTMLElement {
                                 });
                             }
                             allProjects.sort((a, b) => a.path.localeCompare(b.path));
-                            if (!activePath && defaultPath) {
+                            const activeProjectIsRegistered = allProjects.some(project => project.path === activePath);
+                            if (!activeProjectIsRegistered && defaultPath) {
                                 activePath = defaultPath;
                                 localStorage.setItem("active_project_path", defaultPath);
                             }
@@ -1131,7 +1133,7 @@ class BrainExplorerApp extends HTMLElement {
             if (payload && !payload.ok) {
                 this.#pushNotification({
                     tone: "error",
-                    title: "No se pudo completar",
+                    title: "Could not complete",
                     message: feedback?.message
                 });
             }
@@ -1146,7 +1148,7 @@ class BrainExplorerApp extends HTMLElement {
         this.#apiListenersBound = true;
     }
     /** Add one timed, hover-pausable notification pill to the global stack. */
-    #pushNotification({ tone = "info", title = "Mensaje", message = "" }) {
+    #pushNotification({ tone = "info", title = "Message", message = "" }) {
         const stack = this.querySelector("[data-notification-stack]");
         if (!stack)
             return;
@@ -1161,7 +1163,7 @@ class BrainExplorerApp extends HTMLElement {
                 <strong>${escapeHtml(title)}</strong>
                 <span>${escapeHtml(String(message || title))}</span>
             </button>
-            <button class="notification-close" type="button" aria-label="Cerrar notificación"><i></i></button>
+            <button class="notification-close" type="button" aria-label="Close notification"><i></i></button>
         `;
         stack.append(element);
         const record = { timer: 0, remaining: lifetime, startedAt: performance.now() };
@@ -1370,11 +1372,11 @@ class BrainExplorerApp extends HTMLElement {
         if (!button) {
             return;
         }
-        const label = this.#state.sidebarOpen ? "Contraer" : "Expandir";
+        const label = this.#state.sidebarOpen ? "Collapse" : "Expand";
         const iconName = this.#state.sidebarOpen ? "collapseLeft" : "expandRight";
-        button.title = `${label} navegacion`;
-        button.dataset.tooltip = `${label} navegacion`;
-        button.setAttribute("aria-label", `${label} navegacion`);
+        button.title = `${label} navigation`;
+        button.dataset.tooltip = `${label} navigation`;
+        button.setAttribute("aria-label", `${label} navigation`);
         button.innerHTML = `${icon(iconName)}<span class="nav-label">${label}</span>`;
     }
     /**
@@ -1394,7 +1396,7 @@ class BrainExplorerApp extends HTMLElement {
             return;
         }
         if (!lastCall) {
-            callLabel.textContent = "CLI sin llamadas";
+            callLabel.textContent = "No CLI calls";
             return;
         }
         const command = lastCall.command.split(" ").slice(-2).join(" ") || "API";
@@ -1436,15 +1438,15 @@ class BrainExplorerApp extends HTMLElement {
      */
     #renderDiagnosticsDrawer() {
         return `
-            <aside class="diagnostics-drawer" aria-label="Consola CLI">
+            <aside class="diagnostics-drawer" aria-label="CLI console">
                 <div class="diagnostics-head">
                     <div>
-                        <strong>Llamadas CLI</strong>
-                        <span>Historial, comando activo y prompter allowlisted</span>
+                        <strong>CLI calls</strong>
+                        <span>History, active command, and allowlisted prompt</span>
                     </div>
                     <div class="diagnostics-actions">
-                        <button data-action="clear-cli-log" class="ghost-action">${icon("trash")}Vaciar</button>
-                        <button data-action="close-diagnostics" class="icon-action cli-close-action" title="Cerrar consola" aria-label="Cerrar consola">${icon("close")}</button>
+                        <button data-action="clear-cli-log" class="ghost-action">${icon("trash")}Clear</button>
+                        <button data-action="close-diagnostics" class="icon-action cli-close-action" title="Close console" aria-label="Close console">${icon("close")}</button>
                     </div>
                 </div>
                 ${this.#renderDiagnosticsActiveCommand()}
@@ -1453,13 +1455,13 @@ class BrainExplorerApp extends HTMLElement {
                 </div>
                 <form class="cli-prompter" data-role="cli-prompter">
                     <label>
-                        <span>Comando</span>
+                        <span>Command</span>
                         <input data-role="cli-prompt" list="cli-command-suggestions" placeholder="get-context">
                     </label>
                     <datalist id="cli-command-suggestions">
                         ${this.#renderPromptSuggestions()}
                     </datalist>
-                    <button type="button" data-action="run-cli-command" class="primary-action">${icon("terminal")}Ejecutar</button>
+                    <button type="button" data-action="run-cli-command" class="primary-action">${icon("terminal")}Run</button>
                 </form>
             </aside>
         `;
@@ -1495,7 +1497,7 @@ class BrainExplorerApp extends HTMLElement {
         host.innerHTML = activeCommand ? `
             <div class="command-blocking-overlay" role="status" aria-live="polite">
                 <span class="loading-spinner"></span>
-                <strong>Ejecutando comando</strong>
+                <strong>Running command</strong>
                 <code>${escapeHtml(activeCommand.command)}</code>
             </div>
         ` : "";
@@ -1524,12 +1526,12 @@ class BrainExplorerApp extends HTMLElement {
     #renderDiagnosticsActiveCommand() {
         const activeCommand = this.#state.activeCommand;
         if (!activeCommand) {
-            return `<div data-role="diagnostics-active-command" class="diagnostics-active-strip is-empty">Sin comando en curso.</div>`;
+            return `<div data-role="diagnostics-active-command" class="diagnostics-active-strip is-empty">No command is running.</div>`;
         }
         return `
             <div data-role="diagnostics-active-command" class="diagnostics-active-strip">
                 <span class="loading-spinner small-spinner"></span>
-                <strong>En curso</strong>
+                <strong>Running</strong>
                 <code>${escapeHtml(activeCommand.command)}</code>
             </div>
         `;
@@ -1542,7 +1544,7 @@ class BrainExplorerApp extends HTMLElement {
     #renderCallLog() {
         const calls = this.#state.callLog;
         if (!calls.length) {
-            return `<p class="empty-state">Sin llamadas registradas todavia.</p>`;
+            return `<p class="empty-state">No calls recorded yet.</p>`;
         }
         return calls.map(call => `
             <details class="call-log-item" data-call-id="${escapeHtml(call.id)}" ${this.#openCallIds.has(call.id) ? "open" : ""}>
@@ -1550,7 +1552,7 @@ class BrainExplorerApp extends HTMLElement {
                     <span class="${call.ok ? "status-dot ok" : "status-dot error"}"></span>
                     <strong>${escapeHtml(call.command.split(" ").slice(-3).join(" ") || "API call")}</strong>
                     <time>${escapeHtml(call.time)} - ${escapeHtml(String(call.durationMs))} ms</time>
-                    <button type="button" data-action="delete-cli-call" data-call-id="${escapeHtml(call.id)}" class="icon-action call-delete" title="Borrar llamada">${icon("trash")}</button>
+                    <button type="button" data-action="delete-cli-call" data-call-id="${escapeHtml(call.id)}" class="icon-action call-delete" title="Delete call">${icon("trash")}</button>
                 </summary>
                 ${codeBlock({
             ok: call.ok,
@@ -1699,7 +1701,7 @@ class DashboardView extends HTMLElement {
                 <div class="knowledge-empty-state">
                     ${icon("document")}
                     <h2>Contexto no cargado</h2>
-                    <p>Actualiza para leer el contexto vivo del workspace.</p>
+                    <p>Refresh to read the live workspace context.</p>
                 </div>
             `;
         }
@@ -1708,7 +1710,7 @@ class DashboardView extends HTMLElement {
             <article class="context-document-root context-outline">
                 <div class="context-document-actions">
                     <span>${escapeHtml(String(entryCount))} enlaces</span>
-                    <button data-action="refresh-dashboard" class="icon-action compact-action" title="Actualizar contexto" aria-label="Actualizar contexto">${icon("refresh")}</button>
+                    <button data-action="refresh-dashboard" class="icon-action compact-action" title="Refresh context" aria-label="Refresh context">${icon("refresh")}</button>
                 </div>
                 <div class="context-tree-document">
                     ${this.#contextSections.map(section => this.#renderContextSection(section)).join("")}
@@ -1757,7 +1759,7 @@ class DashboardView extends HTMLElement {
         if (kind === "logs") {
             const chronologicalEntries = this.#sortLogsNewestFirst(entries);
             return `
-                <nav class="context-log-links" aria-label="Entradas recientes de logs">
+                <nav class="context-log-links" aria-label="Recent log entries">
                     ${chronologicalEntries.map(entry => this.#renderContextLine(entry, "context-link-line")).join("")}
                 </nav>
             `;
@@ -1771,7 +1773,7 @@ class DashboardView extends HTMLElement {
         }
         if (kind === "profiles") {
             return `
-                <nav class="context-profile-links" aria-label="Perfiles disponibles">
+                <nav class="context-profile-links" aria-label="Available profiles">
                     ${entries.map(entry => this.#renderContextLine(entry, "context-profile-link")).join("")}
                 </nav>
             `;
@@ -1868,7 +1870,7 @@ class DashboardView extends HTMLElement {
                 kind: "workspace",
                 icon: "home",
                 typeLabel: "Workspace",
-                label: "Raiz del workspace",
+                label: "Workspace root",
                 summary: section.path || section.summary || "",
                 route: "settings",
                 target: { panel: "workspace" }
@@ -1878,8 +1880,8 @@ class DashboardView extends HTMLElement {
             return {
                 kind: "system",
                 icon: "pulse",
-                typeLabel: "Sistema",
-                label: section.status === "ok" ? "Chequeos correctos" : "Chequeos con errores",
+                typeLabel: "System",
+                label: section.status === "ok" ? "Checks passed" : "Checks with errors",
                 summary: section.summary || "",
                 route: "settings",
                 target: { panel: "health" }
@@ -1961,7 +1963,7 @@ class DashboardView extends HTMLElement {
             return `Diario ${item.date || ""}`.trim();
         }
         if (section.kind === "logs") {
-            return "Entrada de log";
+            return "Log entry";
         }
         return section.title || "Contexto";
     }
@@ -1977,7 +1979,7 @@ class DashboardView extends HTMLElement {
             return item.command || `read-profile ${item.label || ""}`;
         }
         if (section.kind === "diary") {
-            return item.target?.path || item.command || "Entrada de diario";
+            return item.target?.path || item.command || "Diary entry";
         }
         if (section.kind === "logs") {
             return `${item.domain || "logs"} - ${item.changeType || "registro"}`;
@@ -2009,10 +2011,10 @@ class DashboardView extends HTMLElement {
     #sectionTitle(section) {
         return {
             workspace: "Workspace",
-            profiles: "Perfiles",
+            profiles: "Profiles",
             diary: "Diario reciente",
             logs: "Logs recientes",
-            system: "Sistema",
+            system: "System",
             notice: "Avisos"
         }[section.kind] || "Contexto";
     }
@@ -2025,9 +2027,9 @@ class DashboardView extends HTMLElement {
      */
     #sectionSummary(section, count) {
         if (section.kind === "workspace") {
-            return section.path || "Raiz del workspace";
+            return section.path || "Workspace root";
         }
-        return `${count} entradas enlazadas`;
+        return `${count} linked entries`;
     }
     /**
      * Encode a target object for an HTML attribute.
@@ -2094,7 +2096,7 @@ class MemoryView extends HTMLElement {
     #selectedPath = "";
     #selectedDomain = "";
     #content = "";
-    #status = "Preparando memoria...";
+    #status = "Preparing memory...";
     #filter = "";
     #mode = "browse";
     #loadingTree = false;
@@ -2141,7 +2143,7 @@ class MemoryView extends HTMLElement {
         if (this.#selectedDomain) {
             this.#expandedNodes.add(this.#selectedDomain);
         }
-        this.#status = result.ok ? `${this.#leafPaths().length} entradas` : result.stderr || result.error || "No se pudo cargar memoria.";
+        this.#status = result.ok ? `${this.#leafPaths().length} entries` : result.stderr || result.error || "Could not load memory.";
         this.#loadingTree = false;
         if (await this.#applyPendingTarget(forceRefresh)) {
             return;
@@ -2193,7 +2195,7 @@ class MemoryView extends HTMLElement {
         const result = await this.#api.memoryEntry(path, { forceRefresh });
         this.#state?.setLastResult(result);
         this.#content = result.data?.content || result.stdout || "";
-        this.#status = result.ok ? compactLabel(path) : result.stderr || result.error || "No se pudo leer la entrada.";
+        this.#status = result.ok ? compactLabel(path) : result.stderr || result.error || "Could not read the entry.";
         this.#loadingEntry = false;
         this.#render();
     }
@@ -2204,10 +2206,10 @@ class MemoryView extends HTMLElement {
      */
     #newEntry() {
         const baseDomain = this.#selectedDomain || this.#topDomains()[0] || "notes";
-        this.#selectedPath = `${baseDomain}.nueva_entrada`;
-        this.#content = "# Nueva entrada\n\nEscribe memoria Markdown aqui.";
+        this.#selectedPath = `${baseDomain}.new_entry`;
+        this.#content = "# New entry\n\nWrite Markdown memory here.";
         this.#mode = "edit";
-        this.#status = "Nueva entrada";
+        this.#status = "New entry";
         this.#render();
     }
     /**
@@ -2219,7 +2221,7 @@ class MemoryView extends HTMLElement {
         const path = this.querySelector("[data-role='memory-path']")?.value.trim();
         const content = this.querySelector("[data-role='memory-content']")?.value || this.#content;
         if (!path) {
-            this.#status = "Define una ruta antes de guardar.";
+            this.#status = "Define a path before saving.";
             this.#render();
             return;
         }
@@ -2230,7 +2232,7 @@ class MemoryView extends HTMLElement {
         this.#selectedPath = path;
         this.#selectedDomain = this.#parentPath(path) || path.split(".")[0] || "";
         this.#content = content;
-        this.#status = result.ok ? compactLabel(path) : result.stderr || result.error || "No se pudo guardar.";
+        this.#status = result.ok ? compactLabel(path) : result.stderr || result.error || "Could not save.";
         this.#saving = false;
         await this.#loadTree(true);
         this.#mode = "read";
@@ -2267,7 +2269,7 @@ class MemoryView extends HTMLElement {
         this.#selectedPath = "";
         this.#content = "";
         this.#mode = "browse";
-        this.#status = result.ok ? "Entrada eliminada" : result.stderr || result.error || "No se pudo eliminar.";
+        this.#status = result.ok ? "Entry deleted" : result.stderr || result.error || "Could not delete.";
         await this.#loadTree(true);
     }
     /**
@@ -2278,7 +2280,7 @@ class MemoryView extends HTMLElement {
     async #createDomain() {
         const domain = this.querySelector("[data-role='domain-name']")?.value.trim();
         if (!domain) {
-            this.#status = "Escribe un dominio.";
+            this.#status = "Enter a domain.";
             this.#render();
             return;
         }
@@ -2287,7 +2289,7 @@ class MemoryView extends HTMLElement {
         this.#selectedDomain = domain;
         this.#selectedPath = "";
         this.#expandedNodes.add(domain.split(".")[0]);
-        this.#status = result.ok ? `Dominio ${domain}` : result.stderr || result.error || "No se pudo crear dominio.";
+        this.#status = result.ok ? `Domain ${domain}` : result.stderr || result.error || "Could not create domain.";
         await this.#loadTree(true);
     }
     /**
@@ -2306,7 +2308,7 @@ class MemoryView extends HTMLElement {
         this.#selectedPath = "";
         this.#content = "";
         this.#mode = "browse";
-        this.#status = result.ok ? "Dominio eliminado" : result.stderr || result.error || "No se pudo eliminar dominio.";
+        this.#status = result.ok ? "Domain deleted" : result.stderr || result.error || "Could not delete domain.";
         await this.#loadTree(true);
     }
     /**
@@ -2339,12 +2341,12 @@ class MemoryView extends HTMLElement {
      */
     #renderPrimaryAction() {
         if (this.#mode === "edit") {
-            return this.#renderIconButton("save-entry", "save", this.#saving ? "Guardando entrada" : "Guardar entrada", "primary-action compact-action", this.#saving);
+            return this.#renderIconButton("save-entry", "save", this.#saving ? "Saving entry" : "Save entry", "primary-action compact-action", this.#saving);
         }
         if (this.#mode === "domains") {
-            return this.#renderIconButton("create-domain", "folderPlus", "Crear dominio", "primary-action compact-action");
+            return this.#renderIconButton("create-domain", "folderPlus", "Create domain", "primary-action compact-action");
         }
-        return this.#renderIconButton("new-entry", "documentPlus", "Nueva entrada", "primary-action compact-action");
+        return this.#renderIconButton("new-entry", "documentPlus", "New entry", "primary-action compact-action");
     }
     /**
      * Render the memory mode menu as an icon-only control.
@@ -2356,7 +2358,7 @@ class MemoryView extends HTMLElement {
         const label = this.#modeLabel(this.#mode);
         return `
             <details class="action-menu mode-menu">
-                <summary class="icon-action" title="Modo: ${escapeHtml(label)}" aria-label="Modo de memoria: ${escapeHtml(label)}">
+                <summary class="icon-action" title="Mode: ${escapeHtml(label)}" aria-label="Memory mode: ${escapeHtml(label)}">
                     ${icon(this.#modeIcon(this.#mode))}
                 </summary>
                 <div class="action-menu-panel">
@@ -2414,8 +2416,8 @@ class MemoryView extends HTMLElement {
         return {
             browse: "Explorar",
             read: "Leer",
-            edit: "Editar",
-            domains: "Dominios"
+            edit: "Edit",
+            domains: "Domains"
         }[mode] || "Explorar";
     }
     /**
@@ -2425,22 +2427,22 @@ class MemoryView extends HTMLElement {
      */
     #renderActionMenu() {
         const isEntry = Boolean(this.#selectedPath);
-        const label = isEntry ? "Entrada" : "Dominio";
+        const label = isEntry ? "Entry" : "Domain";
         const entryActions = `
-            <button data-action="refresh-memory">${icon("refresh")}Actualizar</button>
-            <button data-action="edit-entry" ${this.#selectedPath ? "" : "disabled"}>${icon("edit")}Editar entrada</button>
-            <button data-action="duplicate-entry" ${this.#selectedPath ? "" : "disabled"}>${icon("copy")}Duplicar entrada</button>
-            <button data-action="delete-entry" class="danger-button" ${this.#selectedPath ? "" : "disabled"}>${icon("trash")}Eliminar entrada</button>
+            <button data-action="refresh-memory">${icon("refresh")}Refresh</button>
+            <button data-action="edit-entry" ${this.#selectedPath ? "" : "disabled"}>${icon("edit")}Edit entry</button>
+            <button data-action="duplicate-entry" ${this.#selectedPath ? "" : "disabled"}>${icon("copy")}Duplicate entry</button>
+            <button data-action="delete-entry" class="danger-button" ${this.#selectedPath ? "" : "disabled"}>${icon("trash")}Delete entry</button>
         `;
         const domainActions = `
-            <button data-action="refresh-memory">${icon("refresh")}Actualizar arbol</button>
-            <button data-action="new-entry" ${this.#selectedDomain ? "" : "disabled"}>${icon("plus")}Nueva entrada aqui</button>
-            <button data-action="domain-mode">${icon("folder")}Gestionar dominio</button>
-            <button data-action="delete-domain" class="danger-button" ${this.#selectedDomain ? "" : "disabled"}>${icon("trash")}Eliminar dominio</button>
+            <button data-action="refresh-memory">${icon("refresh")}Refresh tree</button>
+            <button data-action="new-entry" ${this.#selectedDomain ? "" : "disabled"}>${icon("plus")}New entry here</button>
+            <button data-action="domain-mode">${icon("folder")}Manage domain</button>
+            <button data-action="delete-domain" class="danger-button" ${this.#selectedDomain ? "" : "disabled"}>${icon("trash")}Delete domain</button>
         `;
         return `
             <details class="action-menu">
-                <summary class="icon-action" title="Acciones de ${escapeHtml(label.toLowerCase())}" aria-label="Acciones de ${escapeHtml(label.toLowerCase())}">
+                <summary class="icon-action" title="${escapeHtml(label)} actions" aria-label="${escapeHtml(label)} actions">
                     ${icon("more")}
                 </summary>
                 <div class="action-menu-panel">
@@ -2475,11 +2477,11 @@ class MemoryView extends HTMLElement {
         const children = this.#childItemsForSelectedDomain();
         return `
             <div class="content-head">
-                <strong>${escapeHtml(this.#selectedDomain || "Memoria")}</strong>
-                <span>${escapeHtml(String(children.length))} visibles</span>
+                <strong>${escapeHtml(this.#selectedDomain || "Memory")}</strong>
+                <span>${escapeHtml(String(children.length))} visible</span>
             </div>
             <div class="entry-list scroll-list">
-                ${children.length ? children.map(item => this.#renderContentItem(item)).join("") : `<p class="empty-state">Selecciona un nodo del arbol.</p>`}
+                ${children.length ? children.map(item => this.#renderContentItem(item)).join("") : `<p class="empty-state">Select a tree node.</p>`}
             </div>
         `;
     }
@@ -2492,7 +2494,7 @@ class MemoryView extends HTMLElement {
     #renderContentItem(item) {
         const isBranch = item.children.size > 0;
         const action = isBranch ? "select-domain" : "select-entry";
-        const count = isBranch ? `${this.#leafPathsUnder(item.path).length} entradas` : "Entrada";
+        const count = isBranch ? `${this.#leafPathsUnder(item.path).length} entries` : "Entry";
         return `
             <button class="entry-row ${item.path === this.#selectedPath ? "is-active" : ""}" data-action="${action}" data-node-path="${escapeHtml(item.path)}">
                 ${icon(isBranch ? "folder" : "document")}
@@ -2511,11 +2513,11 @@ class MemoryView extends HTMLElement {
     #renderReadContent() {
         return `
             <div class="content-head">
-                <strong>${escapeHtml(compactLabel(this.#selectedPath) || "Sin entrada")}</strong>
+                <strong>${escapeHtml(compactLabel(this.#selectedPath) || "No entry")}</strong>
                 <span>${escapeHtml(this.#selectedPath || this.#status)}</span>
             </div>
             <article class="markdown-preview scroll-area">
-                ${this.#loadingEntry ? this.#loadingState("Renderizando Markdown") : renderMarkdown(this.#content || "Selecciona una entrada.")}
+                ${this.#loadingEntry ? this.#loadingState("Rendering Markdown") : renderMarkdown(this.#content || "Select an entry.")}
             </article>
         `;
     }
@@ -2528,8 +2530,8 @@ class MemoryView extends HTMLElement {
         return `
             <div class="content-head editor-path-row">
                 <label class="path-compact">
-                    <span>Ruta</span>
-                    <input data-role="memory-path" value="${escapeHtml(this.#selectedPath)}" placeholder="dominio.entrada">
+                    <span>Path</span>
+                    <input data-role="memory-path" value="${escapeHtml(this.#selectedPath)}" placeholder="domain.entry">
                 </label>
             </div>
             <textarea class="markdown-editor scroll-area" data-role="memory-content" spellcheck="false">${escapeHtml(this.#content)}</textarea>
@@ -2544,8 +2546,8 @@ class MemoryView extends HTMLElement {
         return `
             <div class="content-head editor-path-row">
                 <label class="path-compact">
-                    <span>Dominio</span>
-                    <input data-role="domain-name" value="${escapeHtml(this.#selectedDomain)}" placeholder="nuevo.dominio">
+                    <span>Domain</span>
+                    <input data-role="domain-name" value="${escapeHtml(this.#selectedDomain)}" placeholder="new.domain">
                 </label>
             </div>
             <div class="domain-grid scroll-list">
@@ -2553,9 +2555,9 @@ class MemoryView extends HTMLElement {
                     <button class="domain-tile ${domain === this.#selectedDomain ? "is-active" : ""}" data-action="select-domain" data-node-path="${escapeHtml(domain)}">
                         ${icon("database")}
                         <strong>${escapeHtml(domain)}</strong>
-                        <span>${escapeHtml(String(this.#leafPathsUnder(domain).length))} entradas</span>
+                        <span>${escapeHtml(String(this.#leafPathsUnder(domain).length))} entries</span>
                     </button>
-                `).join("") || `<p class="empty-state">Sin dominios.</p>`}
+                `).join("") || `<p class="empty-state">No domains.</p>`}
             </div>
         `;
     }
@@ -2610,16 +2612,16 @@ class MemoryView extends HTMLElement {
             selectedPath: this.#selectedPath || this.#selectedDomain,
             expandedPaths: this.#expandedNodes,
             toggleOnBranchSelect: true,
-            title: "Memoria",
+            title: "Memory",
             toolbarActions: [
-                { id: "new-entry", label: "Nueva entrada", icon: "plus" },
-                { id: "create-domain", label: "Nuevo dominio", icon: "folder" },
-                { id: "refresh", label: "Actualizar arbol", icon: "refresh" }
+                { id: "new-entry", label: "New entry", icon: "plus" },
+                { id: "create-domain", label: "New domain", icon: "folder" },
+                { id: "refresh", label: "Refresh tree", icon: "refresh" }
             ],
             defaultBranchIcon: "folder",
             defaultLeafIcon: "database",
             searchQuery: this.#filter,
-            emptyText: this.#loadingTree ? "Cargando arbol..." : "Sin rutas cargadas."
+            emptyText: this.#loadingTree ? "Loading tree..." : "No paths loaded."
         };
         treeElement.addEventListener("brain-tree-select", event => this.#onTreeSelected(event));
         treeElement.addEventListener("brain-tree-toolbar-action", event => this.#onTreeToolbarAction(event));
@@ -2652,14 +2654,14 @@ class MemoryView extends HTMLElement {
                 children,
                 actions: hasChildren
                     ? [
-                        { id: "new-entry", label: "Nueva entrada", icon: "plus" },
-                        { id: "delete-domain", label: "Eliminar dominio", icon: "trash", danger: true }
+                        { id: "new-entry", label: "New entry", icon: "plus" },
+                        { id: "delete-domain", label: "Delete domain", icon: "trash", danger: true }
                     ]
                     : [
-                        { id: "open-entry", label: "Abrir", icon: "document" },
-                        { id: "edit-entry", label: "Editar", icon: "edit" },
+                        { id: "open-entry", label: "Open", icon: "document" },
+                        { id: "edit-entry", label: "Edit", icon: "edit" },
                         { id: "duplicate-entry", label: "Duplicar", icon: "duplicate" },
-                        { id: "delete-entry", label: "Eliminar", icon: "trash", danger: true }
+                        { id: "delete-entry", label: "Delete", icon: "trash", danger: true }
                     ]
             };
         };
@@ -2943,11 +2945,13 @@ cache=(()=>{return { MemoryView: MemoryView };})();return cache;};})();
 const __brainExplorerModule6=(()=>{let cache;return()=>{if(cache)return cache;
 const { escapeHtml } = __brainExplorerModule15();
 const { icon } = __brainExplorerModule16();
+const { renderDescriptionCard } = __brainExplorerModule20();
 const { StructureTree } = __brainExplorerModule18();
 /**
  * @author Yoel David <yoeldcd@gmail.com>
  * @see https://x.com/SAY6267
  */
+
 
 
 
@@ -2962,7 +2966,9 @@ class KnowledgeView extends HTMLElement {
     }
     #api = null;
     #state = null;
-    #scope = "global";
+    #scope = "all";
+    #selectedScopes = new Set(["global", "local"]);
+    #treeScope = "all";
     #mode = "all";
     #domain = "all";
     #query = "";
@@ -2973,20 +2979,48 @@ class KnowledgeView extends HTMLElement {
     #edges = [];
     #selectedNodeId = "";
     #selectedRelationId = "";
+    #hoveredRelationId = "";
+    #hoveredNodeId = "";
     #regionNodeIds = new Set();
     #regionEdgeIds = new Set();
     #regionPositions = new Map();
+    #regionHistory = [];
+    #regionRootNodeId = "";
     #dragNode = null;
     #panState = null;
     #cameraAnimationFrame = 0;
     #viewport = { x: 0, y: 0, scale: 1 };
     #renderFrustum = null;
-    #expandedDomains = new Set(["all"]);
+    #edgeLabelBounds = new Map();
+    #nodeLabelBounds = new Map();
+    #viewportNodeIds = new Set();
+    #viewportBadgeSignature = "";
+    #viewportInspectorTimer = 0;
+    #viewportBadgeRankingFrozen = false;
+    #expandedDomains = new Set(["global::all", "local::all"]);
     #resizeObserver = null;
     #loadScheduled = false;
+    #graphBusyDepth = 0;
+    #graphBusyLabel = "Loading graph";
     #needsViewportFit = true;
     #filtersOpen = false;
     #domainTreeNodes = [];
+    #memoryPaths = [];
+    #pictures = [];
+    #messages = [];
+    #messageSessions = [];
+    #logEntries = [];
+    #selectedTreePath = "";
+    #sourcePath = "";
+    #sourceKind = "";
+    #treeVisualType = "";
+    #focusViewport = null;
+    #relationHoverViewport = null;
+    #badgeHoverViewport = null;
+    #pointerCandidate = null;
+    #domainColors = new Map();
+    #usedDomainColors = new Set();
+    #pendingEntityLabel = "";
     /**
      * Assign runtime dependencies.
      *
@@ -2996,8 +3030,12 @@ class KnowledgeView extends HTMLElement {
     set context(context) {
         this.#api = context.api;
         this.#state = context.state;
+        const target = this.#state?.consumeRouteTarget?.("knowledge") || null;
+        this.#pendingEntityLabel = String(target?.entityLabel || "").trim();
         this.#render();
         this.#scheduleInitialLoad();
+        if (this.#output)
+            queueMicrotask(() => this.#resolvePendingEntity());
     }
     /**
      * Initialize component DOM.
@@ -3016,6 +3054,7 @@ class KnowledgeView extends HTMLElement {
     disconnectedCallback() {
         this.#resizeObserver?.disconnect();
         cancelAnimationFrame(this.#cameraAnimationFrame);
+        clearTimeout(this.#viewportInspectorTimer);
     }
     /**
      * Load records once after the component has context.
@@ -3039,15 +3078,30 @@ class KnowledgeView extends HTMLElement {
         if (!this.#api) {
             return;
         }
-        this.#readControls();
-        const result = await this.#api.knowledgeShow({
-            scope: this.#scope,
-            mode: "all"
-        }, { forceRefresh });
-        this.#state?.setLastResult(result);
-        this.#output = result;
-        this.#ingestGraph(result.data);
-        this.#render();
+        this.#beginGraphBusy(forceRefresh ? "Refreshing graph" : "Loading graph");
+        try {
+            this.#readControls();
+            const [result, memoryResult, pictureResult, messageResult, logResult] = await Promise.all([
+                this.#api.knowledgeShow({ scope: "all", mode: "all" }, { forceRefresh }),
+                this.#api.memoryTree({ forceRefresh }),
+                this.#api.pictures({}, { forceRefresh }),
+                this.#api.getVoiceMessages({ all: "true" }, { forceRefresh, silent: true }),
+                this.#api.logIndex({}, { forceRefresh, silent: true })
+            ]);
+            this.#state?.setLastResult(result);
+            this.#output = result;
+            this.#memoryPaths = Array.isArray(memoryResult.data) ? memoryResult.data.map(path => String(path)) : [];
+            this.#pictures = Array.isArray(pictureResult.data?.pictures) ? pictureResult.data.pictures : [];
+            this.#messages = Array.isArray(messageResult.data?.history) ? messageResult.data.history : [];
+            this.#messageSessions = Array.isArray(messageResult.data?.sessions) ? messageResult.data.sessions : [];
+            this.#logEntries = Array.isArray(logResult.data?.entries) ? logResult.data.entries : [];
+            this.#ingestGraph(result.data);
+            this.#render();
+            this.#resolvePendingEntity();
+        }
+        finally {
+            this.#endGraphBusy();
+        }
     }
     /**
      * Search graph records.
@@ -3060,19 +3114,25 @@ class KnowledgeView extends HTMLElement {
         }
         this.#readControls();
         if (!this.#query) {
-            this.#applyFilters();
+            await this.#applyFilters();
             return;
         }
-        const result = await this.#api.knowledgeQuery({
-            q: this.#query,
-            scope: this.#scope,
-            limit: "120",
-            explain: "true"
-        });
-        this.#state?.setLastResult(result);
-        this.#output = result;
-        this.#ingestGraph(result.data);
-        this.#render();
+        this.#beginGraphBusy("Searching graph");
+        try {
+            const result = await this.#api.knowledgeQuery({
+                q: this.#query,
+                scope: this.#scope,
+                limit: "120",
+                explain: "true"
+            });
+            this.#state?.setLastResult(result);
+            this.#output = result;
+            this.#ingestGraph(result.data);
+            this.#render();
+        }
+        finally {
+            this.#endGraphBusy();
+        }
     }
     /**
      * Load pending delta review.
@@ -3083,16 +3143,22 @@ class KnowledgeView extends HTMLElement {
         if (!this.#api) {
             return;
         }
-        this.#readControls();
-        const result = await this.#api.knowledgeDeltas({
-            scope: this.#scope,
-            limit: "80",
-            status: "pending"
-        }, { forceRefresh: true });
-        this.#state?.setLastResult(result);
-        this.#output = result;
-        this.#ingestGraph(result.data);
-        this.#render();
+        this.#beginGraphBusy("Reviewing graph deltas");
+        try {
+            this.#readControls();
+            const result = await this.#api.knowledgeDeltas({
+                scope: this.#scope,
+                limit: "80",
+                status: "pending"
+            }, { forceRefresh: true });
+            this.#state?.setLastResult(result);
+            this.#output = result;
+            this.#ingestGraph(result.data);
+            this.#render();
+        }
+        finally {
+            this.#endGraphBusy();
+        }
     }
     /**
      * Store normalized graph data and refresh derived nodes.
@@ -3112,6 +3178,8 @@ class KnowledgeView extends HTMLElement {
         this.#regionNodeIds.clear();
         this.#regionEdgeIds.clear();
         this.#regionPositions.clear();
+        this.#regionHistory = [];
+        this.#regionRootNodeId = "";
         this.#needsViewportFit = true;
         this.#prepareGraph();
     }
@@ -3121,7 +3189,8 @@ class KnowledgeView extends HTMLElement {
      * @returns {void}
      */
     #readControls() {
-        this.#scope = this.querySelector("[data-role='kg-scope']")?.value || this.#scope;
+        this.#selectedScopes = new Set([...this.querySelectorAll("[data-filter-kind='kg-scope']:checked")].map(input => input.value));
+        this.#scope = this.#selectedScopes.size === 1 ? [...this.#selectedScopes][0] : "all";
         const selectedModes = [...this.querySelectorAll("[data-filter-kind='kg-mode']:checked")]
             .map(input => input.value);
         this.#mode = selectedModes.length === 1 ? selectedModes[0] : "all";
@@ -3143,38 +3212,38 @@ class KnowledgeView extends HTMLElement {
                     </aside>
                     <main class="structure-content knowledge-content">
                         <div class="content-head graph-toolbar">
-                            <input class="graph-search-input" aria-label="Buscar en el grafo" data-role="kg-query" value="${escapeHtml(this.#query)}" placeholder="Filtrar o buscar en el grafo">
+                            <input class="graph-search-input" aria-label="Search graph" data-role="kg-query" value="${escapeHtml(this.#query)}" placeholder="Filter or search graph">
                             <details class="action-menu filter-menu knowledge-filter-menu" ${this.#filtersOpen ? "open" : ""}>
-                                <summary class="compact-action">${icon("filter")}<span>Filtros</span></summary>
+                                <summary class="compact-action">${icon("filter")}<span>Filters</span></summary>
                                 <div class="action-menu-panel filter-menu-panel">
-                                    <header class="knowledge-filter-heading">
-                                        <strong>Vista del grafo</strong>
-                                        <small>Ajusta el alcance y el contenido visible.</small>
-                                    </header>
-                                    <label class="knowledge-filter-control">
-                                        <span>Alcance</span>
-                                        <select data-role="kg-scope">
-                                            <option value="global" ${this.#scope === "global" ? "selected" : ""}>Global</option>
-                                            <option value="local" ${this.#scope === "local" ? "selected" : ""}>Local</option>
-                                        </select>
-                                    </label>
-                                    <fieldset class="checkbox-filter-group">
-                                        <legend>Contenido visible</legend>
+                                    <fieldset class="checkbox-filter-group knowledge-scope-filter">
+                                        <legend>Scope</legend>
                                         <div class="knowledge-filter-options">
-                                            <label><input type="checkbox" data-filter-kind="kg-mode" value="entities" ${this.#mode === "all" || this.#mode === "entities" ? "checked" : ""}><span>Entidades</span></label>
-                                            <label><input type="checkbox" data-filter-kind="kg-mode" value="classes" ${this.#mode === "all" || this.#mode === "classes" ? "checked" : ""}><span>Clases</span></label>
+                                            <label><input type="checkbox" data-filter-kind="kg-scope" value="global" ${this.#selectedScopes.has("global") ? "checked" : ""}><span>Global</span></label>
+                                            <label><input type="checkbox" data-filter-kind="kg-scope" value="local" ${this.#selectedScopes.has("local") ? "checked" : ""}><span>Local</span></label>
+                                        </div>
+                                    </fieldset>
+                                    <fieldset class="checkbox-filter-group">
+                                        <legend>Visible content</legend>
+                                        <div class="knowledge-filter-options">
+                                            <label><input type="checkbox" data-filter-kind="kg-mode" value="entities" ${this.#mode === "all" || this.#mode === "entities" ? "checked" : ""}><span>Entities</span></label>
+                                            <label><input type="checkbox" data-filter-kind="kg-mode" value="classes" ${this.#mode === "all" || this.#mode === "classes" ? "checked" : ""}><span>Classes</span></label>
                                         </div>
                                     </fieldset>
                                 </div>
                             </details>
-                            <button data-action="query-records" class="primary-action">${icon("search")}Buscar</button>
+                            <button data-action="query-records" class="primary-action">${icon("search")}Search</button>
                         </div>
                         <div class="knowledge-canvas-layout">
                             <main class="graph-viewport">
-                                <button class="graph-focus-back secondary-action compact-action" data-action="clear-graph-focus" ${this.#regionNodeIds.size ? "" : "hidden"}>
-                                    ${icon("chevronRight")} Atrás
+                                <button class="graph-focus-back secondary-action compact-action" data-action="navigate-region-back" ${this.#regionHistory.length ? "" : "hidden"}>
+                                    ${icon("chevronLeft")} Back
                                 </button>
-                                <canvas class="knowledge-graph-canvas" data-role="knowledge-canvas" aria-label="Grafo de conocimiento"></canvas>
+                                <canvas class="knowledge-graph-canvas" data-role="knowledge-canvas" aria-label="Knowledge graph"></canvas>
+                                ${this.#renderGraphBusyState()}
+                                <div data-role="relation-preview-host">
+                                    ${this.#renderRelationPreview()}
+                                </div>
                                 ${this.#renderCanvasEmptyState()}
                             </main>
                             <aside class="graph-detail-list">
@@ -3201,9 +3270,69 @@ class KnowledgeView extends HTMLElement {
         return `
             <div class="knowledge-empty-state canvas-empty">
                 ${icon("graph")}
-                <h2>${this.#output?.ok === false ? "No se pudo consultar" : "Cargando grafo"}</h2>
-                <p>${escapeHtml(this.#output?.error || this.#output?.stderr || "Los nodos apareceran aqui.")}</p>
+                <h2>${this.#output?.ok === false ? "Query failed" : "Loading graph"}</h2>
+                <p>${escapeHtml(this.#output?.error || this.#output?.stderr || "Nodes will appear here.")}</p>
             </div>
+        `;
+    }
+    /** Render the bounded operation status overlay for the canvas. */
+    #renderGraphBusyState() {
+        return `
+            <div class="graph-busy-overlay" data-role="graph-busy-overlay" role="status" aria-live="polite" ${this.#graphBusyDepth ? "" : "hidden"}>
+                <span class="graph-busy-spinner" aria-hidden="true"></span>
+                <strong data-role="graph-busy-label">${escapeHtml(this.#graphBusyLabel)}</strong>
+            </div>
+        `;
+    }
+    /** Begin one graph operation and expose its latest user-facing status. */
+    #beginGraphBusy(label) {
+        this.#graphBusyDepth += 1;
+        this.#graphBusyLabel = String(label || "Loading graph");
+        this.#syncGraphBusyState();
+    }
+    /** Finish one graph operation without hiding another overlapping operation. */
+    #endGraphBusy() {
+        this.#graphBusyDepth = Math.max(0, this.#graphBusyDepth - 1);
+        this.#syncGraphBusyState();
+    }
+    /** Synchronize busy state without rebuilding the Knowledge component. */
+    #syncGraphBusyState() {
+        const overlay = this.querySelector("[data-role='graph-busy-overlay']");
+        const viewport = this.querySelector(".graph-viewport");
+        if (overlay) {
+            overlay.hidden = this.#graphBusyDepth === 0;
+            const label = overlay.querySelector("[data-role='graph-busy-label']");
+            if (label) {
+                label.textContent = this.#graphBusyLabel;
+            }
+        }
+        viewport?.setAttribute("aria-busy", String(this.#graphBusyDepth > 0));
+    }
+    /** Yield one paint frame so synchronous graph projection can expose the spinner. */
+    #waitForGraphPaint() {
+        return new Promise(resolve => requestAnimationFrame(() => resolve()));
+    }
+    /** Render the complete subject-predicate-object preview for the selected relation. */
+    #renderRelationPreview() {
+        const relationId = this.#hoveredRelationId || this.#selectedRelationId;
+        const relation = this.#edges.find(edge => edge.id === relationId);
+        if (!relation) {
+            return "";
+        }
+        const source = this.#nodes.find(node => node.id === relation.from);
+        const target = this.#nodes.find(node => node.id === relation.to);
+        return `
+            <section class="graph-relation-preview" role="status" aria-label="Focused relation preview">
+                <button class="graph-relation-endpoint" data-action="navigate-relation-endpoint" data-node-id="${escapeHtml(relation.from)}" style="--entity-color: ${escapeHtml(source?.color || "var(--primary)")}">
+                    ${escapeHtml(relation.fromLabel)}
+                </button>
+                <span class="graph-relation-connector">
+                    <strong class="graph-relation-predicate" title="${escapeHtml(relation.label)}">${escapeHtml(relation.label)}</strong>
+                </span>
+                <button class="graph-relation-endpoint" data-action="navigate-relation-endpoint" data-node-id="${escapeHtml(relation.to)}" style="--entity-color: ${escapeHtml(target?.color || "var(--primary)")}">
+                    ${escapeHtml(relation.toLabel)}
+                </button>
+            </section>
         `;
     }
     /**
@@ -3212,29 +3341,166 @@ class KnowledgeView extends HTMLElement {
      * @returns {string} HTML.
      */
     #renderDomainTree() {
-        const root = { label: "Todo el conocimiento", path: "all", children: new Map() };
-        this.#domains().forEach(domain => {
-            const parts = this.#domainParts(domain);
+        this.#domainTreeNodes = [
+            this.#scopeTreeRoot("global", "Global knowledge", this.#memoryPaths),
+            this.#scopeTreeRoot("local", "Local knowledge", [])
+        ].filter(root => this.#selectedScopes.has(root.scope));
+        return `<brain-structure-tree data-role="knowledge-domain-tree"></brain-structure-tree>`;
+    }
+    /** Build one physical-scope root without hiding canonical empty sources. */
+    #scopeTreeRoot(scope, label, canonicalPaths) {
+        let children = [];
+        if (scope === "global") {
+            const leaves = new Set(canonicalPaths.filter(path => !canonicalPaths.some(candidate => candidate.startsWith(`${path}.`))));
+            const memoryEntries = canonicalPaths.map(path => ({
+                segments: this.#domainParts(path),
+                domain: path,
+                sourcePath: leaves.has(path) ? `memory/${path.replaceAll(".", "/")}.md` : ""
+            }));
+            const pictureEntries = this.#pictures.map(picture => this.#pictureTreeEntry(picture));
+            children = [
+                this.#sourceCategory(scope, "memory", "Global memory", memoryEntries, "memory"),
+                this.#classSuperDomain(scope),
+                this.#sourceCategory(scope, "pictures", "Pictures", pictureEntries, "camera")
+            ];
+        }
+        else {
+            children = [
+                this.#sourceCategory(scope, "memory", "Local memory", [], "memory"),
+                this.#classSuperDomain(scope),
+                this.#sourceCategory(scope, "logs", "Logs", this.#logTreeEntries(), "document"),
+                this.#sourceCategory(scope, "messages", "Messages", this.#messageTreeEntries(), "messageCircle")
+            ];
+        }
+        return {
+            id: `${scope}::all`,
+            path: `${scope}::all`,
+            label,
+            icon: "database",
+            count: this.#graphCountLabel("all", scope),
+            children,
+            actions: [{ id: "filter-source", label: "FILTER", icon: "filter" }],
+            scope,
+            domain: "all"
+        };
+    }
+    /** Build one canonical picture-tree entry without duplicating its domain prefix. */
+    #pictureTreeEntry(picture) {
+        const sourcePath = String(picture.relative_path || picture.filename || "").replaceAll("\\", "/");
+        const sourceSegments = sourcePath.split("/").filter(Boolean);
+        const domainSegments = this.#domainParts(String(picture.domain || "no-domain"));
+        const alreadyPrefixed = domainSegments.every((segment, index) => (String(sourceSegments[index] || "").toLowerCase() === segment.toLowerCase()));
+        const segments = alreadyPrefixed ? sourceSegments : [...domainSegments, ...sourceSegments];
+        return {
+            segments,
+            sourcePrefixes: segments.map((_, index) => segments.slice(0, index + 1).join("/")),
+            domain: "pictures",
+            sourcePath,
+            openRoute: "pictures",
+            openTarget: { pictureId: String(picture.id) },
+            detail: String(picture.description || "")
+        };
+    }
+    /** Build a canonical source category from filesystem or registry entries. */
+    #sourceCategory(scope, key, label, entries, categoryIcon) {
+        const root = { children: new Map() };
+        entries.forEach(entry => {
             let node = root;
-            parts.forEach((part, index) => {
-                const path = parts.slice(0, index + 1).join(".");
-                if (!node.children.has(part)) {
-                    node.children.set(part, { label: part, path, children: new Map() });
+            entry.segments.forEach((part, index) => {
+                const terminal = index === entry.segments.length - 1;
+                const branchSourcePath = String(entry.sourcePrefixes?.[index] || "");
+                const baseId = `${scope}::source:${key}/${entry.segments.slice(0, index + 1).join("/")}`;
+                const id = terminal && entry.sourcePath ? `${baseId}::${entry.sourcePath}` : baseId;
+                const childKey = terminal && entry.sourcePath ? `${part}::${entry.sourcePath}` : part;
+                const branchDomain = key === "memory"
+                    ? entry.segments.slice(0, index + 1).join(".")
+                    : entry.domain;
+                if (!node.children.has(childKey)) {
+                    node.children.set(childKey, {
+                        label: part,
+                        path: id,
+                        scope,
+                        domain: branchDomain,
+                        sourceKind: key,
+                        sourcePath: branchSourcePath,
+                        children: new Map()
+                    });
                 }
-                node = node.children.get(part);
+                node = node.children.get(childKey);
+                if (key === "memory")
+                    node.domain = branchDomain;
+                if (terminal)
+                    Object.assign(node, entry);
             });
         });
-        const children = this.#knowledgeTreeNodes([...root.children.values()]);
-        this.#domainTreeNodes = [{
-                id: "all",
-                path: "all",
-                label: "Todo el conocimiento",
-                icon: "database",
-                count: this.#records.length + this.#relations.length,
-                children,
-                actions: []
-            }];
-        return `<brain-structure-tree data-role="knowledge-domain-tree"></brain-structure-tree>`;
+        const sourceChildren = this.#knowledgeTreeNodes([...root.children.values()]);
+        return {
+            id: `${scope}::source:${key}`,
+            path: `${scope}::source:${key}`,
+            label,
+            icon: categoryIcon,
+            count: this.#graphCountLabel("all", scope, key),
+            children: sourceChildren,
+            actions: [{ id: "filter-source", label: "FILTER", icon: "filter" }],
+            scope,
+            domain: "all",
+            sourceKind: key,
+            folder: true,
+            sortKey: `${({ memory: 0, pictures: 2, logs: 2, messages: 3 })[key] ?? 4}:${label}`
+        };
+    }
+    /** Build a non-owning class projection while retaining each class in its source branch. */
+    #classSuperDomain(scope) {
+        return {
+            id: `${scope}::classes`,
+            path: `${scope}::classes`,
+            label: "Classes",
+            icon: "graph",
+            count: this.#graphCountLabel("all", scope, "", "", "class"),
+            children: [],
+            actions: [{ id: "filter-source", label: "FILTER", icon: "filter" }],
+            scope,
+            domain: "all",
+            sourceKind: "",
+            visualType: "class",
+            folder: true,
+            sortKey: "1:Classes"
+        };
+    }
+    /** Project persisted message bodies beneath their canonical sessions. */
+    #messageTreeEntries() {
+        const sessions = new Map(this.#messageSessions.map(session => [`${session.date}:${session.chatId}`, session]));
+        return this.#messages.map(message => {
+            const session = sessions.get(`${message.date}:${message.chat_id}`) || null;
+            const date = String(session?.date || message.created_at || "no-date").slice(0, 10);
+            const sessionLabel = String(session?.label || session?.chatId || message.chat_id || "session");
+            const body = String(message.text || message.display_text || "Message has no body");
+            return {
+                segments: [...date.split("-"), sessionLabel, this.#shortLabel(body.replace(/\s+/g, " "), 54)],
+                domain: "messages",
+                sourcePath: `messages/${message.id}`,
+                openRoute: "messages",
+                openTarget: { messageId: String(message.id), sessionId: String(session?.id || "") },
+                detail: body
+            };
+        });
+    }
+    /** Project the persisted log index as canonical local-memory sources. */
+    #logTreeEntries() {
+        return this.#logEntries.map((entry, index) => {
+            const domain = String(entry.domain || "logs");
+            const timestamp = String(entry.timestamp || "");
+            const [date = "", ...timeParts] = timestamp.split(" ");
+            const time = timeParts.join(" ");
+            return {
+                segments: [...this.#domainParts(domain), String(entry.title || timestamp || `log-${index + 1}`)],
+                domain: "logs",
+                sourcePath: `logs/${domain}/${timestamp || "undated"}/${index}`,
+                openRoute: "logs",
+                openTarget: { domain, date, time },
+                detail: String(entry.title || "")
+            };
+        });
     }
     /**
      * Convert parsed Knowledge domains into shared tree nodes.
@@ -3251,9 +3517,23 @@ class KnowledgeView extends HTMLElement {
                 path: node.path,
                 label: node.label,
                 color: this.#domainColor(node.path),
-                count: this.#countRecordsInDomain(node.path),
+                count: this.#graphCountLabel(node.domain, node.scope, node.sourceKind, node.sourcePath || ""),
                 children,
-                actions: []
+                actions: [
+                    { id: "consolidate-source", label: "CONSOLIDATE", icon: "graph" },
+                    { id: "filter-source", label: "FILTER", icon: "filter" },
+                    ...(node.openRoute ? [{ id: "open-source", label: "OPEN", icon: "chevronRight" }] : [])
+                ],
+                scope: node.scope,
+                domain: node.domain,
+                sourceKind: node.sourceKind || "",
+                visualType: node.visualType || "",
+                sortKey: node.sortKey,
+                sourcePath: node.sourcePath || "",
+                openRoute: node.openRoute || "",
+                openTarget: node.openTarget || null,
+                detail: node.detail || "",
+                folder: children.length > 0 || (!node.sourcePath && !node.openRoute)
             };
         })
             .sort((left, right) => left.label.localeCompare(right.label));
@@ -3270,14 +3550,14 @@ class KnowledgeView extends HTMLElement {
         }
         treeElement.model = {
             nodes: this.#domainTreeNodes,
-            selectedPath: this.#domain,
+            selectedPath: this.#selectedTreePath,
             expandedPaths: this.#expandedDomains,
             toggleOnBranchSelect: true,
-            title: "Conocimiento",
+            title: "Knowledge",
             toolbarActions: [
-                { id: "refresh-graph", label: "Actualizar grafo", icon: "refresh" },
-                { id: "review-deltas", label: "Revisar deltas", icon: "graph" },
-                { id: "fit-graph", label: "Centrar canvas", icon: "filter" }
+                { id: "refresh-graph", label: "Refresh graph", icon: "refresh" },
+                { id: "review-deltas", label: "Review deltas", icon: "graph" },
+                { id: "fit-graph", label: "Fit canvas", icon: "filter" }
             ],
             defaultBranchIcon: "folder",
             defaultLeafIcon: "document"
@@ -3293,11 +3573,14 @@ class KnowledgeView extends HTMLElement {
      * @returns {void}
      */
     #onDomainTreeSelected(event) {
-        if (event.detail.branch && event.detail.clickedCaret) {
-            return;
-        }
-        this.#domain = event.detail.path || "all";
-        this.#applyFilters();
+        const node = event.detail.node || {};
+        this.#selectedTreePath = String(node.path || "");
+        this.#treeScope = String(node.scope || "all");
+        this.#domain = String(node.domain || "all");
+        this.#sourceKind = String(node.sourceKind || "");
+        this.#treeVisualType = String(node.visualType || "");
+        this.#sourcePath = String(node.sourcePath || "");
+        this.#applyTreeSelection();
     }
     /**
      * Run one global Knowledge tree action.
@@ -3327,8 +3610,23 @@ class KnowledgeView extends HTMLElement {
         if (!event.detail.node?.path) {
             return;
         }
-        this.#domain = event.detail.node.path;
-        this.#applyFilters();
+        if (event.detail.action === "filter-source") {
+            this.#selectedTreePath = String(event.detail.node.path);
+            this.#treeScope = String(event.detail.node.scope || "all");
+            this.#domain = String(event.detail.node.domain || "all");
+            this.#sourceKind = String(event.detail.node.sourceKind || "");
+            this.#treeVisualType = String(event.detail.node.visualType || "");
+            this.#sourcePath = String(event.detail.node.sourcePath || "");
+            this.#applyTreeSelection();
+            return;
+        }
+        if (event.detail.action === "open-source" && event.detail.node.openRoute) {
+            this.#state?.setRouteTarget?.(event.detail.node.openRoute, event.detail.node.openTarget || {});
+            return;
+        }
+        if (event.detail.action === "consolidate-source") {
+            this.#reviewDeltas();
+        }
     }
     /**
      * Render recursive domain rows.
@@ -3372,16 +3670,21 @@ class KnowledgeView extends HTMLElement {
         if (selected) {
             return this.#renderNodeDetails(selected);
         }
-        const domains = this.#domains();
+        const importantNodes = this.#importantNodes();
         return `
             <div class="content-head">
                 <strong>Inspector</strong>
-                <span>${escapeHtml(String(this.#nodes.length))} nodos · ${escapeHtml(String(this.#edges.length))} relaciones</span>
+                <span>${escapeHtml(String(this.#nodes.length))} nodes · ${escapeHtml(String(this.#edges.length))} relations</span>
             </div>
             <div class="node-inspector scroll-list">
-                <p>Selecciona un nodo o una relacion del canvas. Los nodos se arrastran; el lienzo acepta pan y zoom.</p>
-                <div class="source-chip-row">
-                    ${domains.slice(0, 12).map(domain => `<span>${escapeHtml(domain)}</span>`).join("")}
+                <p>Select a canvas node or relation. Nodes are draggable; the canvas supports pan and zoom.</p>
+                <div class="source-chip-row important-node-chips" aria-label="Important entities">
+                    ${importantNodes.map(node => `
+                        <button data-action="focus-node" data-node-id="${escapeHtml(node.id)}" title="Focus ${escapeHtml(node.label)}" style="--entity-color: ${escapeHtml(node.color)}">
+                            <strong>${escapeHtml(node.label)}</strong>
+                            <small>${escapeHtml(String(node.degree))}</small>
+                        </button>
+                    `).join("")}
                 </div>
             </div>
         `;
@@ -3393,23 +3696,56 @@ class KnowledgeView extends HTMLElement {
      * @returns {string} HTML.
      */
     #renderNodeDetails(selected) {
+        const picture = this.#pictureForNode(selected);
+        const message = this.#messageForNode(selected);
+        const pictureTag = this.#isPictureTagNode(selected);
         return `
             <div class="content-head">
                 <strong>${escapeHtml(selected.label)}</strong>
                 <span>${escapeHtml(selected.domain)}</span>
             </div>
             <div class="node-inspector scroll-list">
+                ${picture ? `
+                    <button class="knowledge-source-preview" data-action="open-detail-source" data-route="pictures" data-picture-id="${escapeHtml(String(picture.id))}">
+                        <img src="${escapeHtml(this.#api?.pictureUrl(String(picture.id)) || "")}" alt="${escapeHtml(picture.description || picture.filename)}">
+                        <span>Open in Pictures</span>
+                    </button>
+                ` : ""}
+                ${message ? `
+                    <blockquote class="knowledge-message-preview">${escapeHtml(String(message.text || ""))}</blockquote>
+                    <button class="secondary-action" data-action="open-detail-source" data-route="messages" data-message-id="${escapeHtml(String(message.id))}">Open in Messages</button>
+                ` : ""}
                 <dl>
-                    <dt>Contexto</dt><dd>${escapeHtml(selected.context)}</dd>
-                    <dt>Dominio</dt><dd>${escapeHtml(selected.domain)}</dd>
-                    <dt>Fuente</dt><dd>${escapeHtml(selected.source)}</dd>
-                    <dt>Clase sugerida</dt><dd>${escapeHtml(selected.classHint || "-")}</dd>
-                    <dt>Confianza</dt><dd>${escapeHtml(String(selected.confidence || "-"))}</dd>
+                    <dt>Context</dt><dd>${escapeHtml(selected.context)}</dd>
+                    <dt>Domain</dt><dd>${escapeHtml(selected.domain)}</dd>
+                    <dt>${pictureTag ? "Provenance" : "Source"}</dt><dd>${pictureTag
+            ? `Derived from image analysis · ${escapeHtml(selected.source)}`
+            : escapeHtml(selected.source)}</dd>
+                    <dt>Suggested class</dt><dd>${escapeHtml(selected.classHint || "-")}</dd>
+                    <dt>Confidence</dt><dd>${escapeHtml(String(selected.confidence || "-"))}</dd>
                 </dl>
-                <p>${escapeHtml(selected.description || "Sin descripcion disponible.")}</p>
+                ${renderDescriptionCard(selected.description || "", { title: picture ? "Image description" : "Entity description" })}
                 ${this.#renderRelatedNodes(selected)}
             </div>
         `;
+    }
+    /** Resolve an image registry record from one graph source reference. */
+    #pictureForNode(node) {
+        if (this.#isPictureTagNode(node))
+            return null;
+        const source = String(node.source || "").replaceAll("\\", "/").toLowerCase();
+        const pictureId = String(node.raw?.picture_id || "");
+        return this.#pictures.find(picture => pictureId === String(picture.id)
+            || source.endsWith(String(picture.relative_path || "").replaceAll("\\", "/").toLowerCase())) || null;
+    }
+    /** Return whether a semantic image-analysis tag is being inspected, not its picture source. */
+    #isPictureTagNode(node) {
+        return String(node.classHint || "").trim().toLowerCase() === "misc.tag";
+    }
+    /** Resolve a persisted message body from one graph source reference. */
+    #messageForNode(node) {
+        const source = String(node.source || "");
+        return this.#messages.find(message => source.includes(String(message.id))) || null;
     }
     /**
      * Render relation edge details.
@@ -3420,20 +3756,20 @@ class KnowledgeView extends HTMLElement {
     #renderRelationDetails(relation) {
         return `
             <div class="content-head">
-                <strong>Relacion</strong>
+                <strong>Relation</strong>
                 <span>${escapeHtml(relation.label)}</span>
             </div>
             <div class="node-inspector relation-inspector scroll-list">
                 <dl>
-                    <dt>Nombre</dt><dd>${escapeHtml(relation.label)}</dd>
-                    <dt>Origen</dt><dd>${escapeHtml(relation.fromLabel)}</dd>
-                    <dt>Destino</dt><dd>${escapeHtml(relation.toLabel)}</dd>
-                    <dt>Contexto</dt><dd>${escapeHtml(relation.context)}</dd>
-                    <dt>Dominio</dt><dd>${escapeHtml(relation.domain)}</dd>
-                    <dt>Fuente</dt><dd>${escapeHtml(relation.source)}</dd>
-                    <dt>Confianza</dt><dd>${escapeHtml(String(relation.confidence || "-"))}</dd>
+                    <dt>Name</dt><dd>${escapeHtml(relation.label)}</dd>
+                    <dt>Source node</dt><dd>${escapeHtml(relation.fromLabel)}</dd>
+                    <dt>Target node</dt><dd>${escapeHtml(relation.toLabel)}</dd>
+                    <dt>Context</dt><dd>${escapeHtml(relation.context)}</dd>
+                    <dt>Domain</dt><dd>${escapeHtml(relation.domain)}</dd>
+                    <dt>Source</dt><dd>${escapeHtml(relation.source)}</dd>
+                    <dt>Confidence</dt><dd>${escapeHtml(String(relation.confidence || "-"))}</dd>
                 </dl>
-                <p>${escapeHtml(relation.description || "Relacion detectada por el facade CLI.")}</p>
+                ${renderDescriptionCard(relation.description || "Relation detected by the CLI facade.", { title: "Relation description" })}
                 <div class="graph-list">
                     ${[relation.from, relation.to].map(nodeId => {
             const node = this.#nodes.find(item => item.id === nodeId);
@@ -3462,7 +3798,7 @@ class KnowledgeView extends HTMLElement {
             return "";
         }
         return `
-            <h2>Relaciones visibles</h2>
+            <h2>Visible relations</h2>
             <div class="graph-list">
                 ${related.map(edge => {
             const opposite = this.#nodes.find(node => node.id === (edge.from === selected.id ? edge.to : edge.from));
@@ -3475,6 +3811,27 @@ class KnowledgeView extends HTMLElement {
         }).join("")}
             </div>
         `;
+    }
+    /** Return highest-connectivity entities in the currently visible graph or region. */
+    #importantNodes() {
+        const focus = this.#focusGraph();
+        const logicalCandidates = focus
+            ? this.#nodes.filter(node => focus.nodeIds.has(node.id))
+            : this.#nodes;
+        const candidates = this.#viewportBadgeSignature
+            ? logicalCandidates.filter(node => this.#viewportNodeIds.has(node.id))
+            : logicalCandidates;
+        return this.#rankImportantNodes(candidates);
+    }
+    /** Rank one explicit visible-node set by its internal connectivity. */
+    #rankImportantNodes(candidates) {
+        const visibleIds = new Set(candidates.map(node => node.id));
+        const degrees = this.#nodeDegrees({ nodeIds: visibleIds, edgeIds: new Set() });
+        return candidates
+            .filter(node => node.visualType !== "class")
+            .map(node => ({ ...node, degree: degrees.get(node.id) || 0 }))
+            .sort((left, right) => right.degree - left.degree || left.label.localeCompare(right.label))
+            .slice(0, 12);
     }
     /**
      * Convert command data to normalized graph records.
@@ -3595,6 +3952,7 @@ class KnowledgeView extends HTMLElement {
         const sourcePath = String(item?.source_path || item?.path || item?.source || "");
         const domain = this.#domainFromRecord(item, sourcePath);
         const entityId = item?.entity_id ?? item?.id ?? "";
+        const knowledgeScope = String(item?.knowledge_scope || this.#scope || "global");
         return {
             id: String(entityId || this.#nodeId(domain, label, index)),
             label,
@@ -3604,6 +3962,7 @@ class KnowledgeView extends HTMLElement {
             classHint: String(item?.entity_class || item?.class || item?.type || item?.kind || ""),
             domain,
             entityId: String(entityId),
+            knowledgeScope,
             source: sourcePath || String(item?.source_type || item?.source_title || "knowledge"),
             description: String(item?.description || item?.excerpt || item?.text || ""),
             confidence: item?.confidence ?? item?.score ?? "",
@@ -3625,9 +3984,10 @@ class KnowledgeView extends HTMLElement {
         const domain = this.#domainFromRecord(item, sourcePath);
         const fromLabel = String(item?.subject_name || item?.source_name || item?.source_label || item?.subject || item?.from || item?.head || item?.source || item?.entity || `Origen ${index + 1}`);
         const toLabel = String(item?.object_name || item?.target_name || item?.target_label || item?.object || item?.to || item?.tail || item?.target || item?.related || `Destino ${index + 1}`);
-        const label = String(item?.relation || item?.predicate || item?.label || item?.type || item?.kind || "relacion");
+        const label = String(item?.relation || item?.predicate || item?.label || item?.type || item?.kind || "relation");
         const fromEntityId = item?.subject_entity_id ?? item?.source_entity_id ?? item?.from_entity_id ?? item?.head_entity_id ?? "";
         const toEntityId = item?.object_entity_id ?? item?.target_entity_id ?? item?.to_entity_id ?? item?.tail_entity_id ?? "";
+        const knowledgeScope = String(item?.knowledge_scope || this.#scope || "global");
         return {
             id: String(item?.id || `relation:${domain}:${fromLabel}:${label}:${toLabel}:${index}`),
             kind: "relation",
@@ -3638,6 +3998,7 @@ class KnowledgeView extends HTMLElement {
             to: String(toEntityId || this.#nodeId(domain, toLabel)),
             fromEntityId: String(fromEntityId),
             toEntityId: String(toEntityId),
+            knowledgeScope,
             fromClass: String(item?.subject_class || item?.source_class || item?.from_class || ""),
             toClass: String(item?.object_class || item?.target_class || item?.to_class || ""),
             domain,
@@ -3689,7 +4050,7 @@ class KnowledgeView extends HTMLElement {
             return item;
         }
         if (item && typeof item === "object") {
-            return item.canonical_name || item.name || item.title || item.entity || item.id || `Nodo ${index + 1}`;
+            return item.canonical_name || item.name || item.title || item.entity || item.id || `Node ${index + 1}`;
         }
         return String(item || "");
     }
@@ -3719,12 +4080,15 @@ class KnowledgeView extends HTMLElement {
      * @returns {string} Domain label.
      */
     #domainFromRecord(item, sourcePath) {
-        if (sourcePath.includes("/")) {
-            const parts = sourcePath.split("/").filter(Boolean);
+        const normalizedSourcePath = String(sourcePath || "").replaceAll("\\", "/");
+        if (normalizedSourcePath.includes("/")) {
+            const parts = normalizedSourcePath.split("/").filter(Boolean);
             const memoryIndex = parts.indexOf("memory");
             if (memoryIndex >= 0 && parts[memoryIndex + 1]) {
-                const domainParts = parts.slice(memoryIndex + 1, -1);
-                return domainParts.length ? domainParts.join(".") : parts[memoryIndex + 1];
+                const domainParts = parts.slice(memoryIndex + 1);
+                const leafIndex = domainParts.length - 1;
+                domainParts[leafIndex] = domainParts[leafIndex].replace(/\.[^.]+$/, "");
+                return domainParts.filter(Boolean).join(".") || "memory";
             }
             return parts[0] || "knowledge";
         }
@@ -3736,7 +4100,7 @@ class KnowledgeView extends HTMLElement {
      * @returns {void}
      */
     #prepareGraph() {
-        const records = this.#filteredRecords();
+        const records = this.#mergeScopeRecords(this.#filteredRecords());
         const domainGroups = new Map();
         records.forEach(record => {
             if (!domainGroups.has(record.domain)) {
@@ -3747,9 +4111,38 @@ class KnowledgeView extends HTMLElement {
         const domains = Array.from(domainGroups.keys()).sort();
         this.#nodes = records.map((record, index) => this.#nodeFromRecord(record, index, domains, domainGroups));
         this.#edges = this.#edgesFromRelations(records);
+        this.#viewportNodeIds.clear();
+        this.#viewportBadgeSignature = "";
         this.#applyConnectivitySizing();
         this.#layoutGraphByNeighbors();
         this.#reconcileRegionEdges();
+    }
+    /** Merge same-name identities across scopes so their relations share one visible node. */
+    #mergeScopeRecords(records) {
+        const merged = new Map();
+        records.forEach(record => {
+            const key = `${record.visualType}:${record.label.toLowerCase()}`;
+            const current = merged.get(key);
+            if (!current) {
+                merged.set(key, {
+                    ...record,
+                    aliases: [record.id],
+                    knowledgeScopes: [record.knowledgeScope],
+                    sources: [record.source]
+                });
+                return;
+            }
+            current.aliases.push(record.id);
+            if (!current.knowledgeScopes.includes(record.knowledgeScope))
+                current.knowledgeScopes.push(record.knowledgeScope);
+            if (!current.sources.includes(record.source))
+                current.sources.push(record.source);
+            current.knowledgeScope = current.knowledgeScopes.length > 1 ? "all" : current.knowledgeScopes[0];
+            current.source = current.sources.filter(Boolean).join(" · ");
+            if (record.description.length > current.description.length)
+                current.description = record.description;
+        });
+        return [...merged.values()];
     }
     /**
      * Convert one record into a graph node.
@@ -3776,20 +4169,26 @@ class KnowledgeView extends HTMLElement {
             expanded: false
         };
     }
-    /** Return a unique root hue and inherited tonal variation for descendants. */
+    /** Return a stable color that is never reused by another domain or superdomain. */
     #domainColor(domain) {
         const normalized = String(domain || "knowledge").toLowerCase();
-        const parts = this.#domainParts(normalized);
-        const roots = [...new Set(this.#domains().map(item => this.#domainParts(item)[0]).filter(Boolean))].sort();
-        const rootIndex = Math.max(roots.indexOf(parts[0]), 0);
-        const hue = Math.round((206 + (rootIndex * 137.508)) % 360);
-        if (parts.length <= 1) {
-            return `hsl(${hue} 84% 58%)`;
+        const existing = this.#domainColors.get(normalized);
+        if (existing) {
+            return existing;
         }
         const hash = [...normalized].reduce((total, character) => ((total * 31) + character.charCodeAt(0)) >>> 0, 0);
-        const saturation = 68 + (hash % 17);
-        const lightness = 52 + (((parts.length * 7) + (hash % 19)) % 25);
-        return `hsl(${hue} ${saturation}% ${lightness}%)`;
+        let offset = 0;
+        let color = "";
+        do {
+            const hue = ((hash % 3600) / 10 + offset * 137.508) % 360;
+            const saturation = 68 + ((hash + offset * 7) % 17);
+            const lightness = 52 + ((hash + offset * 11) % 25);
+            color = `hsl(${hue.toFixed(1)} ${saturation}% ${lightness}%)`;
+            offset += 1;
+        } while (this.#usedDomainColors.has(color));
+        this.#domainColors.set(normalized, color);
+        this.#usedDomainColors.add(color);
+        return color;
     }
     /**
      * Build edges from relation data returned by the CLI facade.
@@ -3797,10 +4196,14 @@ class KnowledgeView extends HTMLElement {
      * @param {object[]} records Current node records.
      * @returns {object[]} Edges.
      */
-    #edgesFromRelations(records) {
-        const nodeById = new Map(records.map(record => [record.id, record]));
+    #edgesFromRelations(records, relations = null) {
+        const nodeById = new Map();
+        records.forEach(record => {
+            nodeById.set(record.id, record);
+            (record.aliases || []).forEach(alias => nodeById.set(alias, record));
+        });
         const nodeByLabel = new Map(records.map(record => [`${record.domain}:${record.label}`.toLowerCase(), record]));
-        const domainRelations = this.#relations.filter(relation => this.#domainMatches(relation.domain));
+        const domainRelations = relations || this.#relations.filter(relation => this.#recordMatchesTree(relation));
         const edges = domainRelations
             .map((relation, index) => {
             const from = this.#nodeForRelationEnd(nodeById, nodeByLabel, relation, "from");
@@ -3847,11 +4250,34 @@ class KnowledgeView extends HTMLElement {
         const linkedIds = new Set(this.#edges.flatMap(edge => [edge.from, edge.to]));
         const linkedNodes = this.#nodes.filter(node => linkedIds.has(node.id));
         const freeNodes = this.#nodes.filter(node => !linkedIds.has(node.id));
+        const footprints = this.#nodeLayoutFootprints();
         if (linkedNodes.length) {
-            this.#layoutConnectedNodes(linkedNodes, 0);
+            this.#layoutConnectedNodes(linkedNodes, 0, footprints);
         }
         const startY = linkedNodes.length ? 420 : 0;
-        this.#layoutDomainGrid(freeNodes, startY);
+        this.#layoutDomainGrid(freeNodes, startY, footprints);
+    }
+    /** Estimate each node's visual footprint from radius, labels, connectivity, and predicates. */
+    #nodeLayoutFootprints() {
+        const degrees = this.#nodeDegrees();
+        const longestPredicate = new Map(this.#nodes.map(node => [node.id, 0]));
+        this.#edges.forEach(edge => {
+            const length = String(edge.label || "").length;
+            longestPredicate.set(edge.from, Math.max(longestPredicate.get(edge.from) || 0, length));
+            longestPredicate.set(edge.to, Math.max(longestPredicate.get(edge.to) || 0, length));
+        });
+        return new Map(this.#nodes.map(node => {
+            const degree = degrees.get(node.id) || 0;
+            const connectivity = Math.min(48, Math.sqrt(degree) * 8);
+            const nodeLabelWidth = Math.min(240, Math.max(62, String(node.label || "").length * 7.2 + 24));
+            const relationLabelWidth = Math.min(180, (longestPredicate.get(node.id) || 0) * 6.2);
+            return [node.id, {
+                    width: Math.max(node.radius * 2 + 24, nodeLabelWidth) + connectivity + relationLabelWidth * 0.16,
+                    height: node.radius * 2 + 32 + Math.min(30, connectivity * 0.55),
+                    gap: 26 + Math.min(28, relationLabelWidth * 0.12) + Math.min(18, connectivity * 0.3),
+                    relationLabelWidth
+                }];
+        }));
     }
     /**
      * Expand connected components by neighbor depth.
@@ -3860,20 +4286,62 @@ class KnowledgeView extends HTMLElement {
      * @param {number} startY Vertical offset.
      * @returns {void}
      */
-    #layoutConnectedNodes(nodes, startY) {
+    #layoutConnectedNodes(nodes, startY, footprints) {
         const byId = new Map(nodes.map(node => [node.id, node]));
         const adjacency = this.#adjacencyMap(byId);
         const visited = new Set();
-        let componentIndex = 0;
+        const components = [];
         nodes.forEach(node => {
             if (visited.has(node.id)) {
                 return;
             }
-            const component = this.#componentFromNode(node.id, adjacency, visited);
-            const offsetX = (componentIndex % 3) * 620;
-            const offsetY = startY + Math.floor(componentIndex / 3) * 460;
-            this.#positionComponent(component, adjacency, byId, offsetX, offsetY);
-            componentIndex += 1;
+            components.push(this.#componentFromNode(node.id, adjacency, visited));
+        });
+        const rowWidth = Math.min(4200, Math.max(2200, Math.sqrt(nodes.length) * 210));
+        let cursorX = 0;
+        let cursorY = startY;
+        let packedRowHeight = 0;
+        components.sort((left, right) => right.length - left.length).forEach(component => {
+            this.#positionComponent(component, adjacency, byId, 0, 0, footprints);
+            const bounds = this.#componentBounds(component, byId, footprints);
+            if (cursorX && cursorX + bounds.width > rowWidth) {
+                cursorX = 0;
+                cursorY += packedRowHeight + 220;
+                packedRowHeight = 0;
+            }
+            this.#translateComponent(component, byId, cursorX - bounds.minX, cursorY - bounds.minY);
+            cursorX += bounds.width + 220;
+            packedRowHeight = Math.max(packedRowHeight, bounds.height);
+        });
+    }
+    /** Return a component rectangle that includes node and label footprints. */
+    #componentBounds(component, byId, footprints) {
+        const bounds = component.reduce((result, id) => {
+            const node = byId.get(id);
+            const footprint = footprints.get(id);
+            if (!node || !footprint)
+                return result;
+            return {
+                minX: Math.min(result.minX, node.x - footprint.width / 2),
+                maxX: Math.max(result.maxX, node.x + footprint.width / 2),
+                minY: Math.min(result.minY, node.y - footprint.height / 2),
+                maxY: Math.max(result.maxY, node.y + footprint.height / 2)
+            };
+        }, { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity });
+        return {
+            ...bounds,
+            width: Math.max(1, bounds.maxX - bounds.minX),
+            height: Math.max(1, bounds.maxY - bounds.minY)
+        };
+    }
+    /** Translate every node in one already-positioned connected component. */
+    #translateComponent(component, byId, deltaX, deltaY) {
+        component.forEach(id => {
+            const node = byId.get(id);
+            if (!node)
+                return;
+            node.x += deltaX;
+            node.y += deltaY;
         });
     }
     /**
@@ -3925,21 +4393,46 @@ class KnowledgeView extends HTMLElement {
      * @param {Map<string, object>} byId Visible nodes by id.
      * @param {number} offsetX Component horizontal offset.
      * @param {number} offsetY Component vertical offset.
+     * @param {Map<string, object>} footprints Estimated node footprints.
      * @returns {void}
      */
-    #positionComponent(component, adjacency, byId, offsetX, offsetY) {
+    #positionComponent(component, adjacency, byId, offsetX, offsetY, footprints) {
         const rootId = [...component].sort((left, right) => (adjacency.get(right)?.size || 0) - (adjacency.get(left)?.size || 0))[0];
         const levels = this.#neighborLevels(rootId, adjacency);
-        [...levels.entries()].forEach(([depth, ids]) => {
-            const spacing = Math.max(92, 120 - depth * 8);
-            ids.forEach((id, index) => {
-                const node = byId.get(id);
-                if (!node) {
-                    return;
-                }
-                node.x = offsetX + depth * 190;
-                node.y = offsetY + (index - (ids.length - 1) / 2) * spacing;
+        let previousRight = null;
+        [...levels.entries()].sort(([left], [right]) => left - right).forEach(([, levelIds]) => {
+            const ids = [...levelIds].sort((left, right) => {
+                const degreeDifference = (adjacency.get(right)?.size || 0) - (adjacency.get(left)?.size || 0);
+                return degreeDifference || String(byId.get(left)?.label || "").localeCompare(String(byId.get(right)?.label || ""));
             });
+            const rowsPerColumn = Math.max(1, Math.ceil(Math.sqrt(ids.length * 1.6)));
+            const columnCount = Math.ceil(ids.length / rowsPerColumn);
+            const maxWidth = Math.max(...ids.map(id => footprints.get(id)?.width || 80));
+            const maxPredicateWidth = Math.max(0, ...ids.map(id => footprints.get(id)?.relationLabelWidth || 0));
+            const columnGap = 34 + Math.min(38, maxPredicateWidth * 0.18);
+            const layerGap = 90 + Math.min(150, maxPredicateWidth * 0.72);
+            const bandWidth = columnCount * maxWidth + Math.max(0, columnCount - 1) * columnGap;
+            const bandLeft = previousRight === null ? offsetX - bandWidth / 2 : previousRight + layerGap;
+            for (let column = 0; column < columnCount; column += 1) {
+                const columnIds = ids.slice(column * rowsPerColumn, (column + 1) * rowsPerColumn);
+                const totalHeight = columnIds.reduce((total, id, index) => {
+                    const footprint = footprints.get(id) || { height: 70, gap: 28 };
+                    return total + footprint.height + (index ? footprint.gap : 0);
+                }, 0);
+                let cursorY = offsetY - totalHeight / 2;
+                columnIds.forEach((id, index) => {
+                    const node = byId.get(id);
+                    const footprint = footprints.get(id) || { height: 70, gap: 28 };
+                    if (!node)
+                        return;
+                    if (index)
+                        cursorY += footprint.gap;
+                    node.x = bandLeft + column * (maxWidth + columnGap) + maxWidth / 2;
+                    node.y = cursorY + footprint.height / 2;
+                    cursorY += footprint.height;
+                });
+            }
+            previousRight = bandLeft + bandWidth;
         });
     }
     /**
@@ -3975,7 +4468,7 @@ class KnowledgeView extends HTMLElement {
      * @param {number} startY Vertical offset.
      * @returns {void}
      */
-    #layoutDomainGrid(nodes, startY) {
+    #layoutDomainGrid(nodes, startY, footprints) {
         const groups = new Map();
         nodes.forEach(node => {
             if (!groups.has(node.domain)) {
@@ -3983,14 +4476,30 @@ class KnowledgeView extends HTMLElement {
             }
             groups.get(node.domain).push(node);
         });
+        let cursorX = 0;
+        let cursorY = startY;
+        let rowHeight = 0;
         [...groups.entries()].sort(([left], [right]) => left.localeCompare(right)).forEach(([, group], groupIndex) => {
             const columns = Math.ceil(Math.sqrt(group.length));
-            const offsetX = (groupIndex % 3) * 520;
-            const offsetY = startY + Math.floor(groupIndex / 3) * 360;
+            const columnWidth = Math.max(116, ...group.map(node => (footprints.get(node.id)?.width || 80) + 30));
+            const cellHeight = Math.max(94, ...group.map(node => {
+                const footprint = footprints.get(node.id) || { height: 64, gap: 28 };
+                return footprint.height + footprint.gap;
+            }));
+            const groupWidth = columns * columnWidth;
+            const groupRows = Math.ceil(group.length / columns);
+            const groupHeight = groupRows * cellHeight;
+            if (groupIndex && groupIndex % 3 === 0) {
+                cursorX = 0;
+                cursorY += rowHeight + 160;
+                rowHeight = 0;
+            }
             group.forEach((node, index) => {
-                node.x = offsetX + (index % columns) * 116;
-                node.y = offsetY + Math.floor(index / columns) * 94;
+                node.x = cursorX + (index % columns) * columnWidth;
+                node.y = cursorY + Math.floor(index / columns) * cellHeight;
             });
+            cursorX += groupWidth + 160;
+            rowHeight = Math.max(rowHeight, groupHeight);
         });
     }
     /**
@@ -4000,9 +4509,10 @@ class KnowledgeView extends HTMLElement {
      */
     #filteredRecords() {
         const needle = this.#query.toLowerCase();
-        const visualType = this.#mode === "classes" ? "class" : this.#mode === "entities" ? "entity" : "";
-        return this.#records
-            .filter(record => this.#domainMatches(record.domain))
+        const visualType = this.#treeVisualType || (this.#mode === "classes" ? "class" : this.#mode === "entities" ? "entity" : "");
+        const projection = this.#treeProjection(this.#domain, this.#treeScope, this.#sourceKind, this.#sourcePath, this.#treeVisualType);
+        return projection.records
+            .filter(record => this.#selectedScopes.has(record.knowledgeScope))
             .filter(record => !visualType || record.visualType === visualType)
             .filter(record => !needle || `${record.label} ${record.description} ${record.domain} ${record.context}`.toLowerCase().includes(needle));
     }
@@ -4012,18 +4522,56 @@ class KnowledgeView extends HTMLElement {
      * @param {string} domain Domain path.
      * @returns {boolean} True when visible.
      */
-    #domainMatches(domain) {
-        return this.#domain === "all" || domain === this.#domain || domain.startsWith(`${this.#domain}.`);
+    #recordMatchesTree(record) {
+        if (!this.#selectedScopes.has(record.knowledgeScope)) {
+            return false;
+        }
+        return this.#recordMatchesTreeSelection(record, this.#domain, this.#treeScope, this.#sourceKind, this.#sourcePath, this.#treeVisualType);
+    }
+    /** Apply one explicit inclusive tree selection without depending on current UI state. */
+    #recordMatchesTreeSelection(record, domain, scope = "", sourceKind = "", sourcePath = "", visualType = "") {
+        if (scope && scope !== "all" && record.knowledgeScope !== scope)
+            return false;
+        if (visualType && record.visualType && record.visualType !== visualType)
+            return false;
+        if (sourceKind && !this.#recordMatchesSourceKind(record, sourceKind, scope))
+            return false;
+        const selectedSource = String(sourcePath || "").replaceAll("\\", "/").toLowerCase();
+        if (selectedSource) {
+            const source = String(record.source || "").replaceAll("\\", "/").toLowerCase();
+            if (!source.includes(selectedSource) && !selectedSource.includes(source))
+                return false;
+        }
+        return domain === "all" || record.domain === domain || record.domain.startsWith(`${domain}.`);
+    }
+    /** Classify one graph record into mutually exclusive canonical source families. */
+    #recordMatchesSourceKind(record, sourceKind, scope = "") {
+        const source = String(record.source || "").replaceAll("\\", "/").toLowerCase();
+        const domain = String(record.domain || "").toLowerCase();
+        const isPicture = domain === "pictures" || domain.startsWith("pictures.")
+            || this.#pictures.some(picture => source.endsWith(String(picture.relative_path || "").replaceAll("\\", "/").toLowerCase()));
+        const isMessage = domain === "messages" || domain.startsWith("messages.") || source.includes("message");
+        const isLog = domain === "logs" || domain.startsWith("logs.") || source.includes("/logs/");
+        if (sourceKind === "pictures")
+            return isPicture;
+        if (sourceKind === "messages")
+            return isMessage;
+        if (sourceKind === "logs")
+            return isLog;
+        if (sourceKind === "memory") {
+            return scope === "global" ? !isPicture : !isLog && !isMessage && !isPicture;
+        }
+        return true;
     }
     /**
      * Return available domains from loaded records and relations.
      *
      * @returns {string[]} Domain labels.
      */
-    #domains() {
+    #domains(scope = "") {
         return [...new Set([
-                ...this.#records.map(record => record.domain),
-                ...this.#relations.map(relation => relation.domain)
+                ...this.#records.filter(record => !scope || record.knowledgeScope === scope).map(record => record.domain),
+                ...this.#relations.filter(relation => !scope || relation.knowledgeScope === scope).map(relation => relation.domain)
             ].filter(Boolean))].sort();
     }
     /**
@@ -4041,20 +4589,98 @@ class KnowledgeView extends HTMLElement {
      * @param {string} domain Domain path.
      * @returns {number} Count.
      */
-    #countRecordsInDomain(domain) {
-        return this.#records.filter(record => record.domain === domain || record.domain.startsWith(`${domain}.`)).length +
-            this.#relations.filter(relation => relation.domain === domain || relation.domain.startsWith(`${domain}.`)).length;
+    #countRecordsInDomain(domain, scope = "") {
+        const domainMatches = record => domain === "all" || record.domain === domain || record.domain.startsWith(`${domain}.`);
+        const scopeMatches = record => !scope || record.knowledgeScope === scope;
+        return this.#records.filter(record => scopeMatches(record) && domainMatches(record)).length +
+            this.#relations.filter(record => scopeMatches(record) && domainMatches(record)).length;
+    }
+    /** Return visible entity/relation counts using the canvas' exact projection rules. */
+    #graphCountLabel(domain, scope = "", sourceKind = "", sourcePath = "", visualType = "") {
+        const projection = this.#treeProjection(domain, scope, sourceKind, sourcePath, visualType);
+        const records = this.#mergeScopeRecords(projection.records);
+        const relations = projection.relations;
+        const edges = this.#edgesFromRelations(records, relations);
+        return `E: ${records.length} R: ${edges.length}`;
+    }
+    /** Include relation endpoints in virtual source projections without changing their canonical ownership. */
+    #treeProjection(domain, scope = "", sourceKind = "", sourcePath = "", visualType = "") {
+        const matches = record => this.#recordMatchesTreeSelection(record, domain, scope, sourceKind, sourcePath, visualType);
+        const relations = this.#relations.filter(matches);
+        const records = this.#records.filter(matches);
+        if (!sourceKind && !sourcePath)
+            return { records, relations };
+        const endpointIds = new Set(relations.flatMap(relation => [String(relation.from), String(relation.to)]));
+        const endpointLabels = new Set(relations.flatMap(relation => [
+            String(relation.fromLabel || "").toLowerCase(),
+            String(relation.toLabel || "").toLowerCase()
+        ]));
+        const includedIds = new Set(records.map(record => String(record.id)));
+        this.#records.forEach(record => {
+            if (scope && scope !== "all" && record.knowledgeScope !== scope)
+                return;
+            if (visualType && record.visualType !== visualType)
+                return;
+            const connected = endpointIds.has(String(record.id))
+                || endpointIds.has(String(record.entityId))
+                || endpointLabels.has(String(record.label || "").toLowerCase());
+            if (connected && !includedIds.has(String(record.id))) {
+                records.push(record);
+                includedIds.add(String(record.id));
+            }
+        });
+        return { records, relations };
     }
     /**
      * Apply local reactive filters without a new CLI call.
      *
      * @returns {void}
      */
-    #applyFilters() {
-        this.#readControls();
-        this.#needsViewportFit = true;
-        this.#prepareGraph();
-        this.#render();
+    async #applyFilters() {
+        this.#beginGraphBusy("Filtering graph");
+        await this.#waitForGraphPaint();
+        try {
+            this.#readControls();
+            if (this.#treeScope !== "all" && !this.#selectedScopes.has(this.#treeScope)) {
+                this.#selectedTreePath = "";
+                this.#treeScope = "all";
+                this.#domain = "all";
+                this.#sourceKind = "";
+                this.#sourcePath = "";
+                this.#treeVisualType = "";
+            }
+            this.#needsViewportFit = true;
+            this.#prepareGraph();
+            this.#render();
+        }
+        finally {
+            this.#endGraphBusy();
+        }
+    }
+    /** Apply one tree selection without rebuilding the complete Explorer surface. */
+    async #applyTreeSelection() {
+        this.#beginGraphBusy("Focusing graph source");
+        await this.#waitForGraphPaint();
+        try {
+            this.#resetGraphRegion();
+            this.#needsViewportFit = true;
+            this.#prepareGraph();
+            this.#syncDomainTreeSelection();
+            this.#drawCanvas();
+            this.#renderInspector();
+        }
+        finally {
+            this.#endGraphBusy();
+        }
+    }
+    /** Update selected tree-row styling while preserving expansion and scroll state. */
+    #syncDomainTreeSelection() {
+        const tree = this.querySelector("[data-role='knowledge-domain-tree']");
+        tree?.querySelectorAll("[data-tree-path]").forEach(button => {
+            const selected = button.getAttribute("data-tree-path") === this.#selectedTreePath;
+            button.classList.toggle("is-active", selected);
+            button.closest("[role='treeitem']")?.setAttribute("aria-selected", String(selected));
+        });
     }
     /**
      * Bind DOM events.
@@ -4066,11 +4692,10 @@ class KnowledgeView extends HTMLElement {
         this.querySelector("[data-action='query-records']")?.addEventListener("click", () => this.#queryRecords());
         this.querySelector("[data-action='review-deltas']")?.addEventListener("click", () => this.#reviewDeltas());
         this.querySelector("[data-action='fit-graph']")?.addEventListener("click", () => {
-            this.#needsViewportFit = true;
-            this.#drawCanvas();
+            this.#resetVisibleGraphViewport();
         });
-        this.querySelector("[data-action='clear-graph-focus']")?.addEventListener("click", () => {
-            this.#clearGraphFocus();
+        this.querySelector("[data-action='navigate-region-back']")?.addEventListener("click", () => {
+            this.#navigateBackGraphRegion();
         });
         this.querySelector(".filter-menu")?.addEventListener("toggle", event => {
             this.#filtersOpen = event.currentTarget.open;
@@ -4101,7 +4726,9 @@ class KnowledgeView extends HTMLElement {
                 this.#queryRecords();
             }
         });
-        this.querySelector("[data-role='kg-scope']")?.addEventListener("change", () => this.#showRecords(true));
+        this.querySelectorAll("[data-filter-kind='kg-scope']").forEach(input => {
+            input.addEventListener("change", () => this.#applyFilters());
+        });
         this.querySelectorAll("[data-filter-kind='kg-mode']").forEach(input => {
             input.addEventListener("change", () => this.#applyFilters());
         });
@@ -4113,28 +4740,146 @@ class KnowledgeView extends HTMLElement {
      * @returns {void}
      */
     #bindInspectorButtons() {
+        this.querySelectorAll("[data-action='open-detail-source']").forEach(button => {
+            button.addEventListener("click", () => {
+                const route = button.getAttribute("data-route") || "";
+                if (route === "pictures") {
+                    this.#state?.setRouteTarget?.("pictures", { pictureId: button.getAttribute("data-picture-id") || "" });
+                    return;
+                }
+                const messageId = button.getAttribute("data-message-id") || "";
+                const message = this.#messages.find(item => String(item.id) === messageId);
+                const session = this.#messageSessions.find(item => item.date === message?.date && item.chatId === message?.chat_id);
+                this.#state?.setRouteTarget?.("messages", { messageId, sessionId: session?.id || "" });
+            });
+        });
+        this.querySelectorAll("[data-action='focus-node']").forEach(button => {
+            button.addEventListener("pointerenter", () => {
+                this.#showHoveredEndpoint(button.getAttribute("data-node-id") || "");
+            });
+            button.addEventListener("pointerleave", () => this.#showHoveredEndpoint(""));
+            button.addEventListener("click", () => this.#focusNode(button.getAttribute("data-node-id") || "", false));
+        });
+        this.querySelectorAll("[data-action='resolve-description-entity']").forEach(button => {
+            button.addEventListener("click", () => this.#focusEntityByLabel(button.getAttribute("data-entity-label") || ""));
+        });
         this.querySelectorAll("[data-action='select-node']").forEach(button => {
             button.addEventListener("click", () => {
-                const hadRegion = this.#regionNodeIds.size > 0;
-                this.#selectedNodeId = button.getAttribute("data-node-id") || "";
-                this.#selectedRelationId = "";
-                this.#expandGraphRegion(this.#selectedNodeId);
-                this.#completeRegionExpansion(hadRegion);
-                this.#drawCanvas();
-                this.#renderInspector();
+                this.#focusNode(button.getAttribute("data-node-id") || "", false);
             });
         });
         this.querySelectorAll("[data-action='select-relation']").forEach(button => {
+            button.addEventListener("pointerenter", () => {
+                this.#showHoveredRelation(button.getAttribute("data-relation-id") || "");
+            });
+            button.addEventListener("pointerleave", () => {
+                this.#showHoveredRelation("");
+            });
             button.addEventListener("click", () => {
-                const hadRegion = this.#regionNodeIds.size > 0;
-                this.#selectedRelationId = button.getAttribute("data-relation-id") || "";
-                this.#selectedNodeId = "";
-                this.#expandGraphRegionFromEdge(this.#selectedRelationId);
-                this.#completeRegionExpansion(hadRegion);
-                this.#drawCanvas();
-                this.#renderInspector();
+                this.#selectRelation(button.getAttribute("data-relation-id") || "");
             });
         });
+        this.#bindRelationEndpointButtons();
+    }
+    /** Bind transient and persistent navigation on relation endpoint badges. */
+    #bindRelationEndpointButtons() {
+        this.querySelectorAll("[data-action='navigate-relation-endpoint']").forEach(button => {
+            const nodeId = button.getAttribute("data-node-id") || "";
+            button.addEventListener("pointerenter", () => this.#showHoveredEndpoint(nodeId));
+            button.addEventListener("pointerleave", () => this.#showHoveredEndpoint(""));
+            button.addEventListener("click", () => this.#navigateRelationEndpoint(nodeId));
+        });
+    }
+    /** Update the existing relation preview and camera from one transient sidepanel hover. */
+    #showHoveredRelation(relationId) {
+        const relation = this.#edges.find(edge => edge.id === relationId);
+        if (relation) {
+            if (!this.#hoveredRelationId) {
+                this.#relationHoverViewport = { ...this.#viewport };
+            }
+            this.#hoveredRelationId = relation.id;
+            this.#hoveredNodeId = "";
+            this.#animateCameraToRelation(relation, Math.max(this.#viewport.scale, 1.35));
+        }
+        else {
+            this.#hoveredRelationId = "";
+            this.#hoveredNodeId = "";
+            if (this.#relationHoverViewport) {
+                const previousViewport = this.#relationHoverViewport;
+                this.#relationHoverViewport = null;
+                this.#animateViewport(previousViewport);
+            }
+            else {
+                this.#drawCanvas();
+            }
+        }
+        const relationPreviewHost = this.querySelector("[data-role='relation-preview-host']");
+        if (relationPreviewHost) {
+            relationPreviewHost.innerHTML = this.#renderRelationPreview();
+        }
+        this.#bindRelationEndpointButtons();
+    }
+    /** Preview one endpoint node while preserving the camera that preceded badge hover. */
+    #showHoveredEndpoint(nodeId) {
+        const node = this.#nodes.find(item => item.id === nodeId);
+        if (node) {
+            if (!this.#hoveredNodeId) {
+                this.#badgeHoverViewport = { ...this.#viewport };
+            }
+            this.#viewportBadgeRankingFrozen = true;
+            clearTimeout(this.#viewportInspectorTimer);
+            this.#hoveredNodeId = node.id;
+            this.#animateCameraToNode(node, Math.max(this.#viewport.scale, 1.35));
+            return;
+        }
+        this.#hoveredNodeId = "";
+        if (this.#badgeHoverViewport) {
+            const previousViewport = this.#badgeHoverViewport;
+            this.#badgeHoverViewport = null;
+            this.#animateViewport(previousViewport, () => this.#releaseViewportBadgeRanking());
+        }
+        else {
+            this.#releaseViewportBadgeRanking();
+            this.#drawCanvas();
+        }
+    }
+    /** Resume viewport-driven badge ranking after a transient entity preview fully returns. */
+    #releaseViewportBadgeRanking() {
+        this.#viewportBadgeRankingFrozen = false;
+        this.#syncViewportBadgeCandidates();
+    }
+    /** Persist camera navigation to one relation endpoint without replacing relation selection. */
+    #navigateRelationEndpoint(nodeId) {
+        const node = this.#nodes.find(item => item.id === nodeId);
+        if (!node) {
+            return;
+        }
+        this.#badgeHoverViewport = null;
+        this.#viewportBadgeRankingFrozen = false;
+        this.#hoveredNodeId = node.id;
+        this.#animateCameraToNode(node, Math.max(this.#viewport.scale, 1.35));
+    }
+    /** Resolve one description badge to the most connected matching graph node. */
+    #focusEntityByLabel(label) {
+        const normalized = String(label || "").trim().toLowerCase();
+        if (!normalized)
+            return false;
+        const degrees = this.#nodeDegrees();
+        const match = this.#nodes
+            .filter(node => String(node.label || "").trim().toLowerCase() === normalized)
+            .sort((left, right) => (degrees.get(right.id) || 0) - (degrees.get(left.id) || 0))[0];
+        if (!match)
+            return false;
+        this.#focusNode(match.id, false);
+        return true;
+    }
+    /** Focus a route-targeted entity after the graph has been prepared. */
+    #resolvePendingEntity() {
+        if (!this.#pendingEntityLabel)
+            return;
+        const label = this.#pendingEntityLabel;
+        if (this.#focusEntityByLabel(label))
+            this.#pendingEntityLabel = "";
     }
     /**
      * Bind canvas drawing and pointer interaction.
@@ -4154,6 +4899,10 @@ class KnowledgeView extends HTMLElement {
         canvas.addEventListener("pointerup", event => this.#onPointerUp(event, canvas));
         canvas.addEventListener("pointerleave", event => this.#onPointerUp(event, canvas));
         canvas.addEventListener("wheel", event => this.#onWheel(event, canvas), { passive: false });
+        canvas.addEventListener("dblclick", event => {
+            event.preventDefault();
+            this.#resetVisibleGraphViewport();
+        });
         requestAnimationFrame(() => this.#drawCanvas());
     }
     /**
@@ -4185,6 +4934,7 @@ class KnowledgeView extends HTMLElement {
         context.scale(this.#viewport.scale, this.#viewport.scale);
         this.#drawEdges(context);
         this.#drawNodes(context);
+        this.#syncViewportBadgeCandidates();
     }
     /**
      * Fit graph bounds into the canvas viewport.
@@ -4193,6 +4943,16 @@ class KnowledgeView extends HTMLElement {
      * @returns {void}
      */
     #fitViewport(rect) {
+        this.#viewport = this.#fittedViewport(rect);
+        this.#needsViewportFit = false;
+    }
+    /**
+     * Calculate the centered fit camera for the complete graph or active subregion.
+     *
+     * @param {DOMRect} rect Canvas bounds.
+     * @returns {{x: number, y: number, scale: number}} Fitted camera.
+     */
+    #fittedViewport(rect) {
         const focus = this.#focusGraph();
         if (focus) {
             this.#layoutFocusedRegion(focus);
@@ -4201,9 +4961,7 @@ class KnowledgeView extends HTMLElement {
             ? this.#nodes.filter(node => focus.nodeIds.has(node.id))
             : this.#nodes;
         if (!visibleNodes.length) {
-            this.#viewport = { x: 0, y: 0, scale: 1 };
-            this.#needsViewportFit = false;
-            return;
+            return { x: 0, y: 0, scale: 1 };
         }
         const bounds = visibleNodes.reduce((acc, node) => ({
             minX: Math.min(acc.minX, node.x - node.radius - 60),
@@ -4214,13 +4972,12 @@ class KnowledgeView extends HTMLElement {
         const width = Math.max(1, bounds.maxX - bounds.minX);
         const height = Math.max(1, bounds.maxY - bounds.minY);
         const maximumScale = focus ? 1.8 : 1.15;
-        const scale = Math.min(maximumScale, Math.max(0.18, Math.min((rect.width - 72) / width, (rect.height - 72) / height)));
-        this.#viewport = {
+        const scale = Math.min(maximumScale, Math.max(0.005, Math.min((rect.width - 72) / width, (rect.height - 72) / height)));
+        return {
             x: -((bounds.minX + bounds.maxX) / 2) * scale,
             y: -((bounds.minY + bounds.maxY) / 2) * scale,
             scale
         };
-        this.#needsViewportFit = false;
     }
     /** Compute the current canvas viewport in graph coordinates. */
     #updateRenderFrustum(rect) {
@@ -4251,6 +5008,30 @@ class KnowledgeView extends HTMLElement {
             && node.x - radius <= frustum.right
             && node.y + radius >= frustum.top
             && node.y - radius <= frustum.bottom;
+    }
+    /** Refresh important-entity candidates from the exact nodes intersecting the canvas viewport. */
+    #syncViewportBadgeCandidates() {
+        if (this.#viewportBadgeRankingFrozen)
+            return;
+        const focus = this.#focusGraph();
+        const candidates = focus
+            ? this.#nodes.filter(node => focus.nodeIds.has(node.id))
+            : this.#nodes;
+        const visibleIds = candidates
+            .filter(node => this.#nodeIntersectsRenderFrustum(node))
+            .map(node => node.id);
+        const signature = visibleIds.join("|") || "__empty__";
+        if (signature === this.#viewportBadgeSignature) {
+            return;
+        }
+        this.#viewportNodeIds = new Set(visibleIds);
+        this.#viewportBadgeSignature = signature;
+        clearTimeout(this.#viewportInspectorTimer);
+        this.#viewportInspectorTimer = window.setTimeout(() => {
+            if (!this.#viewportBadgeRankingFrozen && !this.#selectedNodeId && !this.#selectedRelationId) {
+                this.#renderInspector();
+            }
+        }, 140);
     }
     /** Apply endpoint, circumscribed-radius, and exact edge culling. */
     #edgeIntersectsRenderFrustum(from, to) {
@@ -4355,6 +5136,7 @@ class KnowledgeView extends HTMLElement {
      * @returns {void}
      */
     #drawEdges(context) {
+        this.#edgeLabelBounds.clear();
         const styles = getComputedStyle(this);
         const focus = this.#focusGraph();
         const orderedEdges = focus
@@ -4368,7 +5150,8 @@ class KnowledgeView extends HTMLElement {
             if (!from || !to || !this.#edgeIntersectsRenderFrustum(from, to)) {
                 return;
             }
-            const selected = edge.id === this.#selectedRelationId || Boolean(focus?.edgeIds.has(edge.id));
+            const activeRelationId = this.#hoveredRelationId || this.#selectedRelationId;
+            const selected = edge.id === activeRelationId;
             context.save();
             context.globalAlpha = 0.92;
             context.beginPath();
@@ -4435,6 +5218,12 @@ class KnowledgeView extends HTMLElement {
         context.textBaseline = "middle";
         const width = context.measureText(label).width + 12;
         const height = 18 / this.#viewport.scale;
+        this.#edgeLabelBounds.set(edge.id, {
+            left: x - width / 2,
+            right: x + width / 2,
+            top: y - height / 2,
+            bottom: y + height / 2
+        });
         context.fillStyle = styles.getPropertyValue("--surface").trim();
         context.strokeStyle = styles.getPropertyValue("--border").trim();
         this.#roundedRect(context, x - width / 2, y - height / 2, width, height, 8 / this.#viewport.scale);
@@ -4451,32 +5240,45 @@ class KnowledgeView extends HTMLElement {
      * @returns {void}
      */
     #drawNodes(context) {
+        this.#nodeLabelBounds.clear();
         const styles = getComputedStyle(this);
         const focus = this.#focusGraph();
+        const activeRelationId = this.#hoveredRelationId || this.#selectedRelationId;
+        const selectedRelation = this.#edges.find(edge => edge.id === activeRelationId);
         const connectivity = this.#connectivityMetrics(focus);
         const degrees = connectivity.degrees;
         const maxDegree = Math.max(0, ...degrees.values());
         const orderedNodes = focus
             ? this.#nodes.filter(node => focus.nodeIds.has(node.id))
             : this.#nodes;
-        orderedNodes.filter(node => this.#nodeIntersectsRenderFrustum(node)).forEach(node => {
+        const visibleNodes = orderedNodes.filter(node => this.#nodeIntersectsRenderFrustum(node));
+        const rankedNodeIds = new Set(this.#rankImportantNodes(visibleNodes).map(node => node.id));
+        const rankedLabelBounds = [];
+        visibleNodes.forEach(node => {
             const selected = node.id === this.#selectedNodeId;
-            const focused = selected || Boolean(focus?.nodeIds.has(node.id));
-            const radius = selected ? node.radius + 5 : focused ? node.radius + 2 : node.radius;
+            const hovered = node.id === this.#hoveredNodeId;
+            const ranked = rankedNodeIds.has(node.id);
+            const relationEndpoint = selectedRelation?.from === node.id || selectedRelation?.to === node.id;
+            const focused = selected || hovered || relationEndpoint || Boolean(focus?.nodeIds.has(node.id));
+            const radius = selected || hovered ? node.radius + 5 : relationEndpoint ? node.radius + 4 : focused ? node.radius + 2 : node.radius;
             context.save();
             context.globalAlpha = 1;
             context.beginPath();
             context.arc(node.x, node.y, radius, 0, Math.PI * 2);
-            context.fillStyle = selected ? styles.getPropertyValue("--primary").trim() : styles.getPropertyValue("--surface-strong").trim();
+            context.fillStyle = selected || hovered || relationEndpoint
+                ? styles.getPropertyValue("--primary").trim()
+                : styles.getPropertyValue("--surface-strong").trim();
             context.strokeStyle = node.color;
-            context.lineWidth = selected ? 3.4 / this.#viewport.scale : focused ? 2.6 / this.#viewport.scale : 1.8 / this.#viewport.scale;
+            context.lineWidth = selected || hovered || relationEndpoint
+                ? 3.4 / this.#viewport.scale
+                : focused ? 2.6 / this.#viewport.scale : 1.8 / this.#viewport.scale;
             context.setLineDash(node.visualType === "class" ? [7 / this.#viewport.scale, 5 / this.#viewport.scale] : []);
             context.fill();
             context.stroke();
-            if (this.#nodeLabelIsVisible(node, degrees, maxDegree, selected || focused)) {
-                this.#drawNodeLabel(context, node, selected || focused);
+            if (this.#nodeLabelIsVisible(node, degrees, maxDegree, selected || focused, ranked)) {
+                this.#drawNodeLabel(context, node, selected || focused, ranked, rankedLabelBounds);
             }
-            if (selected && focus && this.#nodeCanExpand(node.id)) {
+            if (selected && this.#nodeCanExpand(node.id)) {
                 this.#drawNodeExpansionBadge(context, node);
             }
             context.restore();
@@ -4516,12 +5318,12 @@ class KnowledgeView extends HTMLElement {
         });
     }
     /** Decide whether a label belongs to the zoom-dependent connectivity tier. */
-    #nodeLabelIsVisible(node, degrees, maxDegree, emphasized) {
-        if (emphasized || this.#viewport.scale >= 0.78) {
+    #nodeLabelIsVisible(node, degrees, maxDegree, emphasized, ranked = false) {
+        if (emphasized || ranked || this.#viewport.scale >= 0.78) {
             return true;
         }
         const normalizedRank = maxDegree ? (degrees.get(node.id) || 0) / maxDegree : 0;
-        const zoomProgress = Math.max(0, Math.min(1, (this.#viewport.scale - 0.14) / 0.64));
+        const zoomProgress = Math.max(0, Math.min(1, (this.#viewport.scale - 0.005) / 0.775));
         const easedTolerance = zoomProgress * zoomProgress * (3 - (2 * zoomProgress));
         const minimumRank = 0.56 * (1 - easedTolerance);
         return normalizedRank >= minimumRank;
@@ -4540,15 +5342,15 @@ class KnowledgeView extends HTMLElement {
             edgeIds: this.#regionEdgeIds
         };
     }
-    /** Return whether selecting a node can reveal neighbors outside the region. */
+    /** Return whether a node can become the root of a distinct child region. */
     #nodeCanExpand(nodeId) {
-        return this.#edges.some(edge => {
-            if (edge.from !== nodeId && edge.to !== nodeId) {
-                return false;
-            }
-            const neighborId = edge.from === nodeId ? edge.to : edge.from;
-            return !this.#regionNodeIds.has(neighborId);
-        });
+        const child = this.#graphRegionForNode(nodeId);
+        if (!child.edgeIds.size)
+            return false;
+        if (!this.#regionNodeIds.size)
+            return true;
+        return child.nodeIds.size !== this.#regionNodeIds.size
+            || [...child.nodeIds].some(id => !this.#regionNodeIds.has(id));
     }
     /** Draw a screen-stable expansion affordance above a selected node. */
     #drawNodeExpansionBadge(context, node) {
@@ -4576,58 +5378,92 @@ class KnowledgeView extends HTMLElement {
         context.stroke();
         context.restore();
     }
-    /**
-     * Add a node and its immediate neighbors to the persistent region.
-     *
-     * @param {string} nodeId Selected node id.
-     * @returns {void}
-     */
-    #expandGraphRegion(nodeId) {
-        if (!nodeId) {
-            return;
-        }
-        this.#regionNodeIds.add(nodeId);
+    /** Build the child region rooted at one node and its immediate neighbors. */
+    #graphRegionForNode(nodeId) {
+        const nodeIds = new Set(nodeId ? [nodeId] : []);
+        const edgeIds = new Set();
         this.#edges.forEach(edge => {
             if (edge.from !== nodeId && edge.to !== nodeId) {
                 return;
             }
-            this.#regionEdgeIds.add(edge.id);
-            this.#regionNodeIds.add(edge.from);
-            this.#regionNodeIds.add(edge.to);
+            edgeIds.add(edge.id);
+            nodeIds.add(edge.from);
+            nodeIds.add(edge.to);
         });
-        this.#reconcileRegionEdges();
-    }
-    /** Rebuild all currently visible relations internal to the persistent region. */
-    #reconcileRegionEdges() {
-        this.#regionEdgeIds.clear();
         this.#edges.forEach(edge => {
-            if (this.#regionNodeIds.has(edge.from) && this.#regionNodeIds.has(edge.to)) {
-                this.#regionEdgeIds.add(edge.id);
-            }
+            if (nodeIds.has(edge.from) && nodeIds.has(edge.to))
+                edgeIds.add(edge.id);
         });
+        return { nodeIds, edgeIds };
     }
-    /**
-     * Add a selected relation and both endpoint neighborhoods to the region.
-     *
-     * @param {string} edgeId Selected edge id.
-     * @returns {void}
-     */
-    #expandGraphRegionFromEdge(edgeId) {
-        const edge = this.#edges.find(item => item.id === edgeId);
-        if (!edge) {
+    /** Reconcile a preserved region after the graph records are rebuilt. */
+    #reconcileRegionEdges() {
+        const availableNodeIds = new Set(this.#nodes.map(node => node.id));
+        this.#regionNodeIds = new Set([...this.#regionNodeIds].filter(id => availableNodeIds.has(id)));
+        this.#regionEdgeIds = new Set(this.#edges
+            .filter(edge => this.#regionNodeIds.has(edge.from) && this.#regionNodeIds.has(edge.to))
+            .map(edge => edge.id));
+    }
+    /** Capture the current level before navigating to a child region. */
+    #captureGraphRegionLevel() {
+        return {
+            nodeIds: new Set(this.#regionNodeIds),
+            edgeIds: new Set(this.#regionEdgeIds),
+            positions: new Map(this.#regionPositions),
+            graphPositions: new Map(this.#nodes.map(node => [node.id, { x: node.x, y: node.y }])),
+            rootNodeId: this.#regionRootNodeId,
+            selectedNodeId: this.#selectedNodeId,
+            selectedRelationId: this.#selectedRelationId,
+            viewport: { ...this.#viewport }
+        };
+    }
+    /** Replace the current graph level with a child region rooted at one node. */
+    #navigateGraphRegion(nodeId) {
+        if (!this.#nodeCanExpand(nodeId))
             return;
-        }
-        this.#regionEdgeIds.add(edge.id);
-        this.#expandGraphRegion(edge.from);
-        this.#expandGraphRegion(edge.to);
-    }
-    /** Position additions while fitting only the first region creation. */
-    #completeRegionExpansion(hadRegion) {
+        const child = this.#graphRegionForNode(nodeId);
+        this.#regionHistory.push(this.#captureGraphRegionLevel());
+        this.#regionNodeIds = child.nodeIds;
+        this.#regionEdgeIds = child.edgeIds;
+        this.#regionPositions = new Map();
+        this.#regionRootNodeId = nodeId;
+        this.#selectedNodeId = nodeId;
+        this.#selectedRelationId = "";
+        this.#focusViewport = null;
         const focus = this.#focusGraph();
-        if (focus) {
+        if (focus)
             this.#layoutFocusedRegion(focus);
-        }
-        this.#needsViewportFit = !hadRegion;
+        this.#needsViewportFit = true;
+        this.#drawCanvas();
+        this.#renderInspector();
+    }
+    /** Restore exactly one parent graph level, including its layout and camera. */
+    #navigateBackGraphRegion() {
+        const previous = this.#regionHistory.pop();
+        if (!previous)
+            return;
+        cancelAnimationFrame(this.#cameraAnimationFrame);
+        this.#cameraAnimationFrame = 0;
+        this.#regionNodeIds = new Set(previous.nodeIds);
+        this.#regionEdgeIds = new Set(previous.edgeIds);
+        this.#regionPositions = new Map(previous.positions);
+        this.#regionRootNodeId = previous.rootNodeId;
+        this.#selectedNodeId = previous.selectedNodeId;
+        this.#selectedRelationId = previous.selectedRelationId;
+        previous.graphPositions.forEach((position, nodeId) => {
+            const node = this.#nodes.find(item => item.id === nodeId);
+            if (node)
+                Object.assign(node, position);
+        });
+        this.#viewport = { ...previous.viewport };
+        this.#needsViewportFit = false;
+        this.#focusViewport = null;
+        this.#hoveredNodeId = "";
+        this.#hoveredRelationId = "";
+        this.#relationHoverViewport = null;
+        this.#badgeHoverViewport = null;
+        this.#drawCanvas();
+        this.#renderInspector();
     }
     /**
      * Draw a persistent node label.
@@ -4635,24 +5471,77 @@ class KnowledgeView extends HTMLElement {
      * @param {CanvasRenderingContext2D} context Canvas context.
      * @param {object} node Graph node.
      * @param {boolean} selected Whether selected.
+     * @param {boolean} ranked Whether represented by a ranked inspector badge.
+     * @param {object[]} occupiedBounds Ranked-label rectangles already placed this frame.
      * @returns {void}
      */
-    #drawNodeLabel(context, node, selected) {
+    #drawNodeLabel(context, node, selected, ranked = false, occupiedBounds = []) {
         const styles = getComputedStyle(this);
         const label = this.#shortLabel(node.label, selected ? 28 : 18);
-        const fontSize = selected ? 12 : 10;
-        const x = node.x;
-        const y = node.y + node.radius + (14 / this.#viewport.scale);
+        const fontSize = selected ? 12 : ranked ? 11 : 10;
+        const scale = this.#viewport.scale;
         context.save();
-        context.font = `800 ${fontSize / this.#viewport.scale}px Inter, system-ui, sans-serif`;
+        context.font = `800 ${fontSize / scale}px Inter, system-ui, sans-serif`;
         context.textAlign = "center";
         context.textBaseline = "middle";
+        const width = context.measureText(label).width + (14 / scale);
+        const height = (fontSize + 8) / scale;
+        const placement = ranked
+            ? this.#rankedLabelPlacement(node, width, height, occupiedBounds)
+            : { x: node.x, y: node.y + node.radius + (14 / scale) };
+        const x = placement.x;
+        const y = placement.y;
+        if (ranked || selected) {
+            context.fillStyle = styles.getPropertyValue("--surface").trim();
+            context.strokeStyle = node.color;
+            context.lineWidth = 1.5 / scale;
+            this.#roundedRect(context, x - width / 2, y - height / 2, width, height, 8 / scale);
+            context.fill();
+            context.stroke();
+            this.#nodeLabelBounds.set(node.id, {
+                left: x - width / 2,
+                right: x + width / 2,
+                top: y - height / 2,
+                bottom: y + height / 2
+            });
+        }
         context.fillStyle = node.color;
         context.shadowColor = styles.getPropertyValue("--surface").trim();
-        context.shadowBlur = 4 / this.#viewport.scale;
-        context.lineWidth = 3 / this.#viewport.scale;
+        context.shadowBlur = 4 / scale;
+        context.lineWidth = 3 / scale;
         context.fillText(label, x, y);
         context.restore();
+    }
+    /** Place one screen-stable ranked label without intersecting earlier ranked labels. */
+    #rankedLabelPlacement(node, width, height, occupiedBounds) {
+        const scale = this.#viewport.scale;
+        const vertical = node.radius + (14 / scale);
+        const horizontal = node.radius + (8 / scale) + width / 2;
+        const candidates = [
+            { x: node.x, y: node.y + vertical },
+            { x: node.x, y: node.y - vertical },
+            { x: node.x + horizontal, y: node.y },
+            { x: node.x - horizontal, y: node.y },
+            { x: node.x, y: node.y + vertical + height + (6 / scale) },
+            { x: node.x, y: node.y - vertical - height - (6 / scale) },
+            { x: node.x + horizontal, y: node.y + height + (6 / scale) },
+            { x: node.x - horizontal, y: node.y - height - (6 / scale) }
+        ];
+        const padding = 4 / scale;
+        const rectangleFor = candidate => ({
+            left: candidate.x - width / 2 - padding,
+            right: candidate.x + width / 2 + padding,
+            top: candidate.y - height / 2 - padding,
+            bottom: candidate.y + height / 2 + padding
+        });
+        const overlaps = rectangle => occupiedBounds.some(other => (rectangle.left < other.right
+            && rectangle.right > other.left
+            && rectangle.top < other.bottom
+            && rectangle.bottom > other.top));
+        const placement = candidates.find(candidate => !overlaps(rectangleFor(candidate)))
+            || { x: node.x, y: node.y + vertical + (occupiedBounds.length * (height + padding)) };
+        occupiedBounds.push(rectangleFor(placement));
+        return placement;
     }
     /**
      * Draw a rounded rectangle path.
@@ -4687,47 +5576,50 @@ class KnowledgeView extends HTMLElement {
      */
     #onPointerDown(event, canvas) {
         const point = this.#canvasPoint(event, canvas);
-        const node = this.#hitTestNode(point.x, point.y);
-        if (node) {
-            const wasSelected = this.#selectedNodeId === node.id;
-            const hadRegion = this.#regionNodeIds.size > 0;
-            this.#selectedNodeId = node.id;
-            this.#selectedRelationId = "";
-            if (wasSelected && this.#nodeCanExpand(node.id)) {
-                this.#expandGraphRegion(node.id);
-                this.#completeRegionExpansion(hadRegion);
-                this.#animateCameraToNode(node, hadRegion ? this.#viewport.scale : Math.max(this.#viewport.scale, 1.35));
-            }
-            else if (wasSelected && hadRegion) {
-                this.#dragNode = {
-                    id: node.id,
-                    offsetX: point.x - node.x,
-                    offsetY: point.y - node.y
-                };
-                canvas.setPointerCapture(event.pointerId);
-                this.#drawCanvas();
-            }
-            else {
-                this.#animateCameraToNode(node, hadRegion ? this.#viewport.scale : Math.max(this.#viewport.scale, 1.35));
-            }
-            this.#renderInspector();
+        const expansionNode = this.#hitTestNodeExpansionBadge(point.x, point.y);
+        if (expansionNode) {
+            event.preventDefault();
+            this.#navigateGraphRegion(expansionNode.id);
             return;
         }
+        const labelNode = this.#hitTestNodeLabel(point.x, point.y);
+        if (labelNode) {
+            event.preventDefault();
+            this.#focusNode(labelNode.id, false);
+            return;
+        }
+        const labelEdge = this.#hitTestEdgeLabel(point.x, point.y);
+        if (labelEdge) {
+            this.#selectRelation(labelEdge.id);
+            return;
+        }
+        const node = this.#hitTestNode(point.x, point.y);
         const edge = this.#hitTestEdge(point.x, point.y);
+        if (edge && (!node || !this.#nodeOwnsPoint(node, point.x, point.y))) {
+            this.#selectRelation(edge.id);
+            return;
+        }
+        if (node) {
+            this.#pointerCandidate = {
+                id: node.id,
+                pointerId: event.pointerId,
+                clientX: event.clientX,
+                clientY: event.clientY,
+                offsetX: point.x - node.x,
+                offsetY: point.y - node.y,
+                moved: false
+            };
+            canvas.setPointerCapture(event.pointerId);
+            return;
+        }
         if (edge) {
-            const hadRegion = this.#regionNodeIds.size > 0;
-            this.#selectedRelationId = edge.id;
-            this.#selectedNodeId = "";
-            this.#expandGraphRegionFromEdge(edge.id);
-            this.#completeRegionExpansion(hadRegion);
-            this.#drawCanvas();
-            this.#renderInspector();
+            this.#selectRelation(edge.id);
             return;
         }
         if (this.#selectedNodeId || this.#selectedRelationId) {
             this.#selectedNodeId = "";
             this.#selectedRelationId = "";
-            this.#drawCanvas();
+            this.#restoreFocusViewport();
             this.#renderInspector();
             return;
         }
@@ -4744,18 +5636,40 @@ class KnowledgeView extends HTMLElement {
     }
     /** Smoothly center one node while optionally changing the camera scale. */
     #animateCameraToNode(node, targetScale) {
-        cancelAnimationFrame(this.#cameraAnimationFrame);
-        this.#needsViewportFit = false;
-        const start = { ...this.#viewport };
-        const target = {
+        this.#animateViewport({
             x: -node.x * targetScale,
             y: -node.y * targetScale,
             scale: targetScale
-        };
+        });
+    }
+    /** Smoothly center one relation midpoint while optionally changing camera scale. */
+    #animateCameraToRelation(relation, targetScale) {
+        const source = this.#nodes.find(node => node.id === relation.from);
+        const target = this.#nodes.find(node => node.id === relation.to);
+        if (!source || !target) {
+            return;
+        }
+        this.#animateViewport({
+            x: -((source.x + target.x) / 2) * targetScale,
+            y: -((source.y + target.y) / 2) * targetScale,
+            scale: targetScale
+        });
+    }
+    /**
+     * Animate from the current camera to one exact viewport.
+     *
+     * @param {{x: number, y: number, scale: number}} target Destination camera.
+     * @param {(() => void)|null} onComplete Callback after the final rendered frame.
+     * @returns {void}
+     */
+    #animateViewport(target, onComplete = null) {
+        cancelAnimationFrame(this.#cameraAnimationFrame);
+        this.#needsViewportFit = false;
+        const start = { ...this.#viewport };
         const startedAt = performance.now();
         const duration = 420;
         const animate = now => {
-            const progress = Math.min(1, (now - startedAt) / duration);
+            const progress = Math.max(0, Math.min(1, (now - startedAt) / duration));
             const eased = 1 - Math.pow(1 - progress, 3);
             this.#viewport = {
                 x: start.x + (target.x - start.x) * eased,
@@ -4768,9 +5682,61 @@ class KnowledgeView extends HTMLElement {
             }
             else {
                 this.#cameraAnimationFrame = 0;
+                onComplete?.();
             }
         };
         this.#cameraAnimationFrame = requestAnimationFrame(animate);
+    }
+    /** Focus one node while preserving the camera that preceded the focus zoom. */
+    #focusNode(nodeId, allowExpansion = true) {
+        const node = this.#nodes.find(item => item.id === nodeId);
+        if (!node) {
+            return;
+        }
+        const hadRegion = this.#regionNodeIds.size > 0;
+        if (!this.#selectedNodeId) {
+            this.#focusViewport = this.#badgeHoverViewport
+                ? { ...this.#badgeHoverViewport }
+                : { ...this.#viewport };
+        }
+        this.#badgeHoverViewport = null;
+        this.#viewportBadgeRankingFrozen = false;
+        this.#hoveredNodeId = "";
+        this.#selectedNodeId = node.id;
+        this.#selectedRelationId = "";
+        this.#animateCameraToNode(node, hadRegion ? this.#viewport.scale : Math.max(this.#viewport.scale, 1.35));
+        this.#renderInspector();
+    }
+    /** Select and center one relation without mutating the graph region. */
+    #selectRelation(relationId) {
+        const relation = this.#edges.find(edge => edge.id === relationId);
+        if (!relation) {
+            return;
+        }
+        if (!this.#selectedNodeId && !this.#selectedRelationId) {
+            this.#focusViewport = this.#relationHoverViewport
+                ? { ...this.#relationHoverViewport }
+                : { ...this.#viewport };
+        }
+        this.#selectedRelationId = relationId;
+        this.#selectedNodeId = "";
+        this.#hoveredRelationId = "";
+        this.#hoveredNodeId = "";
+        this.#relationHoverViewport = null;
+        this.#badgeHoverViewport = null;
+        this.#viewportBadgeRankingFrozen = false;
+        this.#animateCameraToRelation(relation, Math.max(this.#viewport.scale, 1.35));
+        this.#renderInspector();
+    }
+    /** Restore the camera snapshot captured immediately before entity focus. */
+    #restoreFocusViewport() {
+        if (!this.#focusViewport) {
+            this.#drawCanvas();
+            return;
+        }
+        const previousViewport = this.#focusViewport;
+        this.#focusViewport = null;
+        this.#animateViewport(previousViewport);
     }
     /**
      * Move a dragged node or pan the graph.
@@ -4780,6 +5746,17 @@ class KnowledgeView extends HTMLElement {
      * @returns {void}
      */
     #onPointerMove(event, canvas) {
+        if (this.#pointerCandidate && !this.#dragNode) {
+            const distance = Math.hypot(event.clientX - this.#pointerCandidate.clientX, event.clientY - this.#pointerCandidate.clientY);
+            if (distance >= 4) {
+                this.#pointerCandidate.moved = true;
+                this.#dragNode = {
+                    id: this.#pointerCandidate.id,
+                    offsetX: this.#pointerCandidate.offsetX,
+                    offsetY: this.#pointerCandidate.offsetY
+                };
+            }
+        }
         if (this.#dragNode) {
             const point = this.#canvasPoint(event, canvas);
             const node = this.#nodes.find(item => item.id === this.#dragNode.id);
@@ -4809,6 +5786,11 @@ class KnowledgeView extends HTMLElement {
      * @returns {void}
      */
     #onPointerUp(event, canvas) {
+        const candidate = this.#pointerCandidate;
+        if (candidate && !candidate.moved) {
+            this.#focusNode(candidate.id, true);
+        }
+        this.#pointerCandidate = null;
         this.#dragNode = null;
         this.#panState = null;
         if (canvas.hasPointerCapture?.(event.pointerId)) {
@@ -4830,7 +5812,7 @@ class KnowledgeView extends HTMLElement {
         const cursorX = event.clientX - rect.left - rect.width / 2;
         const cursorY = event.clientY - rect.top - rect.height / 2;
         const previousScale = this.#viewport.scale;
-        const nextScale = Math.min(3.4, Math.max(0.14, previousScale * (event.deltaY > 0 ? 0.9 : 1.1)));
+        const nextScale = Math.min(3.4, Math.max(0.005, previousScale * (event.deltaY > 0 ? 0.9 : 1.1)));
         const graphX = (cursorX - this.#viewport.x) / previousScale;
         const graphY = (cursorY - this.#viewport.y) / previousScale;
         this.#viewport.x = cursorX - graphX * nextScale;
@@ -4850,9 +5832,13 @@ class KnowledgeView extends HTMLElement {
             return;
         }
         inspector.innerHTML = this.#renderDetails();
-        const backButton = this.querySelector("[data-action='clear-graph-focus']");
+        const relationPreviewHost = this.querySelector("[data-role='relation-preview-host']");
+        if (relationPreviewHost) {
+            relationPreviewHost.innerHTML = this.#renderRelationPreview();
+        }
+        const backButton = this.querySelector("[data-action='navigate-region-back']");
         if (backButton) {
-            backButton.hidden = !this.#focusGraph();
+            backButton.hidden = !this.#regionHistory.length;
         }
         this.#bindInspectorButtons();
     }
@@ -4868,13 +5854,38 @@ class KnowledgeView extends HTMLElement {
         this.#drawCanvas();
         this.#renderInspector();
     }
+    /** Reset camera zoom and center while preserving the current graph or subregion. */
+    #resetVisibleGraphViewport() {
+        cancelAnimationFrame(this.#cameraAnimationFrame);
+        this.#cameraAnimationFrame = 0;
+        this.#hoveredNodeId = "";
+        this.#hoveredRelationId = "";
+        this.#relationHoverViewport = null;
+        this.#badgeHoverViewport = null;
+        const canvas = this.querySelector("[data-role='knowledge-canvas']");
+        if (!(canvas instanceof HTMLCanvasElement))
+            return;
+        this.#viewportBadgeRankingFrozen = true;
+        this.#needsViewportFit = false;
+        const target = this.#fittedViewport(canvas.getBoundingClientRect());
+        this.#animateViewport(target, () => this.#releaseViewportBadgeRanking());
+        this.#renderInspector();
+    }
     /** Clear persistent region state without rendering. */
     #resetGraphRegion() {
         this.#selectedNodeId = "";
         this.#selectedRelationId = "";
+        this.#hoveredNodeId = "";
+        this.#hoveredRelationId = "";
         this.#regionNodeIds.clear();
         this.#regionEdgeIds.clear();
         this.#regionPositions.clear();
+        this.#regionHistory = [];
+        this.#regionRootNodeId = "";
+        this.#focusViewport = null;
+        this.#relationHoverViewport = null;
+        this.#badgeHoverViewport = null;
+        this.#viewportBadgeRankingFrozen = false;
     }
     /**
      * Convert viewport pointer coordinates into graph coordinates.
@@ -4904,6 +5915,47 @@ class KnowledgeView extends HTMLElement {
             const dx = node.x - x;
             const dy = node.y - y;
             return Math.sqrt((dx * dx) + (dy * dy)) <= node.radius + (16 / this.#viewport.scale);
+        }) || null;
+    }
+    /** Find the selected node whose explicit child-region affordance contains a point. */
+    #hitTestNodeExpansionBadge(x, y) {
+        if (!this.#selectedNodeId || !this.#nodeCanExpand(this.#selectedNodeId))
+            return null;
+        const node = this.#nodes.find(item => item.id === this.#selectedNodeId);
+        if (!node || (this.#regionNodeIds.size && !this.#regionNodeIds.has(node.id)))
+            return null;
+        const badgeX = node.x + node.radius * 0.72;
+        const badgeY = node.y - node.radius * 0.72;
+        const hitRadius = 13 / this.#viewport.scale;
+        return Math.hypot(x - badgeX, y - badgeY) <= hitRadius ? node : null;
+    }
+    /** Resolve ranked node-label rectangles before relation labels and node hit halos. */
+    #hitTestNodeLabel(x, y) {
+        const padding = 5 / Math.max(this.#viewport.scale, 0.005);
+        for (const [nodeId, bounds] of [...this.#nodeLabelBounds.entries()].reverse()) {
+            if (x < bounds.left - padding || x > bounds.right + padding
+                || y < bounds.top - padding || y > bounds.bottom + padding)
+                continue;
+            return this.#nodes.find(node => node.id === nodeId) || null;
+        }
+        return null;
+    }
+    /** Return whether a point belongs to the visible node body rather than its generous hit halo. */
+    #nodeOwnsPoint(node, x, y) {
+        return Math.hypot(node.x - x, node.y - y) <= node.radius + (4 / this.#viewport.scale);
+    }
+    /** Find a relation whose rendered label rectangle contains graph coordinates. */
+    #hitTestEdgeLabel(x, y) {
+        const focus = this.#focusGraph();
+        const candidates = focus ? this.#edges.filter(edge => focus.edgeIds.has(edge.id)) : this.#edges;
+        const padding = 4 / this.#viewport.scale;
+        return [...candidates].reverse().find(edge => {
+            const bounds = this.#edgeLabelBounds.get(edge.id);
+            return bounds
+                && x >= bounds.left - padding
+                && x <= bounds.right + padding
+                && y >= bounds.top - padding
+                && y <= bounds.bottom + padding;
         }) || null;
     }
     /**
@@ -5067,15 +6119,15 @@ class QueryView extends HTMLElement {
     }
     #renderResult() {
         if (this.#result?.loading) {
-            return `<div class="loading-state search-loading"><span></span><strong>Buscando en memoria, conocimiento y mensajes</strong><small>Preparando resultados...</small></div>`;
+            return `<div class="loading-state search-loading"><span></span><strong>Searching memory, knowledge, and messages</strong><small>Preparing results...</small></div>`;
         }
         if (!this.#result) {
-            return `<section class="search-empty">${icon("search")}<h2>Resultados</h2><p>Escribe una consulta en el buscador del encabezado para comenzar.</p></section>`;
+            return `<section class="search-empty">${icon("search")}<h2>Results</h2><p>Enter a query in the header search box to begin.</p></section>`;
         }
-        const text = this.#result.data?.response || this.#firstResultText() || this.#result.stderr || "Sin salida legible.";
+        const text = this.#result.data?.response || this.#firstResultText() || this.#result.stderr || "No readable output.";
         return `
             <article class="answer-sheet">
-                <header><span class="${this.#result.ok ? "status-pill success" : "status-pill danger"}">${this.#result.ok ? "Respuesta" : "Error"}</span></header>
+                <header><span class="${this.#result.ok ? "status-pill success" : "status-pill danger"}">${this.#result.ok ? "Response" : "Error"}</span></header>
                 <h2>${escapeHtml(this.#query || "Consulta")}</h2>
                 <div>${renderMarkdown(String(text).slice(0, 2200))}</div>
             </article>
@@ -5103,8 +6155,8 @@ class QueryView extends HTMLElement {
         if (!groups.size)
             return "";
         return `
-            <section class="search-evidence" aria-label="Fuentes de la respuesta">
-                <header><h3>Fuentes consultadas</h3><span>${this.#results().length} resultados</span></header>
+            <section class="search-evidence" aria-label="Response sources">
+                <header><h3>Sources consulted</h3><span>${this.#results().length} results</span></header>
                 ${[...groups.values()].map(group => `
                     <section class="result-group">
                         <header><h4>${escapeHtml(this.#sourceLabel(group.source))}</h4><span>${escapeHtml(this.#mechanismLabel(group.mechanism))}</span></header>
@@ -5113,12 +6165,12 @@ class QueryView extends HTMLElement {
                                 <li>
                                     <span class="result-order" aria-hidden="true"></span>
                                     <div class="result-copy">
-                                        <strong>${escapeHtml(item.title || item.path || item.kind || "Resultado")}</strong>
-                                        <p>${escapeHtml(item.excerpt || item.content?.excerpt || item.data?.excerpt || item.text || item.description || "Sin extracto disponible")}</p>
+                                        <strong>${escapeHtml(item.title || item.path || item.kind || "Result")}</strong>
+                                        <p>${escapeHtml(item.excerpt || item.content?.excerpt || item.data?.excerpt || item.text || item.description || "No excerpt available")}</p>
                                         <small>${escapeHtml(this.#resultOrigin(item))}</small>
                                     </div>
                                     ${item.rank !== undefined ? `<span class="result-rank" title="Relevancia">${Number(item.rank).toFixed(2)}</span>` : ""}
-                                    ${item.source === "pictures" && item.data?.id ? `<button class="result-open-button" data-open-picture="${escapeHtml(item.data.id)}">Abrir</button>` : ""}
+                                    ${item.source === "pictures" && item.data?.id ? `<button class="result-open-button" data-open-picture="${escapeHtml(item.data.id)}">Open</button>` : ""}
                                 </li>
                             `).join("")}
                         </ol>
@@ -5132,14 +6184,14 @@ class QueryView extends HTMLElement {
     }
     #sourceLabel(source) {
         if (source === "memory")
-            return "Memoria";
+            return "Memory";
         if (source === "knowledge")
-            return "Conocimiento";
+            return "Knowledge";
         if (source === "messages")
-            return "Mensajes";
+            return "Messages";
         if (source === "pictures")
             return "Pictures";
-        return "Otros resultados";
+        return "Other results";
     }
     #mechanismLabel(mechanism) {
         return mechanism === "graph" ? "Grafo" : mechanism === "vector" ? "Vectorial" : mechanism === "text" ? "Texto" : mechanism;
@@ -5254,11 +6306,11 @@ class ProfilesView extends HTMLElement {
                 <main class="structure-layout profiles-layout">
                     <aside class="structure-tree">
                         <header class="structure-panel-header">
-                            <strong>Disponibles</strong>
+                            <strong>Available</strong>
                             <details class="action-menu">
-                                <summary>${icon("more")}<span class="sr-only">Acciones</span></summary>
+                                <summary>${icon("more")}<span class="sr-only">Actions</span></summary>
                                 <div class="action-menu-panel">
-                                    <button data-action="refresh-profiles">${icon("refresh")}Actualizar perfiles</button>
+                                    <button data-action="refresh-profiles">${icon("refresh")}Refresh profiles</button>
                                 </div>
                             </details>
                         </header>
@@ -5268,16 +6320,16 @@ class ProfilesView extends HTMLElement {
                     </aside>
                     <section class="structure-content">
                         <div class="content-head">
-                            <strong>${escapeHtml(this.#selectedProfile || "Sin perfil")}</strong>
+                            <strong>${escapeHtml(this.#selectedProfile || "No profile")}</strong>
                             <div class="profile-entry-actions">
                                 ${this.#profileEntries.length ? `
-                                    <select data-role="profile-entry" aria-label="Entrada del perfil">
+                                    <select data-role="profile-entry" aria-label="Profile entry">
                                         ${this.#profileEntries.map(entry => `<option value="${escapeHtml(entry.key)}" ${entry.key === this.#selectedEntryKey ? "selected" : ""}>${escapeHtml(entry.key)}</option>`).join("")}
                                     </select>
                                     ${this.#editing ? `
-                                        <button class="icon-action" data-action="cancel-profile-edit" title="Cancelar edición" aria-label="Cancelar edición">${icon("close")}</button>
-                                        <button class="icon-action primary-icon-action" data-action="save-profile" title="Guardar entrada" aria-label="Guardar entrada">${icon("save")}</button>
-                                    ` : `<button class="icon-action" data-action="edit-profile" title="Editar entrada" aria-label="Editar entrada">${icon("edit")}</button>`}
+                                        <button class="icon-action" data-action="cancel-profile-edit" title="Cancel editing" aria-label="Cancel editing">${icon("close")}</button>
+                                        <button class="icon-action primary-icon-action" data-action="save-profile" title="Save entry" aria-label="Save entry">${icon("save")}</button>
+                                    ` : `<button class="icon-action" data-action="edit-profile" title="Edit entry" aria-label="Edit entry">${icon("edit")}</button>`}
                                 ` : ""}
                             </div>
                         </div>
@@ -5314,7 +6366,7 @@ class ProfilesView extends HTMLElement {
      */
     #renderProfiles() {
         if (!this.#profiles.length) {
-            return `<p class="empty-state">Sin perfiles.</p>`;
+            return `<p class="empty-state">No profiles.</p>`;
         }
         return this.#profiles.map(profile => `
             <button class="profile-row ${profile === this.#selectedProfile ? "is-active" : ""}" data-profile="${escapeHtml(profile)}">
@@ -5341,16 +6393,16 @@ class ProfilesView extends HTMLElement {
             `;
         }
         if (!this.#selectedProfile) {
-            return `<div class="knowledge-empty-state">${icon("users")}<h2>Selecciona un perfil</h2></div>`;
+            return `<div class="knowledge-empty-state">${icon("users")}<h2>Select a profile</h2></div>`;
         }
         const entry = this.#profileEntries.find(item => item.key === this.#selectedEntryKey);
         if (this.#editing && entry) {
-            return `<textarea class="profile-editor" data-role="profile-editor" aria-label="Contenido de ${escapeHtml(entry.key)}">${escapeHtml(entry.content || entry.text || "")}</textarea>`;
+            return `<textarea class="profile-editor" data-role="profile-editor" aria-label="${escapeHtml(entry.key)} content">${escapeHtml(entry.content || entry.text || "")}</textarea>`;
         }
         if (entry) {
-            return renderMarkdown(entry.content || entry.text || "Sin contenido cargado.");
+            return renderMarkdown(entry.content || entry.text || "No content loaded.");
         }
-        return renderMarkdown(this.#profileText || "Sin contenido cargado.");
+        return renderMarkdown(this.#profileText || "No content loaded.");
     }
     /** Save the selected profile entry through the memory facade. */
     async #saveProfileEntry() {
@@ -5375,7 +6427,7 @@ class ProfilesView extends HTMLElement {
      */
     #profileMarkdown(result, profile) {
         if (Array.isArray(result.data?.entries)) {
-            return [`# Profile: ${profile}`, "", ...result.data.entries.map(entry => `## ${entry.key || entry.name || "entrada"}\n\n${entry.content || entry.text || ""}`)].join("\n");
+            return [`# Profile: ${profile}`, "", ...result.data.entries.map(entry => `## ${entry.key || entry.name || "entry"}\n\n${entry.content || entry.text || ""}`)].join("\n");
         }
         return result.stdout || result.data?.text || result.error || result.stderr || "";
     }
@@ -5601,10 +6653,10 @@ class LogsView extends HTMLElement {
                     </aside>
                     <main class="structure-content">
                         <div class="content-head logs-head">
-                            <strong>${escapeHtml(this.#selectedDomain || "Indice de logs")}</strong>
-                            <span>${escapeHtml(this.#logEntries.length ? `${entries.length} entradas` : (selectedRecord?.date ? "Entrada indexada" : "Selecciona dominio"))}</span>
+                            <strong>${escapeHtml(this.#selectedDomain || "Log index")}</strong>
+                            <span>${escapeHtml(this.#logEntries.length ? `${entries.length} entries` : (selectedRecord?.date ? "Indexed entry" : "Select a domain"))}</span>
                             <details class="action-menu filter-menu" ${this.#filtersOpen ? "open" : ""}>
-                                <summary class="compact-action">${icon("filter")}<span>Filtros</span></summary>
+                                <summary class="compact-action">${icon("filter")}<span>Filters</span></summary>
                                 <div class="action-menu-panel filter-menu-panel">
                                     <label><span>Desde</span><input data-role="log-from" value="${escapeHtml(this.#from)}" placeholder="DD-MM-YYYY"></label>
                                     <label><span>Hasta</span><input data-role="log-to" value="${escapeHtml(this.#to)}" placeholder="DD-MM-YYYY"></label>
@@ -5612,14 +6664,14 @@ class LogsView extends HTMLElement {
                                     <label><span>Hora fin</span><input data-role="log-hour-to" type="time" value="${escapeHtml(this.#hourTo)}"></label>
                                     <label><span>Orden</span><select data-role="log-order">${optionTags(["desc", "asc"], this.#sortOrder)}</select></label>
                                     <div class="filter-menu-actions">
-                                        <button data-action="clear-log-filters" class="ghost-action">${icon("filter")}Limpiar</button>
+                                        <button data-action="clear-log-filters" class="ghost-action">${icon("filter")}Clear</button>
                                         <button data-action="load-logs" class="primary-action">${icon("search")}Aplicar</button>
                                     </div>
                                 </div>
                             </details>
                         </div>
                         <div class="log-output log-card-list scroll-area">
-                            ${this.#logEntries.length ? this.#renderLogEntries(entries) : `<p class="empty-state">Selecciona un dominio y carga su historial.</p>`}
+                            ${this.#logEntries.length ? this.#renderLogEntries(entries) : `<p class="empty-state">Select a domain and load its history.</p>`}
                         </div>
                     </main>
                 </div>
@@ -5636,7 +6688,7 @@ class LogsView extends HTMLElement {
      */
     #renderLogEntries(entries) {
         if (!entries.length) {
-            return `<p class="empty-state">No hay entradas para esos filtros.</p>`;
+            return `<p class="empty-state">No entries match these filters.</p>`;
         }
         return entries.map(entry => `
             <details class="log-entry-card">
@@ -5675,10 +6727,10 @@ class LogsView extends HTMLElement {
             return "";
         }
         return `
-            <div class="log-entry-media" aria-label="Imagenes adjuntas">
+            <div class="log-entry-media" aria-label="Attached images">
                 ${pictures.map(name => {
             const source = `/api/logs/image?name=${encodeURIComponent(name)}`;
-            return `<a href="${source}" target="_blank" rel="noopener" title="Abrir imagen adjunta"><img src="${source}" alt="Imagen adjunta ${escapeHtml(name)}"></a>`;
+            return `<a href="${source}" target="_blank" rel="noopener" title="Open attached image"><img src="${source}" alt="Attached image ${escapeHtml(name)}"></a>`;
         }).join("")}
             </div>
         `;
@@ -5713,7 +6765,7 @@ class LogsView extends HTMLElement {
                 hourValue: this.#hourValue(time),
                 timestamp: this.#timestamp(date, time),
                 domain: entry.domain || this.#selectedDomain,
-                title: entry.title || "Entrada de log",
+                title: entry.title || "Log entry",
                 type: "log",
                 changeType: entry.change_type || "",
                 why: entry.why || "",
@@ -5892,15 +6944,15 @@ class LogsView extends HTMLElement {
             toggleOnBranchSelect: true,
             title: "Logs",
             toolbarActions: [
-                { id: "tree-domain", label: "Agrupar por dominios", icon: "folder", active: this.#treeMode === "domain" },
-                { id: "tree-date", label: "Agrupar por fechas", icon: "clock", active: this.#treeMode === "date" },
-                { id: "refresh-index", label: "Actualizar indice", icon: "refresh" }
+                { id: "tree-domain", label: "Group by domain", icon: "folder", active: this.#treeMode === "domain" },
+                { id: "tree-date", label: "Group by date", icon: "clock", active: this.#treeMode === "date" },
+                { id: "refresh-index", label: "Refresh index", icon: "refresh" }
             ],
             sortDirection: this.#treeMode === "date" ? "desc" : "asc",
             defaultBranchIcon: "folder",
             defaultLeafIcon: "terminal",
             searchQuery: this.#filter,
-            emptyText: "Sin indice cargado. Actualiza para consultar logs."
+            emptyText: "No index loaded. Refresh to browse logs."
         };
         treeElement.addEventListener("brain-tree-select", event => this.#onTreeSelected(event));
         treeElement.addEventListener("brain-tree-toolbar-action", event => this.#onTreeToolbarAction(event));
@@ -5911,11 +6963,11 @@ class LogsView extends HTMLElement {
             const selectedRecord = this.#recordForPath(this.#selectedDomain);
             const countSpan = this.querySelector(".logs-head span");
             if (countSpan) {
-                countSpan.textContent = this.#logEntries.length ? `${entries.length} entradas` : (selectedRecord?.date ? "Entrada indexada" : "Selecciona dominio");
+                countSpan.textContent = this.#logEntries.length ? `${entries.length} entries` : (selectedRecord?.date ? "Indexed entry" : "Select a domain");
             }
             const logOutput = this.querySelector(".log-output");
             if (logOutput) {
-                logOutput.innerHTML = this.#logEntries.length ? this.#renderLogEntries(entries) : `<p class="empty-state">Selecciona un dominio y carga su historial.</p>`;
+                logOutput.innerHTML = this.#logEntries.length ? this.#renderLogEntries(entries) : `<p class="empty-state">Select a domain and load its history.</p>`;
             }
         });
     }
@@ -5972,7 +7024,7 @@ class LogsView extends HTMLElement {
             dayNode.entries.push({
                 id: `logs-date-entry:${index}:${date}:${time}:${entry.domain || "logs"}`,
                 path: `logs-date-entry:${date}:${time}:${entry.domain || "logs"}`,
-                label: entry.title || "Entrada de log",
+                label: entry.title || "Log entry",
                 timestamp: time,
                 sortKey: String(this.#hourValue(time)).padStart(4, "0"),
                 detail: entry.domain || "logs",
@@ -6484,7 +7536,7 @@ class BacklogView extends HTMLElement {
      */
     async #deleteTask(taskId, status) {
         const force = status !== "DONE";
-        if (force && !window.confirm("La tarea sigue en curso. Eliminarla de todos modos?")) {
+        if (force && !window.confirm("This task is still in progress. Delete it anyway?")) {
             return;
         }
         const result = await this.#api.updateBacklog({ action: "delete", taskId, force });
@@ -6533,32 +7585,32 @@ class BacklogView extends HTMLElement {
                         <div class="content-head">
                             <strong style="display: inline-flex; align-items: center; gap: 8px;">
                                 ${escapeHtml(this.#selectedDomain || "Backlog")}
-                                <span class="backlog-task-count" style="font-size: 13px; font-weight: normal; color: var(--text-muted);">(${visibleTasks.length} tareas)</span>
+                                <span class="backlog-task-count" style="font-size: 13px; font-weight: normal; color: var(--text-muted);">(${visibleTasks.length} tasks)</span>
                             </strong>
                             <div class="backlog-header-actions" style="display: flex; gap: 8px; align-items: center;">
                                 <details class="action-menu filter-menu backlog-filter-menu" ${this.#filtersOpen ? "open" : ""}>
-                                    <summary class="icon-action" title="Filtrar tareas" aria-label="Filtrar tareas">
+                                    <summary class="icon-action" title="Filter tasks" aria-label="Filter tasks">
                                         ${icon("filter")}
                                         <span class="backlog-filter-count" ${this.#activeFilterCount() ? "" : "hidden"}>${this.#activeFilterCount()}</span>
                                     </summary>
                                     <div class="action-menu-panel filter-menu-panel">
-                                        <fieldset class="checkbox-filter-group"><legend>Estado</legend>
-                                            ${[["TODO", "Pendientes"], ["WORKING", "En progreso"], ["DONE", "Completadas"]].map(([value, label]) => `<label><input type="checkbox" data-filter-kind="status" value="${value}" ${this.#statusFilter.has(value) ? "checked" : ""}><span>${label}</span></label>`).join("")}
+                                        <fieldset class="checkbox-filter-group"><legend>Status</legend>
+                                            ${[["TODO", "Pending"], ["WORKING", "In progress"], ["DONE", "Completed"]].map(([value, label]) => `<label><input type="checkbox" data-filter-kind="status" value="${value}" ${this.#statusFilter.has(value) ? "checked" : ""}><span>${label}</span></label>`).join("")}
                                         </fieldset>
-                                        <fieldset class="checkbox-filter-group"><legend>Prioridad</legend>
-                                            ${[["HIGH", "Alta"], ["MEDIUM", "Media"], ["LOW", "Baja"]].map(([value, label]) => `<label><input type="checkbox" data-filter-kind="priority" value="${value}" ${this.#priorityFilter.has(value) ? "checked" : ""}><span>${label}</span></label>`).join("")}
+                                        <fieldset class="checkbox-filter-group"><legend>Priority</legend>
+                                            ${[["HIGH", "High"], ["MEDIUM", "Medium"], ["LOW", "Low"]].map(([value, label]) => `<label><input type="checkbox" data-filter-kind="priority" value="${value}" ${this.#priorityFilter.has(value) ? "checked" : ""}><span>${label}</span></label>`).join("")}
                                         </fieldset>
-                                        <button data-action="clear-backlog-filters" class="ghost-action">${icon("close")}Limpiar filtros</button>
+                                        <button data-action="clear-backlog-filters" class="ghost-action">${icon("close")}Clear filters</button>
                                     </div>
                                 </details>
-                                <button data-action="open-create-modal" class="ghost-action compact-action" style="font-size: 13px; height: 32px; display: inline-flex; align-items: center; gap: 6px;">${icon("plus")} Crear tarea</button>
-                                <button data-action="toggle-pip" class="ghost-action compact-action" style="font-size: 13px; height: 32px; display: inline-flex; align-items: center; gap: 6px;" ${pipSupported ? "" : "disabled"} title="${pipSupported ? "Abrir ventana Picture-in-Picture" : "Document Picture-in-Picture no está disponible en este navegador"}">${icon("eye")} Vista PIP</button>
+                                <button data-action="open-create-modal" class="ghost-action compact-action" style="font-size: 13px; height: 32px; display: inline-flex; align-items: center; gap: 6px;">${icon("plus")} Create task</button>
+                                <button data-action="toggle-pip" class="ghost-action compact-action" style="font-size: 13px; height: 32px; display: inline-flex; align-items: center; gap: 6px;" ${pipSupported ? "" : "disabled"} title="${pipSupported ? "Open Picture-in-Picture window" : "Document Picture-in-Picture is unavailable in this browser"}">${icon("eye")} PIP view</button>
                             </div>
                         </div>
                         <div class="backlog-workspace scroll-area" style="padding: 14px;">
                             <div class="task-list">
                                 ${this.#renderTaskList(domainTasks)}
-                                <p class="empty-state backlog-filter-empty" hidden>No hay tareas para estos filtros.</p>
+                                <p class="empty-state backlog-filter-empty" hidden>No tasks match these filters.</p>
                             </div>
                         </div>
                     </main>
@@ -6572,7 +7624,7 @@ class BacklogView extends HTMLElement {
     }
     #renderTaskList(visibleTasks) {
         if (!visibleTasks.length) {
-            return `<p class="empty-state">No hay tareas visibles para este dominio.</p>`;
+            return `<p class="empty-state">No visible tasks in this domain.</p>`;
         }
         const directTasks = [];
         const subgroupMap = new Map();
@@ -6603,7 +7655,7 @@ class BacklogView extends HTMLElement {
                     <summary class="subdomain-group-header">
                         ${icon("chevronRight")}
                         <strong>${escapeHtml(relDomain)}</strong>
-                        <span class="subdomain-task-count">(${tasks.length} tareas)</span>
+                        <span class="subdomain-task-count">(${tasks.length} tasks)</span>
                         <span class="subdomain-line-separator"></span>
                     </summary>
                     <div class="subdomain-group-content">
@@ -6619,7 +7671,7 @@ class BacklogView extends HTMLElement {
             <dialog id="backlog-modal" class="backlog-dialog" style="border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 0; width: 720px; height: 540px; max-width: 90vw; max-height: 90vh; box-shadow: var(--shadow); background: var(--surface); color: var(--text);">
                 <form method="dialog" class="backlog-modal-form" data-role="modal-form" style="display: flex; flex-direction: column; height: 100%;">
                     <header class="modal-header" style="display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border); background: var(--surface-strong);">
-                        <strong data-role="modal-title" style="font-size: 16px; color: var(--text-strong);">Crear nueva tarea</strong>
+                        <strong data-role="modal-title" style="font-size: 16px; color: var(--text-strong);">Create task</strong>
                         <button type="button" class="icon-action close-modal-btn" data-action="close-modal" style="border: 0; background: transparent; cursor: pointer; color: var(--text);">${icon("close")}</button>
                     </header>
                     <div class="modal-body" style="padding: 18px; flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden;">
@@ -6627,39 +7679,39 @@ class BacklogView extends HTMLElement {
                         <input type="hidden" data-role="modal-domain" value="">
 
                         <div class="modal-toolbar" style="display: flex; gap: 10px; align-items: center; padding-bottom: 12px; border-bottom: 1px solid var(--border);">
-                            <input type="text" data-role="modal-title-input" placeholder="Título de la tarea" required style="flex: 1; min-height: 38px;">
+                            <input type="text" data-role="modal-title-input" placeholder="Task title" required style="flex: 1; min-height: 38px;">
                             <select data-role="modal-priority" style="width: 110px; min-height: 38px;">
                                 <option value="HIGH">HIGH</option>
                                 <option value="MEDIUM">MEDIUM</option>
                                 <option value="LOW">LOW</option>
                             </select>
                             <button type="button" data-action="open-visual-reference" class="ghost-action compact-action" style="display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px; font-weight: bold; background: var(--surface-muted); color: var(--primary); height: 38px;">
-                                ${icon("camera")} Referencia Visual
+                                ${icon("camera")} Visual Reference
                             </button>
                         </div>
 
                         <div style="flex: 1; display: flex; min-height: 0; margin-top: 12px;">
-                            <textarea data-role="modal-description" placeholder="Escribe detalles y descripción de la tarea aquí..." required style="flex: 1; border: 0; padding: 0; outline: none; background: transparent; font-family: inherit; font-size: 14px; line-height: 1.6; resize: none; overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none;"></textarea>
+                            <textarea data-role="modal-description" placeholder="Write task details and description here..." required style="flex: 1; border: 0; padding: 0; outline: none; background: transparent; font-family: inherit; font-size: 14px; line-height: 1.6; resize: none; overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none;"></textarea>
                         </div>
                     </div>
                     <footer class="modal-footer" style="display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 14px 18px; border-top: 1px solid var(--border); background: var(--surface-strong);">
-                        <button type="button" class="ghost-action" data-action="close-modal">Cancelar</button>
-                        <button type="submit" class="primary-action" data-role="modal-submit-btn">Crear</button>
+                        <button type="button" class="ghost-action" data-action="close-modal">Cancel</button>
+                        <button type="submit" class="primary-action" data-role="modal-submit-btn">Create</button>
                     </footer>
                 </form>
             </dialog>
 
             <dialog id="visual-reference-modal" class="backlog-dialog visual-reference-dialog">
                 <header class="modal-header" style="display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border); background: var(--surface-strong);">
-                    <strong style="font-size: 16px; color: var(--text-strong);">Referencia Visual</strong>
+                    <strong style="font-size: 16px; color: var(--text-strong);">Visual Reference</strong>
                     <button type="button" class="icon-action close-modal-btn" data-action="close-visual-reference" style="border: 0; background: transparent; cursor: pointer; color: var(--text);">${icon("close")}</button>
                 </header>
                 <div class="modal-body visual-reference-body">
                     <div class="file-upload-zone visual-reference-upload" data-role="image-upload-zone">
-                        <span class="visual-reference-label">Adjuntar Imagen / Captura (Opcional)</span>
+                        <span class="visual-reference-label">Attach image / screenshot (optional)</span>
                         <input type="file" data-role="modal-image-file" accept="image/*" class="file-input" style="display: none;">
                         <div class="image-preview-area" data-role="image-preview-area">
-                            <span class="upload-placeholder" style="color: var(--text-muted); font-size: 13px; text-align: center; padding: 12px;">Haga clic o arrastre una imagen aquí</span>
+                            <span class="upload-placeholder" style="color: var(--text-muted); font-size: 13px; text-align: center; padding: 12px;">Click or drag an image here</span>
                         </div>
                     </div>
                 </div>
@@ -6757,7 +7809,7 @@ class BacklogView extends HTMLElement {
                     if (!result.ok) {
                         return {
                             ok: false,
-                            message: result.error || result.stderr || "No se pudo crear la tarea."
+                            message: result.error || result.stderr || "Could not create the task."
                         };
                     }
                     this.#selectedDomain = domVal;
@@ -6768,7 +7820,7 @@ class BacklogView extends HTMLElement {
                     console.error("Unable to add a task from Document PiP.", error);
                     return {
                         ok: false,
-                        message: "No se pudo crear la tarea. Intenta de nuevo."
+                        message: "Could not create the task. Try again."
                     };
                 }
             };
@@ -6869,7 +7921,7 @@ class BacklogView extends HTMLElement {
         }
         else if (task.status === "WORKING") {
             statusIcon = `
-                <div class="working-spinner" title="En progreso">
+                <div class="working-spinner" title="In progress">
                     <span class="dot dot-blue"></span>
                     <span class="dot dot-cyan"></span>
                     <span class="dot dot-green"></span>
@@ -6896,7 +7948,7 @@ class BacklogView extends HTMLElement {
         const status = task.status || "TODO";
         let statusButtons = "";
         if (status === "DONE") {
-            statusButtons = `<button data-action="set-task-status" data-task-id="${escapeHtml(task.id)}" data-task-status="TODO">${icon("clock")}Reabrir</button>`;
+            statusButtons = `<button data-action="set-task-status" data-task-id="${escapeHtml(task.id)}" data-task-status="TODO">${icon("clock")}Reopen</button>`;
         }
         else if (status === "TODO") {
             statusButtons = `
@@ -6913,20 +7965,20 @@ class BacklogView extends HTMLElement {
                     </span>
                     Iniciar trabajo
                 </button>
-                <button data-action="set-task-status" data-task-id="${escapeHtml(task.id)}" data-task-status="DONE">${icon("checkSquare")}Marcar hecha</button>
+                <button data-action="set-task-status" data-task-id="${escapeHtml(task.id)}" data-task-status="DONE">${icon("checkSquare")}Mark done</button>
             `;
         }
         else if (status === "WORKING") {
             statusButtons = `
-                <button data-action="set-task-status" data-task-id="${escapeHtml(task.id)}" data-task-status="DONE">${icon("checkSquare")}Marcar hecha</button>
-                <button data-action="set-task-status" data-task-id="${escapeHtml(task.id)}" data-task-status="TODO">${icon("clock")}Pausar (TODO)</button>
+                <button data-action="set-task-status" data-task-id="${escapeHtml(task.id)}" data-task-status="DONE">${icon("checkSquare")}Mark done</button>
+                <button data-action="set-task-status" data-task-id="${escapeHtml(task.id)}" data-task-status="TODO">${icon("clock")}Pause (TODO)</button>
             `;
         }
         const imageTaskId = task.id.replace(/^#/, "");
         const hasImage = this.#tasksWithImages.includes(imageTaskId);
         const imageThumbnail = hasImage
-            ? `<button class="task-image-thumbnail" type="button" data-action="view-image" data-task-id="${escapeHtml(imageTaskId)}" title="Ver imagen de referencia">
-                  <img src="/api/backlog/image?taskId=${escapeHtml(imageTaskId)}" alt="Referencia visual de ${escapeHtml(task.title)}">
+            ? `<button class="task-image-thumbnail" type="button" data-action="view-image" data-task-id="${escapeHtml(imageTaskId)}" title="View reference image">
+                  <img src="/api/backlog/image?taskId=${escapeHtml(imageTaskId)}" alt="Visual reference for ${escapeHtml(task.title)}">
                </button>`
             : "";
         return `
@@ -6941,9 +7993,9 @@ class BacklogView extends HTMLElement {
                     <details class="action-menu">
                         <summary class="icon-action borderless-summary" title="Opciones">${icon("more")}</summary>
                         <div class="action-menu-panel">
-                            <button data-action="edit-task" data-task-id="${escapeHtml(task.id)}">${icon("edit")}Editar</button>
+                            <button data-action="edit-task" data-task-id="${escapeHtml(task.id)}">${icon("edit")}Edit</button>
                             ${statusButtons}
-                            <button data-action="delete-task" data-task-id="${escapeHtml(task.id)}" data-task-status="${status}" class="danger-button">${icon("trash")}Eliminar tarea</button>
+                            <button data-action="delete-task" data-task-id="${escapeHtml(task.id)}" data-task-status="${status}" class="danger-button">${icon("trash")}Delete task</button>
                         </div>
                     </details>
                 </div>
@@ -7003,13 +8055,13 @@ class BacklogView extends HTMLElement {
             toggleOnBranchSelect: true,
             title: "Backlog",
             toolbarActions: [
-                { id: "new-domain", label: "Nuevo dominio", icon: "plus" },
-                { id: "refresh", label: "Actualizar backlog", icon: "refresh" }
+                { id: "new-domain", label: "New domain", icon: "plus" },
+                { id: "refresh", label: "Refresh backlog", icon: "refresh" }
             ],
             defaultBranchIcon: "folder",
             defaultLeafIcon: "checkSquare",
             searchQuery: this.#filter,
-            emptyText: "Sin dominios de backlog. Actualiza para cargar tareas."
+            emptyText: "No backlog domains. Refresh to load tasks."
         };
         treeElement.addEventListener("brain-tree-select", event => this.#onTreeSelected(event));
         treeElement.addEventListener("brain-tree-toolbar-action", event => this.#onTreeToolbarAction(event));
@@ -7068,7 +8120,7 @@ class BacklogView extends HTMLElement {
      */
     #onTreeToolbarAction(event) {
         if (event.detail.action === "new-domain") {
-            const newDomain = prompt("Introduce el nombre del nuevo dominio (ej. mi.nuevo.dominio):");
+            const newDomain = prompt("Enter the new domain name (for example, my.new.domain):");
             if (newDomain && newDomain.trim()) {
                 const requestedDomain = newDomain.trim();
                 const targetDomain = this.#selectedDomain && !requestedDomain.includes(".")
@@ -7089,11 +8141,11 @@ class BacklogView extends HTMLElement {
                         imgInput.value = "";
                     const previewArea = this.querySelector("[data-role='image-preview-area']");
                     if (previewArea) {
-                        previewArea.innerHTML = `<span class="upload-placeholder" style="color: var(--text-muted); font-size: 13px; text-align: center; padding: 12px;">Haga clic o arrastre una imagen aquí</span>`;
+                        previewArea.innerHTML = `<span class="upload-placeholder" style="color: var(--text-muted); font-size: 13px; text-align: center; padding: 12px;">Click or drag an image here</span>`;
                     }
                     this.#setVisualReferenceHasImage(false);
-                    this.querySelector("[data-role='modal-title']").textContent = `Crear nueva tarea en ${newDomain.trim()}`;
-                    this.querySelector("[data-role='modal-submit-btn']").textContent = "Crear";
+                    this.querySelector("[data-role='modal-title']").textContent = `Create task in ${newDomain.trim()}`;
+                    this.querySelector("[data-role='modal-submit-btn']").textContent = "Create";
                     dialog.showModal();
                 }
             }
@@ -7157,7 +8209,7 @@ class BacklogView extends HTMLElement {
         this.#applyTaskFiltersToDom();
         const countSpan = this.querySelector(".backlog-task-count");
         if (countSpan) {
-            countSpan.textContent = `(${visibleTasks.length} tareas)`;
+            countSpan.textContent = `(${visibleTasks.length} tasks)`;
         }
         const filterCount = this.querySelector(".backlog-filter-count");
         if (filterCount) {
@@ -7265,12 +8317,12 @@ class BacklogView extends HTMLElement {
                 <svg id="marking-svg" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: crosshair; touch-action: none;"></svg>
             </div>
             <details class="marking-toolbar-pill">
-                <summary>${icon("edit")}<span>Marcas</span>${icon("chevronDown")}</summary>
+                <summary>${icon("edit")}<span>Marks</span>${icon("chevronDown")}</summary>
                 <div class="marking-toolbar">
-                    <label class="mark-color-control"><span>Color</span><input type="color" data-action="change-mark-color" value="#ff3b30" aria-label="Color de marca"></label>
-                    <button type="button" class="mark-delete-control" data-action="delete-selected-mark" title="Eliminar marca seleccionada" aria-label="Eliminar marca seleccionada" disabled>${icon("trash")}</button>
-                    <label class="mark-shape-control"><span>Forma</span><select data-action="change-mark-shape"><option value="rectangle">Rectángulo</option><option value="arrow">Flecha</option><option value="path">Trazo</option><option value="label">LABEL</option></select></label>
-                    <label class="mark-label-control"><span>Etiqueta</span><input type="text" data-action="change-mark-label" placeholder="Texto para LABEL"></label>
+                    <label class="mark-color-control"><span>Color</span><input type="color" data-action="change-mark-color" value="#ff3b30" aria-label="Mark color"></label>
+                    <button type="button" class="mark-delete-control" data-action="delete-selected-mark" title="Delete selected mark" aria-label="Delete selected mark" disabled>${icon("trash")}</button>
+                    <label class="mark-shape-control"><span>Shape</span><select data-action="change-mark-shape"><option value="rectangle">Rectangle</option><option value="arrow">Arrow</option><option value="path">Path</option><option value="label">LABEL</option></select></label>
+                    <label class="mark-label-control"><span>Label</span><input type="text" data-action="change-mark-label" placeholder="LABEL text"></label>
                 </div>
             </details>
         `;
@@ -7611,15 +8663,15 @@ class BacklogView extends HTMLElement {
                 imgInput.value = "";
             const previewArea = this.querySelector("[data-role='image-preview-area']");
             if (previewArea) {
-                previewArea.innerHTML = `<span class="upload-placeholder" style="color: var(--text-muted); font-size: 13px; text-align: center; padding: 12px;">Haga clic o arrastre una imagen aquí</span>`;
+                previewArea.innerHTML = `<span class="upload-placeholder" style="color: var(--text-muted); font-size: 13px; text-align: center; padding: 12px;">Click or drag an image here</span>`;
             }
             this.#setVisualReferenceHasImage(false);
             const imgUploadZone = this.querySelector("[data-role='image-upload-zone']");
             if (imgUploadZone) {
                 imgUploadZone.style.removeProperty("display");
             }
-            this.querySelector("[data-role='modal-title']").textContent = "Crear nueva tarea";
-            this.querySelector("[data-role='modal-submit-btn']").textContent = "Crear";
+            this.querySelector("[data-role='modal-title']").textContent = "Create task";
+            this.querySelector("[data-role='modal-submit-btn']").textContent = "Create";
             dialog.showModal();
         });
         // Open Edit Modal
@@ -7649,15 +8701,15 @@ class BacklogView extends HTMLElement {
                     imgInput.value = "";
                 const previewArea = this.querySelector("[data-role='image-preview-area']");
                 if (previewArea) {
-                    previewArea.innerHTML = `<span class="upload-placeholder" style="color: var(--text-muted); font-size: 13px; text-align: center; padding: 12px;">Haga clic o arrastre una imagen aquí</span>`;
+                    previewArea.innerHTML = `<span class="upload-placeholder" style="color: var(--text-muted); font-size: 13px; text-align: center; padding: 12px;">Click or drag an image here</span>`;
                 }
                 this.#setVisualReferenceHasImage(false);
                 const imageTaskId = task.id.replace(/^#/, "");
                 if (this.#tasksWithImages.includes(imageTaskId)) {
                     this.#displayImageToMark(`/api/backlog/image?taskId=${encodeURIComponent(imageTaskId)}`);
                 }
-                this.querySelector("[data-role='modal-title']").textContent = `Editar tarea #${task.id}`;
-                this.querySelector("[data-role='modal-submit-btn']").textContent = "Guardar";
+                this.querySelector("[data-role='modal-title']").textContent = `Edit task #${task.id}`;
+                this.querySelector("[data-role='modal-submit-btn']").textContent = "Save";
                 dialog.showModal();
             });
         });
@@ -7865,13 +8917,13 @@ class SettingsView extends HTMLElement {
                 <main class="settings-layout">
                     <button class="settings-tile settings-action-tile" data-action="refresh-health">
                         <span>${escapeHtml("Accion")}</span>
-                        <strong>${icon("refresh")}Actualizar runtime</strong>
+                        <strong>${icon("refresh")}Refresh runtime</strong>
                         <small>health local</small>
                     </button>
-                    ${this.#tile("Servidor", this.#health?.ok ? "OK" : "Pendiente", "brain_explorer")}
+                    ${this.#tile("Server", this.#health?.ok ? "OK" : "Pending", "brain_explorer")}
                     ${this.#tile("Dist", this.#health?.distDir || "No cargado", "runtime estatico")}
-                    ${this.#tile("Workspace", this.#health?.workspaceRoot || "No cargado", "raiz activa")}
-                    ${this.#tile("Agent home", this.#health?.agentHome || "No cargado", "memoria compartida")}
+                    ${this.#tile("Workspace", this.#health?.workspaceRoot || "Not loaded", "active root")}
+                    ${this.#tile("Agent home", this.#health?.agentHome || "Not loaded", "shared memory")}
                 </main>
             </section>
         `;
@@ -7978,10 +9030,10 @@ class WikisView extends HTMLElement {
             <section class="page-surface settings-console wiki-console ${this.#loading ? "is-loading" : (this.#wikis.length ? "has-items" : "is-empty")}">
                 <header class="view-header" style="display: flex; justify-content: space-between; align-items: center; padding-bottom: var(--spacing-md); border-bottom: 1px solid var(--border); margin-bottom: var(--spacing-lg);">
                     <div>
-                        <h2 style="margin: 0; font-size: var(--font-size-xl); color: var(--text-strong);">Wikis de Subproyectos</h2>
-                        <small style="color: var(--text-muted);">Documentación interactiva disponible en el path activo</small>
+                        <h2 style="margin: 0; font-size: var(--font-size-xl); color: var(--text-strong);">Subproject Wikis</h2>
+                        <small style="color: var(--text-muted);">Interactive documentation available in the active path</small>
                     </div>
-                    <button data-action="refresh-wikis" class="primary-action compact-action" title="Buscar wikis">${icon("refresh")}</button>
+                    <button data-action="refresh-wikis" class="primary-action compact-action" title="Find wikis">${icon("refresh")}</button>
                 </header>
                 
                 ${this.#loading ? `
@@ -8017,8 +9069,8 @@ class WikisView extends HTMLElement {
             return `
                 <div class="knowledge-empty-state wiki-empty-state">
                     ${icon("document")}
-                    <h3>No se encontraron carpetas de documentación</h3>
-                    <p>Crea una carpeta <code>documentation</code> en algún subproyecto para habilitar wikis locales.</p>
+                    <h3>No documentation folders found</h3>
+                    <p>Create a <code>documentation</code> folder in a subproject to enable local wikis.</p>
                 </div>
             `;
         }
@@ -8026,12 +9078,12 @@ class WikisView extends HTMLElement {
             <main class="wiki-list">
                 ${this.#wikis.map(wiki => `
                     <article class="wiki-list-item ${wiki.hasWiki ? "is-clickable" : ""}"
-                        ${wiki.hasWiki ? `data-action="view-wiki" data-name="${escapeHtml(wiki.name)}" tabindex="0" role="button" aria-label="Abrir wiki ${escapeHtml(wiki.name)}"` : ""}>
+                        ${wiki.hasWiki ? `data-action="view-wiki" data-name="${escapeHtml(wiki.name)}" tabindex="0" role="button" aria-label="Open wiki ${escapeHtml(wiki.name)}"` : ""}>
                         <div class="wiki-list-content">
                             <div class="wiki-list-heading">
                                 <strong>${escapeHtml(wiki.name)}</strong>
                                 <span style="font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: 600; background: ${wiki.hasWiki ? "rgba(16, 185, 129, 0.15); color: #10b981;" : "rgba(156, 163, 175, 0.15); color: #9ca3af;"};">
-                                    ${wiki.hasWiki ? "Disponible" : "Sin compilar"}
+                                    ${wiki.hasWiki ? "Available" : "Not built"}
                                 </span>
                             </div>
                             <span class="wiki-list-path">
@@ -8044,7 +9096,7 @@ class WikisView extends HTMLElement {
                                     ${icon("book")} Ver Wiki
                                 </button>
                             ` : `
-                                <span style="font-size: var(--font-size-sm); color: var(--text-muted); padding: 6px 0;">Ejecuta <code>generate</code> para habilitar</span>
+                                <span style="font-size: var(--font-size-sm); color: var(--text-muted); padding: 6px 0;">Run <code>generate</code> to enable</span>
                             `}
                         </div>
                     </article>
@@ -8063,7 +9115,7 @@ class WikisView extends HTMLElement {
                 <header class="wiki-frame-toolbar">
                     <div style="display: flex; align-items: center; gap: 12px;">
                         <button data-action="close-wiki" class="secondary-action compact-action" style="min-height: 32px; display: flex; align-items: center; gap: 4px;">
-                            ${icon("chevronRight")} Atrás
+                            ${icon("chevronRight")} Back
                         </button>
                         <h2 style="margin: 0; font-size: var(--font-size-lg); color: var(--text-strong);">Wiki ~ ${escapeHtml(this.#activeWikiName)}</h2>
                     </div>
@@ -8153,9 +9205,11 @@ class MessagesView extends HTMLElement {
     #expandedTreePaths = new Set();
     #generatingAudioIds = new Set();
     #generatedAudioSpeakIds = new Map();
+    #pendingTarget = null;
     set context(context) {
         this.#api = context.api;
         this.#state = context.state;
+        this.#pendingTarget = this.#state?.consumeRouteTarget?.("messages") || null;
         void this.#loadMessages();
         void this.#pollVoiceStatus();
     }
@@ -8217,6 +9271,18 @@ class MessagesView extends HTMLElement {
             this.#speaks = response.data?.speaks ?? [];
             this.#history = response.data?.history ?? [];
             this.#sessions = response.data?.sessions ?? [];
+            if (this.#pendingTarget && this.#sessions.length) {
+                const target = this.#pendingTarget;
+                this.#pendingTarget = null;
+                this.#selectedSessionId = String(target.sessionId || this.#selectedSessionId || this.#sessions[0].id);
+                const targetSession = this.#sessions.find(session => session.id === this.#selectedSessionId);
+                if (targetSession)
+                    this.#expandSessionPath(targetSession);
+                if (target.messageId)
+                    this.#expandedIds.add(String(target.messageId));
+                await this.#loadMessages(true);
+                return;
+            }
             if (!this.#selectedSessionId && this.#sessions.length) {
                 this.#selectedSessionId = this.#sessions[0].id;
                 this.#expandSessionPath(this.#sessions[0]);
@@ -8236,16 +9302,16 @@ class MessagesView extends HTMLElement {
         this.innerHTML = `
             <section class="page-surface messages-console">
                 <div class="structure-layout messages-structure">
-                    <aside class="structure-tree" aria-label="Sesiones de mensajes">
+                    <aside class="structure-tree" aria-label="Message sessions">
                         <brain-structure-tree data-role="message-session-tree"></brain-structure-tree>
                     </aside>
                     <main class="structure-content">
                         <header class="content-head">
                             <strong>${escapeHtml(this.#selectedSessionLabel())}</strong>
-                            <span>${this.#selectedSessionId && this.#history.length ? `${this.#history.length} mensajes` : ""}</span>
+                            <span>${this.#selectedSessionId && this.#history.length ? `${this.#history.length} messages` : ""}</span>
                         </header>
-                        <section class="voice-message-list" aria-label="Mensajes de la sesion">
-                            ${this.#loading ? `<div class="loading-state"><span></span><strong>Cargando mensajes...</strong></div>` : this.#renderMessages()}
+                        <section class="voice-message-list" aria-label="Session messages">
+                            ${this.#loading ? `<div class="loading-state"><span></span><strong>Loading messages...</strong></div>` : this.#renderMessages()}
                         </section>
                     </main>
                 </div>
@@ -8274,10 +9340,10 @@ class MessagesView extends HTMLElement {
     }
     #renderMessages() {
         if (!this.#selectedSessionId) {
-            return `<div class="voice-empty-state">${icon("messageCircle")}<strong>Selecciona una sesion</strong></div>`;
+            return `<div class="voice-empty-state">${icon("messageCircle")}<strong>Select a session</strong></div>`;
         }
         if (!this.#history.length) {
-            return `<div class="voice-empty-state">${icon("messageCircle")}<strong>Esta sesion no contiene mensajes</strong></div>`;
+            return `<div class="voice-empty-state">${icon("messageCircle")}<strong>This session has no messages</strong></div>`;
         }
         const pairedNames = new Set();
         const persistedItems = this.#history.map(record => {
@@ -8326,7 +9392,7 @@ class MessagesView extends HTMLElement {
                     children: sessions.map(session => ({
                         id: session.id,
                         path: session.id,
-                        label: session.chatId ? session.label : `Sesion ${this.#formatTime(session.startedAt)}`,
+                        label: session.chatId ? session.label : `Session ${this.#formatTime(session.startedAt)}`,
                         icon: "messageCircle",
                         count: session.messageCount
                     }))
@@ -8344,12 +9410,12 @@ class MessagesView extends HTMLElement {
             selectedPath: this.#selectedSessionId,
             expandedPaths: this.#expandedTreePaths,
             toggleOnBranchSelect: true,
-            title: "Mensajes",
-            toolbarActions: [{ id: "refresh", label: "Actualizar mensajes", icon: "refresh" }],
+            title: "Messages",
+            toolbarActions: [{ id: "refresh", label: "Refresh messages", icon: "refresh" }],
             defaultBranchIcon: "folder",
             defaultLeafIcon: "messageCircle",
-            searchPlaceholder: "Buscar sesiones...",
-            emptyText: this.#loading ? "Cargando sesiones..." : "No hay sesiones almacenadas."
+            searchPlaceholder: "Search sessions...",
+            emptyText: this.#loading ? "Loading sessions..." : "No stored sessions."
         };
         tree.addEventListener("brain-tree-select", event => {
             if (!event.detail.branch)
@@ -8371,8 +9437,8 @@ class MessagesView extends HTMLElement {
     #selectedSessionLabel() {
         const session = this.#sessions.find(candidate => candidate.id === this.#selectedSessionId);
         if (!session)
-            return "Selecciona una sesion";
-        return session.chatId ? session.label : `Sesion del ${session.date} a las ${this.#formatTime(session.startedAt)}`;
+            return "Select a session";
+        return session.chatId ? session.label : `Session on ${session.date} at ${this.#formatTime(session.startedAt)}`;
     }
     /** Select a durable session and request only its messages. */
     async #selectSession(id) {
@@ -8411,14 +9477,14 @@ class MessagesView extends HTMLElement {
                 ${expanded ? `
                     <div class="voice-message-detail">
                         <div class="voice-message-markdown">${renderMarkdown(text)}</div>
-                        ${speak?.error ? `<section class="voice-error-detail" role="alert"><strong>Detalle del error</strong><pre>${escapeHtml(speak.error)}</pre></section>` : ""}
+                        ${speak?.error ? `<section class="voice-error-detail" role="alert"><strong>Error details</strong><pre>${escapeHtml(speak.error)}</pre></section>` : ""}
                         <footer class="voice-message-footer">
                             <div class="voice-message-actions">
                                 ${name
-            ? `<button class="voice-icon-action" data-action="play-message" data-name="${escapeHtml(name)}" title="Reproducir mensaje" aria-label="Reproducir mensaje">${icon(name === this.#playingName ? "pause" : "play")}</button>`
-            : `<button class="voice-icon-action" data-action="generate-message-audio" data-message-id="${escapeHtml(id)}" ${generatingAudio ? "disabled" : ""} title="Generar audio" aria-label="Generar audio">${icon("volume")}</button>`}
-                                ${message ? `<a class="voice-download-button labeled" href="${this.#api?.voiceMessageUrl(message.name) ?? "#"}" download="${escapeHtml(message.name)}" title="Descargar mensaje">${icon("download")} ${this.#formatBytes(message.sizeBytes)}</a>` : ""}
-                                <button class="voice-icon-action" data-action="copy-message" data-text="${escapeHtml(text)}" title="Copiar mensaje" aria-label="Copiar mensaje">${icon("copy")}</button>
+            ? `<button class="voice-icon-action" data-action="play-message" data-name="${escapeHtml(name)}" title="Play message" aria-label="Play message">${icon(name === this.#playingName ? "pause" : "play")}</button>`
+            : `<button class="voice-icon-action" data-action="generate-message-audio" data-message-id="${escapeHtml(id)}" ${generatingAudio ? "disabled" : ""} title="Generate audio" aria-label="Generate audio">${icon("volume")}</button>`}
+                                ${message ? `<a class="voice-download-button labeled" href="${this.#api?.voiceMessageUrl(message.name) ?? "#"}" download="${escapeHtml(message.name)}" title="Download message">${icon("download")} ${this.#formatBytes(message.sizeBytes)}</a>` : ""}
+                                <button class="voice-icon-action" data-action="copy-message" data-text="${escapeHtml(text)}" title="Copy message" aria-label="Copy message">${icon("copy")}</button>
                             </div>
                         </footer>
                     </div>
@@ -8428,7 +9494,7 @@ class MessagesView extends HTMLElement {
     }
     #renderLegacyMessageItem(message) {
         const createdAt = message.createdAt;
-        const text = message.text ?? "Audio histórico sin transcripción";
+        const text = message.text ?? "Historical audio without transcription";
         const id = message.id ?? message.name;
         const expanded = this.#expandedIds.has(id);
         return `
@@ -8448,9 +9514,9 @@ class MessagesView extends HTMLElement {
                         <div class="voice-message-markdown">${renderMarkdown(text)}</div>
                         <footer class="voice-message-footer">
                             <div class="voice-message-actions">
-                                <button class="voice-icon-action" data-action="play-message" data-name="${escapeHtml(message.name)}" title="Reproducir mensaje" aria-label="Reproducir mensaje">${icon(message.name === this.#playingName ? "pause" : "play")}</button>
-                                <a class="voice-download-button labeled" href="${this.#api?.voiceMessageUrl(message.name) ?? "#"}" download="${escapeHtml(message.name)}" title="Descargar mensaje">${icon("download")} ${this.#formatBytes(message.sizeBytes)}</a>
-                                <button class="voice-icon-action" data-action="copy-message" data-text="${escapeHtml(text)}" title="Copiar mensaje" aria-label="Copiar mensaje">${icon("copy")}</button>
+                                <button class="voice-icon-action" data-action="play-message" data-name="${escapeHtml(message.name)}" title="Play message" aria-label="Play message">${icon(message.name === this.#playingName ? "pause" : "play")}</button>
+                                <a class="voice-download-button labeled" href="${this.#api?.voiceMessageUrl(message.name) ?? "#"}" download="${escapeHtml(message.name)}" title="Download message">${icon("download")} ${this.#formatBytes(message.sizeBytes)}</a>
+                                <button class="voice-icon-action" data-action="copy-message" data-text="${escapeHtml(text)}" title="Copy message" aria-label="Copy message">${icon("copy")}</button>
                             </div>
                         </footer>
                     </div>
@@ -8462,9 +9528,9 @@ class MessagesView extends HTMLElement {
     #renderLeadingAudioAction(id, name, generatingAudio) {
         if (name) {
             const playing = name === this.#playingName;
-            return `<button class="voice-icon-action voice-message-leading-action" data-action="play-message" data-name="${escapeHtml(name)}" title="${playing ? "Pausar mensaje" : "Reproducir mensaje"}" aria-label="${playing ? "Pausar mensaje" : "Reproducir mensaje"}">${icon(playing ? "pause" : "play")}</button>`;
+            return `<button class="voice-icon-action voice-message-leading-action" data-action="play-message" data-name="${escapeHtml(name)}" title="${playing ? "Pause message" : "Play message"}" aria-label="${playing ? "Pause message" : "Play message"}">${icon(playing ? "pause" : "play")}</button>`;
         }
-        return `<button class="voice-icon-action voice-message-leading-action" data-action="generate-message-audio" data-message-id="${escapeHtml(id)}" ${generatingAudio ? "disabled" : ""} title="Generar y reproducir audio" aria-label="Generar y reproducir audio">${icon("play")}</button>`;
+        return `<button class="voice-icon-action voice-message-leading-action" data-action="generate-message-audio" data-message-id="${escapeHtml(id)}" ${generatingAudio ? "disabled" : ""} title="Generate and play audio" aria-label="Generate and play audio">${icon("play")}</button>`;
     }
     async #copyMessage(button) {
         await navigator.clipboard.writeText(button.getAttribute("data-text") || "");
@@ -8549,11 +9615,11 @@ class MessagesView extends HTMLElement {
         this.#playingName = "";
     }
     #formatTime(value) {
-        return new Intl.DateTimeFormat("es", { hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+        return new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit" }).format(new Date(value));
     }
     #monthLabel(value) {
         const date = new Date(2026, Number(value) - 1, 1);
-        return new Intl.DateTimeFormat("es", { month: "long" }).format(date);
+        return new Intl.DateTimeFormat("en", { month: "long" }).format(date);
     }
     #formatBytes(value) {
         return `${Math.max(1, Math.round(value / 1024))} KB`;
@@ -8565,8 +9631,10 @@ cache=(()=>{return { MessagesView: MessagesView };})();return cache;};})();
 const __brainExplorerModule14=(()=>{let cache;return()=>{if(cache)return cache;
 const { escapeHtml } = __brainExplorerModule15();
 const { icon } = __brainExplorerModule16();
+const { renderDescriptionCard } = __brainExplorerModule20();
 const { StructureTree } = __brainExplorerModule18();
 /** Modern registry-backed picture browser and carousel. */
+
 
 
 
@@ -8584,6 +9652,9 @@ class PicturesView extends HTMLElement {
     #domainFocused = false;
     #selectedId = "";
     #loading = false;
+    #descriptionRequestPending = false;
+    #descriptionEditing = false;
+    #copyFeedbackTimer = null;
     #search = "";
     #expandedDomains = new Set(["pictures:all"]);
     #imageHydrationToken = 0;
@@ -8627,6 +9698,8 @@ class PicturesView extends HTMLElement {
         window.removeEventListener("keydown", this.#handleKeyDown);
         if (this.#viewerScaleTimer !== null)
             clearTimeout(this.#viewerScaleTimer);
+        if (this.#copyFeedbackTimer !== null)
+            clearTimeout(this.#copyFeedbackTimer);
     }
     /** Load the complete hierarchy once without eagerly returning picture records. */
     async #loadStructure(forceRefresh = false) {
@@ -8685,6 +9758,7 @@ class PicturesView extends HTMLElement {
         this.#selectedId = this.#pictures.some(picture => picture.id === candidate)
             ? candidate
             : this.#pictures[0]?.id ?? "";
+        this.#descriptionEditing = false;
     }
     #selected() {
         return this.#pictures.find(picture => picture.id === this.#selectedId) ?? null;
@@ -8702,6 +9776,7 @@ class PicturesView extends HTMLElement {
         if (!picture || picture.id === this.#selectedId)
             return;
         this.#selectedId = picture.id;
+        this.#descriptionEditing = false;
         this.#hydrateSelection(picture);
         this.#focusSelectedThumbnail();
     }
@@ -8711,28 +9786,28 @@ class PicturesView extends HTMLElement {
         this.innerHTML = `
             <section class="page-surface pictures-console">
                 <div class="structure-layout pictures-layout">
-                    <aside class="structure-tree pictures-domains" aria-label="Dominios de pictures">
+                    <aside class="structure-tree pictures-domains" aria-label="Picture domains">
                         <div class="tree-list scroll-list">
                             <brain-structure-tree data-role="pictures-domain-tree"></brain-structure-tree>
                         </div>
                     </aside>
                     <main class="pictures-stage">
-                    ${this.#loading ? `<div class="loading-state"><span></span><strong>Sincronizando pictures...</strong></div>` : selected ? `
-                        <section class="picture-carousel" aria-label="Carrusel de pictures">
+                    ${this.#loading ? `<div class="loading-state"><span></span><strong>Syncing pictures...</strong></div>` : selected ? `
+                        <section class="picture-carousel" aria-label="Picture carousel">
                             <header>
                                 <div><span class="status-pill" data-role="picture-domain">${escapeHtml(selected.domain)}</span><strong data-role="picture-filename">${escapeHtml(selected.filename)}</strong></div>
                                 <span data-role="picture-position">${selectedIndex + 1} / ${this.#pictures.length}</span>
                             </header>
                             <div class="picture-viewport">
-                                <button class="carousel-arrow is-previous" data-action="previous-picture" aria-label="Picture anterior">${icon("chevronRight")}</button>
+                                <button class="carousel-arrow is-previous" data-action="previous-picture" aria-label="Previous picture">${icon("chevronRight")}</button>
                                 <div class="picture-render-layer">
-                                    <button class="picture-render-trigger" data-action="open-picture-viewer" aria-label="Abrir ${escapeHtml(selected.filename)} en visor fullscreen">
+                                    <button class="picture-render-trigger" data-action="open-picture-viewer" aria-label="Open ${escapeHtml(selected.filename)} in fullscreen viewer">
                                         <img data-role="selected-picture-image" src="${this.#api?.pictureUrl(selected.id) ?? ""}" alt="${escapeHtml(selected.description || selected.filename)}" loading="eager" decoding="async" fetchpriority="high">
                                     </button>
                                 </div>
-                                <button class="carousel-arrow is-next" data-action="next-picture" aria-label="Picture siguiente">${icon("chevronRight")}</button>
+                                <button class="carousel-arrow is-next" data-action="next-picture" aria-label="Next picture">${icon("chevronRight")}</button>
                             </div>
-                            <div class="picture-thumbnails" role="listbox" aria-label="Miniaturas">
+                            <div class="picture-thumbnails" role="listbox" aria-label="Thumbnails">
                                 ${this.#pictures.map(picture => `
                                     <button role="option" aria-selected="${picture.id === selected.id}" data-picture-id="${escapeHtml(picture.id)}" title="${escapeHtml(picture.filename)}">
                                         <img src="${this.#api?.pictureUrl(picture.id) ?? ""}" alt="" loading="lazy" decoding="async" fetchpriority="low">
@@ -8743,17 +9818,22 @@ class PicturesView extends HTMLElement {
                         <aside class="picture-inspector">
                             <header><strong>Inspector</strong><span data-role="picture-dimensions">${selected.width} × ${selected.height}</span></header>
                             <dl>
-                                <div><dt>Ruta</dt><dd data-role="picture-path">${escapeHtml(selected.relative_path)}</dd></div>
-                                <div><dt>Tipo</dt><dd data-role="picture-mime">${escapeHtml(selected.mime_type)}</dd></div>
-                                <div><dt>Tamaño</dt><dd data-role="picture-size">${this.#formatBytes(selected.size_bytes)}</dd></div>
-                                <div><dt>Descripción</dt><dd data-role="picture-description-source">${escapeHtml(selected.description_source || "pendiente")}</dd></div>
+                                <div class="picture-path-row">
+                                    <dt>Path</dt>
+                                    <dd>
+                                        <span data-role="picture-path">${escapeHtml(selected.relative_path)}</span>
+                                        <button class="picture-copy-path" data-action="copy-picture-path" data-copy-path="${escapeHtml(selected.absolute_path || "")}" title="Copy absolute path" aria-label="Copy absolute picture path">
+                                            ${icon("copy")}<span>Copy</span>
+                                        </button>
+                                    </dd>
+                                </div>
+                                <div><dt>Type</dt><dd data-role="picture-mime">${escapeHtml(selected.mime_type)}</dd></div>
+                                <div><dt>Size</dt><dd data-role="picture-size">${this.#formatBytes(selected.size_bytes)}</dd></div>
+                                <div><dt>Description</dt><dd data-role="picture-description-source">${escapeHtml(selected.description_source || "pending")}</dd></div>
                             </dl>
-                            <label>Descripción
-                                <textarea data-role="picture-description" placeholder="Describe personas, escena, objetos, texto y contexto...">${escapeHtml(selected.description)}</textarea>
-                            </label>
-                            <button class="primary-button" data-action="save-picture-description">${icon("save")} Guardar descripción</button>
+                            ${this.#renderDescriptionPanel(selected)}
                         </aside>
-                    ` : `<section class="search-empty">${icon("camera")}<h2>${this.#domainFocused ? "Sin pictures" : "Selecciona un dominio"}</h2><p>${this.#domainFocused ? "No hay imágenes registradas en este dominio." : "El árbol ya está disponible; las imágenes se cargarán al enfocar un elemento."}</p></section>`}
+                    ` : `<section class="search-empty">${icon("camera")}<h2>${this.#domainFocused ? "No pictures" : "Select a domain"}</h2><p>${this.#domainFocused ? "No pictures are registered in this domain." : "The tree is ready; pictures load when an item is focused."}</p></section>`}
                     </main>
                 </div>
                 ${selected ? this.#renderViewer(selected) : ""}
@@ -8776,14 +9856,17 @@ class PicturesView extends HTMLElement {
         this.#setText("picture-position", `${position} / ${this.#pictures.length}`);
         this.#setText("picture-dimensions", `${picture.width} × ${picture.height}`);
         this.#setText("picture-path", picture.relative_path);
+        const copyPath = this.querySelector("[data-action='copy-picture-path']");
+        if (copyPath) {
+            copyPath.dataset.copyPath = picture.absolute_path || "";
+            copyPath.disabled = !picture.absolute_path;
+        }
         this.#setText("picture-mime", picture.mime_type);
         this.#setText("picture-size", this.#formatBytes(picture.size_bytes));
-        this.#setText("picture-description-source", picture.description_source || "pendiente");
-        const textarea = this.querySelector("[data-role='picture-description']");
-        if (textarea)
-            textarea.value = picture.description;
+        this.#setText("picture-description-source", picture.description_source || "pending");
+        this.#mountDescriptionPanel(picture);
         const trigger = this.querySelector("[data-action='open-picture-viewer']");
-        trigger?.setAttribute("aria-label", `Abrir ${picture.filename} en visor fullscreen`);
+        trigger?.setAttribute("aria-label", `Open ${picture.filename} in fullscreen viewer`);
         this.querySelectorAll("[data-picture-id]").forEach(option => {
             option.setAttribute("aria-selected", String(option.dataset.pictureId === picture.id));
         });
@@ -8817,13 +9900,13 @@ class PicturesView extends HTMLElement {
         if (!this.#viewerOpen)
             return "";
         return `
-            <section class="picture-viewer" role="dialog" aria-modal="true" aria-label="Visor fullscreen de ${escapeHtml(selected.filename)}">
+            <section class="picture-viewer" role="dialog" aria-modal="true" aria-label="Fullscreen viewer for ${escapeHtml(selected.filename)}">
                 <strong class="picture-viewer-title">${escapeHtml(selected.filename)}</strong>
-                <button class="picture-viewer-close" data-action="close-picture-viewer" aria-label="Cerrar visor">${icon("close")}</button>
-                <div class="picture-viewer-zoom-fabs" aria-label="Controles de zoom">
-                    <button data-action="viewer-zoom-in" aria-label="Acercar">${icon("plus")}</button>
-                    <button data-action="viewer-zoom-out" aria-label="Alejar">${icon("minus")}</button>
-                    <button data-action="viewer-reset" aria-label="Restablecer zoom y posicion">${icon("refresh")}</button>
+                <button class="picture-viewer-close" data-action="close-picture-viewer" aria-label="Close viewer">${icon("close")}</button>
+                <div class="picture-viewer-zoom-fabs" aria-label="Zoom controls">
+                    <button data-action="viewer-zoom-in" aria-label="Zoom in">${icon("plus")}</button>
+                    <button data-action="viewer-zoom-out" aria-label="Zoom out">${icon("minus")}</button>
+                    <button data-action="viewer-reset" aria-label="Reset zoom and position">${icon("refresh")}</button>
                 </div>
                 <output class="picture-viewer-scale" data-role="viewer-scale">${Math.round(this.#viewerScale * 100)}%</output>
                 <div class="picture-viewer-viewport" data-role="picture-viewer-viewport">
@@ -8953,10 +10036,10 @@ class PicturesView extends HTMLElement {
             expandedPaths: this.#expandedDomains,
             toggleOnBranchSelect: true,
             title: "Pictures",
-            toolbarActions: [{ id: "refresh", label: "Actualizar pictures", icon: "refresh" }],
+            toolbarActions: [{ id: "refresh", label: "Refresh pictures", icon: "refresh" }],
             searchQuery: this.#search,
-            searchPlaceholder: "Buscar pictures...",
-            emptyText: this.#loading ? "Sincronizando pictures..." : "No hay dominios registrados.",
+            searchPlaceholder: "Search pictures...",
+            emptyText: this.#loading ? "Syncing pictures..." : "No registered domains.",
             defaultBranchIcon: "folder",
             defaultLeafIcon: "folder"
         };
@@ -8981,9 +10064,87 @@ class PicturesView extends HTMLElement {
         this.querySelectorAll("[data-picture-id]").forEach(button => button.addEventListener("click", () => {
             this.#selectPicture(button.getAttribute("data-picture-id") || "");
         }));
-        this.querySelector("[data-action='save-picture-description']")?.addEventListener("click", () => void this.#saveDescription());
+        this.#bindDescriptionEvents();
+        this.querySelector("[data-action='copy-picture-path']")?.addEventListener("click", event => void this.#copyPicturePath(event.currentTarget));
         this.querySelector("[data-action='open-picture-viewer']")?.addEventListener("click", () => this.#openViewer());
         this.#bindViewerEvents();
+    }
+    /** Copy the server-resolved canonical image path and expose feedback in place. */
+    async #copyPicturePath(button) {
+        const absolutePath = button.dataset.copyPath || "";
+        if (!absolutePath || !navigator.clipboard?.writeText)
+            return;
+        if (this.#copyFeedbackTimer !== null)
+            clearTimeout(this.#copyFeedbackTimer);
+        try {
+            await navigator.clipboard.writeText(absolutePath);
+            button.innerHTML = `${icon("check")}<span>Copied</span>`;
+            button.title = absolutePath;
+            this.#copyFeedbackTimer = setTimeout(() => {
+                button.innerHTML = `${icon("copy")}<span>Copy</span>`;
+                button.title = "Copy absolute path";
+                this.#copyFeedbackTimer = null;
+            }, 2200);
+        }
+        catch (_error) {
+            button.innerHTML = `${icon("warning")}<span>Copy failed</span>`;
+        }
+    }
+    /** Render the mutually exclusive read and edit states for one description. */
+    #renderDescriptionPanel(picture) {
+        if (!this.#descriptionEditing) {
+            return `
+                <section class="picture-description-panel" data-role="picture-description-panel" data-mode="read">
+                    <div class="picture-description-toolbar">
+                        <strong>Description</strong>
+                        <button class="secondary-action" data-action="edit-picture-description">${icon("edit")} Edit</button>
+                    </div>
+                    ${renderDescriptionCard(picture.description, { title: "Image analysis" })}
+                </section>
+            `;
+        }
+        return `
+            <section class="picture-description-panel" data-role="picture-description-panel" data-mode="edit">
+                <label>Description editor
+                    <textarea data-role="picture-description" placeholder="Describe people, scene, objects, text, and context...">${escapeHtml(picture.description)}</textarea>
+                </label>
+                <div class="picture-description-actions">
+                    <button class="secondary-action" data-action="cancel-picture-description">${icon("close")} Cancel</button>
+                    <button class="secondary-action" data-action="generate-picture-description">${icon("camera")} Regenerate</button>
+                    <button class="primary-button" data-action="save-picture-description">${icon("save")} Save</button>
+                </div>
+            </section>
+        `;
+    }
+    /** Replace only the description surface so carousel and image state remain mounted. */
+    #mountDescriptionPanel(picture) {
+        const panel = this.querySelector("[data-role='picture-description-panel']");
+        if (!panel)
+            return;
+        panel.outerHTML = this.#renderDescriptionPanel(picture);
+        this.#bindDescriptionEvents();
+    }
+    /** Bind controls owned by the current description mode. */
+    #bindDescriptionEvents() {
+        this.querySelector("[data-action='edit-picture-description']")?.addEventListener("click", () => this.#setDescriptionEditing(true));
+        this.querySelector("[data-action='cancel-picture-description']")?.addEventListener("click", () => this.#setDescriptionEditing(false));
+        this.querySelector("[data-action='save-picture-description']")?.addEventListener("click", () => void this.#saveDescription());
+        this.querySelector("[data-action='generate-picture-description']")?.addEventListener("click", () => void this.#generateDescription());
+        this.querySelectorAll("[data-action='resolve-description-entity']").forEach(button => {
+            button.addEventListener("click", () => {
+                this.#state?.setRouteTarget?.("knowledge", { entityLabel: button.getAttribute("data-entity-label") || "" });
+            });
+        });
+    }
+    /** Toggle between the structured card and textarea without changing selection. */
+    #setDescriptionEditing(editing) {
+        const selected = this.#selected();
+        if (!selected || this.#descriptionRequestPending)
+            return;
+        this.#descriptionEditing = editing;
+        this.#mountDescriptionPanel(selected);
+        if (editing)
+            requestAnimationFrame(() => this.querySelector("[data-role='picture-description']")?.focus());
     }
     /** Bind controls owned only by a mounted fullscreen viewer. */
     #bindViewerEvents() {
@@ -9005,12 +10166,59 @@ class PicturesView extends HTMLElement {
     async #saveDescription() {
         const selected = this.#selected();
         const textarea = this.querySelector("[data-role='picture-description']");
-        if (!selected || !textarea || !this.#api)
+        if (!selected || !textarea || !this.#api || this.#descriptionRequestPending)
             return;
-        const response = await this.#api.describePicture(selected.id, textarea.value.trim());
-        this.#state?.setLastResult(response);
-        if (response.ok)
-            await this.#loadDomain(this.#domain, true, selected.id);
+        await this.#submitDescription(selected, () => this.#api.describePicture(selected.id, textarea.value.trim()), "Saving...");
+    }
+    /** Generate a model-backed description without overwriting the mounted draft on failure. */
+    async #generateDescription() {
+        const selected = this.#selected();
+        if (!selected || !this.#api || this.#descriptionRequestPending)
+            return;
+        await this.#submitDescription(selected, () => this.#api.generatePictureDescription(selected.id), "Generating...");
+    }
+    /** Serialize description mutations and patch the cached record without rebuilding the carousel. */
+    async #submitDescription(selected, request, pendingLabel) {
+        this.#descriptionRequestPending = true;
+        this.#setDescriptionActionsBusy(true, pendingLabel);
+        try {
+            const response = await request();
+            this.#state?.setLastResult(response);
+            const updated = response.data?.picture;
+            if (!response.ok || !updated)
+                return;
+            const index = this.#pictures.findIndex(picture => picture.id === updated.id);
+            if (index >= 0)
+                this.#pictures[index] = updated;
+            this.#picturesByDomain.set(this.#domain, this.#pictures);
+            if (this.#selectedId === updated.id) {
+                this.#descriptionEditing = false;
+                this.#hydrateSelection(updated);
+            }
+        }
+        finally {
+            this.#descriptionRequestPending = false;
+            this.#setDescriptionActionsBusy(false);
+        }
+    }
+    /** Keep both mutually exclusive description actions synchronized and accessible. */
+    #setDescriptionActionsBusy(busy, pendingLabel = "") {
+        const generate = this.querySelector("[data-action='generate-picture-description']");
+        const save = this.querySelector("[data-action='save-picture-description']");
+        if (generate) {
+            generate.disabled = busy;
+            generate.setAttribute("aria-busy", String(busy));
+            generate.innerHTML = busy && pendingLabel === "Generating..."
+                ? `${icon("refresh")} ${pendingLabel}`
+                : `${icon("camera")} Regenerate`;
+        }
+        if (save) {
+            save.disabled = busy;
+            save.setAttribute("aria-busy", String(busy));
+            save.innerHTML = busy && pendingLabel === "Saving..."
+                ? `${icon("refresh")} ${pendingLabel}`
+                : `${icon("save")} Save description`;
+        }
     }
     #formatBytes(bytes) {
         if (bytes < 1024 * 1024)
@@ -9277,6 +10485,7 @@ const SVG_ICONS = {
     filter: `<path d="M4 5h16l-6 7v5l-4 2v-7z"/>`,
     checkSquare: `<path d="M9 11l2 2 4-5"/><rect x="4" y="4" width="16" height="16" rx="3"/>`,
     chevronRight: `<path d="m9 6 6 6-6 6"/>`,
+    chevronLeft: `<path d="m15 18-6-6 6-6"/>`,
     chevronDown: `<path d="m6 9 6 6 6-6"/>`,
     minus: `<path d="M6 12h12"/>`,
     more: `<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>`,
@@ -9310,60 +10519,60 @@ const __brainExplorerModule17=(()=>{let cache;return()=>{if(cache)return cache;
 function notificationText(payload, method, requestLabel = "") {
     const data = asRecord(payload.data);
     if (!payload.ok) {
-        return { title: "No se pudo completar", message: readableError(payload, data) };
+        return { title: "Could not complete", message: readableError(payload, data) };
     }
     return { title: successTitle(data, method), message: successMessage(data, requestLabel) };
 }
 function successTitle(data, method) {
     const command = String(data.command || "");
     if (command.includes("delete") || method === "DELETE")
-        return "Elemento eliminado";
+        return "Item deleted";
     if (command.includes("add") || command.includes("create"))
-        return "Elemento creado";
+        return "Item created";
     if (typeof data.domain === "string" && typeof data.key === "string")
-        return "Cambios guardados";
+        return "Changes saved";
     if (command.includes("set") || command.includes("edit") || command.includes("save"))
-        return "Cambios guardados";
-    return "Operación completada";
+        return "Changes saved";
+    return "Operation completed";
 }
 function successMessage(data, requestLabel) {
     const command = String(data.command || "");
     const task = asRecord(data.task);
     if (Object.keys(task).length) {
-        const title = quoted(task.title || task.id || "tarea");
+        const title = quoted(task.title || task.id || "task");
         const status = String(task.status || "");
         if (command === "add-task")
-            return `Se creó la tarea ${title}.`;
+            return `Task ${title} was created.`;
         if (command === "edit-task")
-            return `Se actualizaron los datos de ${title}.`;
+            return `Task ${title} was updated.`;
         if (status === "DONE")
-            return `La tarea ${title} quedó completada.`;
+            return `Task ${title} was completed.`;
         if (status === "WORKING")
-            return `La tarea ${title} está en progreso.`;
+            return `Task ${title} is in progress.`;
         if (status === "TODO")
-            return `La tarea ${title} volvió a pendientes.`;
+            return `Task ${title} returned to pending.`;
     }
     if (command === "delete-task" || data.deleted === true) {
-        return `Se eliminó la tarea ${quoted(data.taskId || "seleccionada")}.`;
+        return `Task ${quoted(data.taskId || "selected")} was deleted.`;
     }
     if (typeof data.domain === "string" && typeof data.key === "string") {
         const entry = quoted(`${data.domain}.${data.key}`);
-        return command.includes("delete") ? `Se eliminó la memoria ${entry}.` : `Se guardó la memoria ${entry}.`;
+        return command.includes("delete") ? `Memory ${entry} was deleted.` : `Memory ${entry} was saved.`;
     }
     if (typeof data.domain === "string") {
         if (command.includes("delete"))
-            return `Se eliminó el dominio ${quoted(data.domain)}.`;
+            return `Domain ${quoted(data.domain)} was deleted.`;
         if (command.includes("add"))
-            return `Se creó el dominio ${quoted(data.domain)}.`;
+            return `Domain ${quoted(data.domain)} was created.`;
     }
     if (command === "clone-snippet")
-        return `Se clonó el snippet ${quoted(data.snippet || "seleccionado")}.`;
+        return `Snippet ${quoted(data.snippet || "selected")} was cloned.`;
     if (command === "register-project") {
         const project = asRecord(data.project);
-        return `Se registró el proyecto ${quoted(project.name || project.path || "seleccionado")}.`;
+        return `Project ${quoted(project.name || project.path || "selected")} was registered.`;
     }
     if (command === "speak" || requestLabel.includes("voice"))
-        return "La solicitud de voz fue procesada correctamente.";
+        return "The voice request was processed successfully.";
     return humanString(data.message) || requestFallback(requestLabel);
 }
 function readableError(payload, data) {
@@ -9372,21 +10581,21 @@ function readableError(payload, data) {
         if (message)
             return message;
     }
-    return "La operación no pudo completarse. Revisa los datos e inténtalo de nuevo.";
+    return "The operation could not be completed. Review the data and try again.";
 }
 function requestFallback(requestLabel) {
     const label = requestLabel.toLowerCase();
     if (label.includes("memory/entry"))
-        return "La entrada de memoria fue actualizada.";
+        return "The memory entry was updated.";
     if (label.includes("memory/domain"))
-        return "El dominio de memoria fue actualizado.";
+        return "The memory domain was updated.";
     if (label.includes("backlog/task"))
-        return "La tarea fue actualizada.";
+        return "The task was updated.";
     if (label.includes("voice/replay"))
-        return "La reproducción de voz comenzó.";
+        return "Voice playback started.";
     if (label.includes("voice/pause"))
-        return "La reproducción de voz se pausó.";
-    return "Los cambios se aplicaron correctamente.";
+        return "Voice playback paused.";
+    return "The changes were applied successfully.";
 }
 /** Accept only plain human strings, never serialized JSON documents. */
 function humanString(value) {
@@ -9417,6 +10626,7 @@ const { icon } = __brainExplorerModule16();
 var _a;
 
 
+const TREE_WIDTH_STORAGE_KEY = "brain.structure-tree.width";
 /**
  * A serializable node rendered by {@link StructureTree}.
  *
@@ -9431,6 +10641,7 @@ var _a;
  * @property {number|string} [count] Optional descendant count.
  * @property {string} [detail] Secondary compact detail.
  * @property {string} [timestamp] Timestamp for terminal log rows.
+ * @property {boolean} [folder] Preserve folder affordances when the node has no loaded children.
  * @property {"default"|"log"} [presentation] Node visual treatment.
  * @property {{id: string, label: string, icon?: string, danger?: boolean}[]} [actions] Context actions for this node.
  * @property {StructureTreeNode[]} [children] Descendants.
@@ -9454,14 +10665,21 @@ class StructureTree extends HTMLElement {
         title: "",
         toolbarActions: [],
         showSearch: true,
-        searchPlaceholder: "Buscar...",
+        searchPlaceholder: "Search...",
         sortDirection: "asc",
-        emptyText: "No hay elementos todavia."
+        emptyText: "No items yet."
     };
     #openActionNodeId = "";
     #searchQuery = "";
     #disableFilter = false;
+    #resizePane = null;
+    #resizeHandle = null;
+    #resizePointerId = null;
+    #resizeOriginX = 0;
+    #resizeOriginWidth = 0;
     #onDocumentPointerDown = event => this.#closeMenusOutside(event);
+    #onResizePointerMove = event => this.#resizeTreeFromPointer(event);
+    #onResizePointerUp = event => this.#finishTreeResize(event);
     /**
      * Assign the full tree presentation model.
      *
@@ -9476,9 +10694,9 @@ class StructureTree extends HTMLElement {
             title: value?.title || "",
             toolbarActions: Array.isArray(value?.toolbarActions) ? value.toolbarActions : [],
             showSearch: value?.showSearch !== false,
-            searchPlaceholder: value?.searchPlaceholder || "Buscar...",
+            searchPlaceholder: value?.searchPlaceholder || "Search...",
             sortDirection: value?.sortDirection === "desc" ? "desc" : "asc",
-            emptyText: value?.emptyText || "No hay elementos todavia."
+            emptyText: value?.emptyText || "No items yet."
         };
         if (typeof value?.searchQuery === "string") {
             this.#searchQuery = value.searchQuery;
@@ -9493,6 +10711,7 @@ class StructureTree extends HTMLElement {
      */
     connectedCallback() {
         this.#render();
+        this.#installResizeHandle();
         document.addEventListener("pointerdown", this.#onDocumentPointerDown);
     }
     /**
@@ -9502,6 +10721,95 @@ class StructureTree extends HTMLElement {
      */
     disconnectedCallback() {
         document.removeEventListener("pointerdown", this.#onDocumentPointerDown);
+        window.removeEventListener("pointermove", this.#onResizePointerMove);
+        window.removeEventListener("pointerup", this.#onResizePointerUp);
+        this.#resizeHandle?.remove();
+        this.#resizeHandle = null;
+        this.#resizePane = null;
+    }
+    /** Mount a full-height drag target on the owning structure-tree pane. */
+    #installResizeHandle() {
+        const pane = this.closest(".structure-tree");
+        if (!(pane instanceof HTMLElement) || pane.querySelector(":scope > .structure-tree-resize-handle"))
+            return;
+        this.#resizePane = pane;
+        pane.classList.add("has-resize-handle");
+        try {
+            const storedWidth = Number(localStorage.getItem(TREE_WIDTH_STORAGE_KEY) || 0);
+            if (storedWidth)
+                this.#setTreeWidth(storedWidth);
+        }
+        catch {
+            // Storage can be unavailable in restricted browser contexts; resizing still works in-memory.
+        }
+        const handle = document.createElement("div");
+        handle.className = "structure-tree-resize-handle";
+        handle.setAttribute("role", "separator");
+        handle.setAttribute("aria-label", "Resize tree");
+        handle.setAttribute("aria-orientation", "vertical");
+        handle.tabIndex = 0;
+        handle.addEventListener("pointerdown", event => this.#startTreeResize(event));
+        handle.addEventListener("keydown", event => this.#resizeTreeFromKeyboard(event));
+        pane.append(handle);
+        this.#resizeHandle = handle;
+    }
+    /** Begin one right-edge horizontal resize gesture. */
+    #startTreeResize(event) {
+        if (!this.#resizePane || event.button !== 0)
+            return;
+        event.preventDefault();
+        this.#resizePointerId = event.pointerId;
+        this.#resizeOriginX = event.clientX;
+        this.#resizeOriginWidth = this.#resizePane.getBoundingClientRect().width;
+        this.#resizePane.classList.add("is-resizing");
+        this.#resizeHandle?.setPointerCapture?.(event.pointerId);
+        window.addEventListener("pointermove", this.#onResizePointerMove);
+        window.addEventListener("pointerup", this.#onResizePointerUp);
+    }
+    /** Update the sidebar while the pointer moves anywhere along the viewport. */
+    #resizeTreeFromPointer(event) {
+        if (event.pointerId !== this.#resizePointerId)
+            return;
+        this.#setTreeWidth(this.#resizeOriginWidth + event.clientX - this.#resizeOriginX);
+    }
+    /** Finish and persist one resize gesture. */
+    #finishTreeResize(event) {
+        if (event.pointerId !== this.#resizePointerId)
+            return;
+        this.#resizePointerId = null;
+        this.#resizePane?.classList.remove("is-resizing");
+        window.removeEventListener("pointermove", this.#onResizePointerMove);
+        window.removeEventListener("pointerup", this.#onResizePointerUp);
+        this.#persistTreeWidth();
+    }
+    /** Support precise keyboard resizing from the same separator. */
+    #resizeTreeFromKeyboard(event) {
+        if (!this.#resizePane || !["ArrowLeft", "ArrowRight"].includes(event.key))
+            return;
+        event.preventDefault();
+        const direction = event.key === "ArrowRight" ? 1 : -1;
+        this.#setTreeWidth(this.#resizePane.getBoundingClientRect().width + direction * (event.shiftKey ? 40 : 12));
+        this.#persistTreeWidth();
+    }
+    /** Clamp and apply a shared desktop tree width. */
+    #setTreeWidth(width) {
+        if (!this.#resizePane)
+            return;
+        const maximum = Math.min(640, window.innerWidth * 0.48);
+        const nextWidth = Math.max(380, Math.min(maximum, Number(width) || 380));
+        this.#resizePane.style.width = `${Math.round(nextWidth)}px`;
+        this.#resizeHandle?.setAttribute("aria-valuenow", String(Math.round(nextWidth)));
+    }
+    /** Persist the most recent shared tree width when browser storage is available. */
+    #persistTreeWidth() {
+        if (!this.#resizePane)
+            return;
+        try {
+            localStorage.setItem(TREE_WIDTH_STORAGE_KEY, String(Math.round(this.#resizePane.getBoundingClientRect().width)));
+        }
+        catch {
+            // Keep the active width even when persistence is unavailable.
+        }
     }
     #matchesFilter(node) {
         if (this.#disableFilter)
@@ -9519,14 +10827,7 @@ class StructureTree extends HTMLElement {
     }
     #render() {
         const rootDirection = this.#model.sortDirection === "desc" ? -1 : 1;
-        const sortedRootNodes = [...this.#model.nodes].sort((left, right) => {
-            const leftHas = Array.isArray(left.children) && left.children.length > 0;
-            const rightHas = Array.isArray(right.children) && right.children.length > 0;
-            if (leftHas !== rightHas) {
-                return leftHas ? -1 : 1;
-            }
-            return rootDirection * String(left.sortKey || left.label || "").localeCompare(String(right.sortKey || right.label || ""));
-        });
+        const sortedRootNodes = [...this.#model.nodes].sort((left, right) => this.#compareNodes(left, right, rootDirection));
         const visibleNodes = sortedRootNodes.filter(node => this.#matchesFilter(node));
         this.innerHTML = `
             ${this.#renderToolbar()}
@@ -9593,7 +10894,7 @@ class StructureTree extends HTMLElement {
                             data-tree-id="${escapeHtml(node.id || node.path)}" data-tree-path="${escapeHtml(node.path)}" data-tree-branch="false"
                             title="${escapeHtml(node.label)}">
                             <span class="tree-node-icon">${icon(node.icon || defaultLeaf)}</span>
-                            <time>${escapeHtml(node.timestamp || "Sin fecha")}</time>
+                            <time>${escapeHtml(node.timestamp || "No date")}</time>
                             <strong>${escapeHtml(node.label)}</strong>
                             <small>${escapeHtml(node.detail || "")}</small>
                             ${this.#renderNodeActionTrigger(node)}
@@ -9604,22 +10905,19 @@ class StructureTree extends HTMLElement {
             `;
         }
         const childDirection = node.sortDirection === "desc" ? -1 : 1;
-        const sortedChildren = [...children].sort((left, right) => {
-            const leftHas = Array.isArray(left.children) && left.children.length > 0;
-            const rightHas = Array.isArray(right.children) && right.children.length > 0;
-            if (leftHas !== rightHas) {
-                return leftHas ? -1 : 1;
-            }
-            return childDirection * String(left.sortKey || left.label || "").localeCompare(String(right.sortKey || right.label || ""));
-        });
+        const sortedChildren = [...children].sort((left, right) => this.#compareNodes(left, right, childDirection));
+        const isFolder = hasChildren || node.folder === true;
+        const caret = hasChildren
+            ? icon(expanded ? "chevronDown" : "chevronRight")
+            : isFolder ? "+" : "";
         return `
             <div class="tree-node-wrap" role="treeitem" aria-level="${depth}" ${hasChildren ? `aria-expanded="${expanded}"` : ""} aria-selected="${active}" style="--depth: ${depth};">
                 <div class="tree-item ${active ? "is-active" : ""}">
                     <button class="tree-node ${hasChildren ? "" : "tree-node--leaf"} ${sourceClass} ${active ? "is-active" : ""}"${sourceStyle}
                         data-tree-id="${escapeHtml(node.id || node.path)}" data-tree-path="${escapeHtml(node.path)}" data-tree-branch="${hasChildren}"
                         title="${escapeHtml(node.label)}">
-                        ${hasChildren ? `<span class="tree-caret">${icon(expanded ? "chevronDown" : "chevronRight")}</span>` : ""}
-                        ${icon(node.icon || (hasChildren ? defaultBranch : defaultLeaf))}
+                        <span class="tree-caret ${isFolder && !hasChildren ? "is-empty-folder" : ""}">${caret}</span>
+                        ${icon(node.icon || (isFolder ? defaultBranch : defaultLeaf))}
                         <span>${escapeHtml(node.label)}</span>
                         ${node.count !== undefined ? `<small>${escapeHtml(String(node.count))}</small>` : ""}
                         ${this.#renderNodeActionTrigger(node)}
@@ -9642,7 +10940,7 @@ class StructureTree extends HTMLElement {
         }
         const nodeId = escapeHtml(node.id || node.path);
         return `
-            <span class="tree-action-trigger" data-tree-actions="${nodeId}" title="Acciones" aria-label="Acciones">
+            <span class="tree-action-trigger" data-tree-actions="${nodeId}" title="Actions" aria-label="Actions">
                 ${icon("more")}
             </span>
         `;
@@ -9692,14 +10990,7 @@ class StructureTree extends HTMLElement {
             this.#searchQuery = event.target.value;
             // Render only nodes container to keep focus and cursor position!
             const rootDirection = this.#model.sortDirection === "desc" ? -1 : 1;
-            const sortedRootNodes = [...this.#model.nodes].sort((left, right) => {
-                const leftHas = Array.isArray(left.children) && left.children.length > 0;
-                const rightHas = Array.isArray(right.children) && right.children.length > 0;
-                if (leftHas !== rightHas) {
-                    return leftHas ? -1 : 1;
-                }
-                return rootDirection * String(left.sortKey || left.label || "").localeCompare(String(right.sortKey || right.label || ""));
-            });
+            const sortedRootNodes = [...this.#model.nodes].sort((left, right) => this.#compareNodes(left, right, rootDirection));
             const nodesContainer = this.querySelector(".structure-tree-nodes");
             if (nodesContainer) {
                 nodesContainer.innerHTML = sortedRootNodes.map(node => this.#renderNode(node, 1)).join("");
@@ -9745,6 +11036,18 @@ class StructureTree extends HTMLElement {
             detail: { id, path, branch, expanded, clickedCaret, node }
         }));
         this.#restoreInteractionAnchor(id, scrollTop);
+    }
+    /** Respect explicit super-domain order before the default branch-first tree order. */
+    #compareNodes(left, right, direction) {
+        if (left.sortKey !== undefined || right.sortKey !== undefined) {
+            return direction * String(left.sortKey || left.label || "")
+                .localeCompare(String(right.sortKey || right.label || ""));
+        }
+        const leftHas = Array.isArray(left.children) && left.children.length > 0;
+        const rightHas = Array.isArray(right.children) && right.children.length > 0;
+        if (leftHas !== rightHas)
+            return leftHas ? -1 : 1;
+        return direction * String(left.label || "").localeCompare(String(right.label || ""));
     }
     /**
      * Restore the node that initiated a gesture after a consumer re-renders
@@ -9956,11 +11259,11 @@ class BacklogPip extends HTMLElement {
                         ${icon("checkSquare")} Backlog PIP
                     </strong>
                     <span class="pip-count" style="font-size: 12px; color: var(--text-muted); margin-left: auto; margin-right: 12px;">
-                        ${this.#tasks.length} tareas
+                        ${this.#tasks.length} tasks
                     </span>
                     <div style="display: flex; align-items: center; gap: 6px;">
-                        <button class="icon-action" data-action="pip-capture-screen" title="Capturar pantalla y crear tarea" style="border: 0; background: transparent; cursor: pointer; color: var(--primary);">${icon("camera")}</button>
-                        <button class="icon-action" data-action="pip-add-task" title="Crear tarea" style="border: 0; background: transparent; cursor: pointer; color: var(--text);">${icon("plus")}</button>
+                        <button class="icon-action" data-action="pip-capture-screen" title="Capture screen and create task" style="border: 0; background: transparent; cursor: pointer; color: var(--primary);">${icon("camera")}</button>
+                        <button class="icon-action" data-action="pip-add-task" title="Create task" style="border: 0; background: transparent; cursor: pointer; color: var(--text);">${icon("plus")}</button>
                     </div>
                 </header>
                 <main class="pip-body scroll-area" style="flex: 1; overflow-y: auto; padding: 12px; display: grid; gap: 10px; background: color-mix(in srgb, var(--bg), transparent 40%);">
@@ -9974,21 +11277,21 @@ class BacklogPip extends HTMLElement {
             <div class="pip-root" style="display: flex; flex-direction: column; height: 100vh; font-family: var(--font); background: var(--bg); color: var(--text);">
                 <header class="pip-header" style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--surface-strong);">
                     <strong class="pip-title" style="font-size: 14px; color: var(--text-strong); display: flex; align-items: center; gap: 6px;">
-                        ${icon("plus")} Nueva Tarea (PIP)
+                        ${icon("plus")} New Task (PIP)
                     </strong>
-                    <button class="icon-action" data-action="pip-close-form" title="Volver" style="border: 0; background: transparent; cursor: pointer; color: var(--text);">${icon("close")}</button>
+                    <button class="icon-action" data-action="pip-close-form" title="Back" style="border: 0; background: transparent; cursor: pointer; color: var(--text);">${icon("close")}</button>
                 </header>
                 <form class="pip-add-form" style="padding: 12px; display: flex; flex-direction: column; gap: 8px; flex: 1; overflow-y: auto; background: var(--bg);">
-                    <input type="text" id="pip-title-input" placeholder="Título" required style="padding: 6px 8px; font-size: 13px; border-radius: 4px; border: 1px solid var(--border); background: var(--surface-strong); color: var(--text-strong);">
+                    <input type="text" id="pip-title-input" placeholder="Title" required style="padding: 6px 8px; font-size: 13px; border-radius: 4px; border: 1px solid var(--border); background: var(--surface-strong); color: var(--text-strong);">
                     <select id="pip-priority-select" style="padding: 6px; font-size: 13px; border-radius: 4px; border: 1px solid var(--border); background: var(--surface-strong); color: var(--text-strong);">
                         <option value="HIGH">HIGH</option>
                         <option value="MEDIUM">MEDIUM</option>
                         <option value="LOW">LOW</option>
                     </select>
-                    <textarea id="pip-desc-input" placeholder="Descripción (usa Ctrl+V para pegar imagen)" required style="padding: 6px 8px; font-size: 13px; border-radius: 4px; border: 1px solid var(--border); background: var(--surface-strong); color: var(--text-strong); min-height: 80px; resize: vertical;"></textarea>
+                    <textarea id="pip-desc-input" placeholder="Description (use Ctrl+V to paste an image)" required style="padding: 6px 8px; font-size: 13px; border-radius: 4px; border: 1px solid var(--border); background: var(--surface-strong); color: var(--text-strong); min-height: 80px; resize: vertical;"></textarea>
                     
                     <button type="button" class="ghost-action compact-action" data-action="pip-form-capture" style="display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; height: 32px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-muted); color: var(--primary);">
-                        ${icon("camera")} Capturar Referencia Visual
+                        ${icon("camera")} Capture Visual Reference
                     </button>
 
                     ${this.#pipImageDataUrl ? `
@@ -9998,7 +11301,7 @@ class BacklogPip extends HTMLElement {
                                 <svg id="pip-marking-svg" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: crosshair; touch-action: none;"></svg>
                             </div>
                             <div style="display: flex; gap: 8px; align-items: center; justify-content: space-between;">
-                                <button type="button" class="ghost-action compact-action" data-action="pip-clear-marks" style="padding: 4px 8px; font-size: 11px;">Limpiar</button>
+                                <button type="button" class="ghost-action compact-action" data-action="pip-clear-marks" style="padding: 4px 8px; font-size: 11px;">Clear</button>
                                 <select id="pip-mark-color" style="padding: 2px 6px; font-size: 11px; border-radius: 4px; border: 1px solid var(--border); background: var(--surface); color: var(--text-strong);">
                                     <option value="red" selected>Rojo</option>
                                     <option value="blue">Azul</option>
@@ -10011,7 +11314,7 @@ class BacklogPip extends HTMLElement {
                     ` : ""}
                     
                     ${this.#formError ? `<p role="alert" style="margin: 0; font-size: 12px; color: var(--danger);">${escapeHtml(this.#formError)}</p>` : ""}
-                    <button type="submit" class="primary-action" ${this.#isSubmitting ? "disabled" : ""} style="padding: 8px; font-size: 13px; font-weight: bold; border-radius: 4px; margin-top: auto;">${this.#isSubmitting ? "Creando..." : "Crear Tarea"}</button>
+                    <button type="submit" class="primary-action" ${this.#isSubmitting ? "disabled" : ""} style="padding: 8px; font-size: 13px; font-weight: bold; border-radius: 4px; margin-top: auto;">${this.#isSubmitting ? "Creating..." : "Create Task"}</button>
                 </form>
             </div>
         `;
@@ -10067,7 +11370,7 @@ class BacklogPip extends HTMLElement {
     }
     #renderGroups() {
         if (!this.#tasks.length) {
-            return `<p class="pip-empty" style="text-align: center; color: var(--text-muted); padding: 24px;">No hay tareas.</p>`;
+            return `<p class="pip-empty" style="text-align: center; color: var(--text-muted); padding: 24px;">No tasks.</p>`;
         }
         const groups = new Map();
         for (const task of this.#tasks) {
@@ -10246,12 +11549,12 @@ class BacklogPip extends HTMLElement {
             const submitButton = form.querySelector("[type='submit']");
             if (submitButton instanceof HTMLButtonElement) {
                 submitButton.disabled = true;
-                submitButton.textContent = "Creando...";
+                submitButton.textContent = "Creating...";
             }
             try {
                 const completion = await this.onAddTask({ title, description, priority, image: bakedImage });
                 if (!completion?.ok) {
-                    this.#formError = completion?.message || "No se pudo crear la tarea.";
+                    this.#formError = completion?.message || "Could not create the task.";
                     return;
                 }
                 if (Array.isArray(completion.tasks)) {
@@ -10263,7 +11566,7 @@ class BacklogPip extends HTMLElement {
                 this.#pipMarkingRects = [];
             }
             catch (error) {
-                this.#formError = error instanceof Error ? error.message : "No se pudo crear la tarea.";
+                this.#formError = error instanceof Error ? error.message : "Could not create the task.";
             }
             finally {
                 this.#isSubmitting = false;
@@ -10379,4 +11682,137 @@ class BacklogPip extends HTMLElement {
 customElements.define(BacklogPip.selector, BacklogPip);
 
 cache=(()=>{return { BacklogPip: BacklogPip };})();return cache;};})();
+const __brainExplorerModule20=(()=>{let cache;return()=>{if(cache)return cache;
+const { escapeHtml, renderMarkdown } = __brainExplorerModule15();
+/** Shared structured presentation for long image and entity descriptions. */
+
+const ENTITY_SECTION_TITLES = new Set([
+    "subject",
+    "subjects",
+    "main subject",
+    "main subjects",
+    "tag",
+    "tags",
+    "semantic tag",
+    "semantic tags"
+]);
+/**
+ * Split model-authored Markdown into stable sections.
+ *
+ * Headings and bold field labels such as `**Subjects:**` are treated as
+ * section boundaries even when several fields share one physical line.
+ */
+function parseDescriptionSections(markdown) {
+    const source = String(markdown || "").trim();
+    if (!source)
+        return [];
+    const markerPattern = /(?:^|\n)[ \t]{0,3}#{1,4}[ \t]+([^\n]+)|\*\*([^*\n:]{1,80}):\*\*/gm;
+    const markers = [];
+    let match;
+    while ((match = markerPattern.exec(source)) !== null) {
+        const startsWithNewline = match[0].startsWith("\n");
+        markers.push({
+            index: match.index + (startsWithNewline ? 1 : 0),
+            end: markerPattern.lastIndex,
+            title: normalizeSectionTitle(match[1] || match[2] || "Description")
+        });
+    }
+    if (!markers.length)
+        return [createSection("Description", source, 0)];
+    const sections = [];
+    const preamble = source.slice(0, markers[0].index).trim();
+    if (preamble)
+        sections.push(createSection("Overview", preamble, sections.length));
+    markers.forEach((marker, index) => {
+        const nextIndex = markers[index + 1]?.index ?? source.length;
+        const body = normalizeSectionBody(source.slice(marker.end, nextIndex).replace(/^[\s:–—]+/, "").trim());
+        if (body)
+            sections.push(createSection(marker.title, body, sections.length));
+    });
+    return sections.length ? sections : [createSection("Description", source, 0)];
+}
+/** Render a bounded description card with native, accessible disclosures. */
+function renderDescriptionCard(markdown, options = {}) {
+    const title = options.title || "Description";
+    const emptyText = options.emptyText || "No description available.";
+    const sections = parseDescriptionSections(markdown);
+    const content = sections.length
+        ? sections.map((section, index) => `
+            <details class="description-card-section" ${options.openFirst !== false && index === 0 ? "open" : ""}>
+                <summary>
+                    <span>${escapeHtml(section.title)}</span>
+                    <span class="description-card-chevron" aria-hidden="true">&#8250;</span>
+                </summary>
+                <div class="description-card-body">${renderDescriptionSection(section)}</div>
+            </details>
+        `).join("")
+        : `<p class="description-card-empty">${escapeHtml(emptyText)}</p>`;
+    return `
+        <article class="description-card" data-role="description-card">
+            <header>
+                <strong>${escapeHtml(title)}</strong>
+                ${sections.length > 1 ? `<span>${sections.length} sections</span>` : ""}
+            </header>
+            <div class="description-card-sections">${content}</div>
+        </article>
+    `;
+}
+/** Extract entity-like values from Subjects and tag sections. */
+function descriptionEntityValues(section) {
+    if (!ENTITY_SECTION_TITLES.has(section.title.trim().toLowerCase()))
+        return [];
+    const normalized = section.body
+        .replace(/\s*,\s*and\s+/gi, ",")
+        .replace(/\s+and\s+/gi, ",")
+        .replace(/^[-*]\s*/, "");
+    const seen = new Set();
+    return normalized
+        .split(/\s*,\s*|\r?\n+/)
+        .map(value => value.replace(/^[-*]\s*/, "").replace(/[.;:]+$/, "").trim())
+        .filter(value => {
+        const key = value.toLowerCase();
+        if (!value || value.length > 80 || seen.has(key))
+            return false;
+        seen.add(key);
+        return true;
+    });
+}
+/** Render entity sections as resolvable badges and all other bodies as Markdown. */
+function renderDescriptionSection(section) {
+    const entities = descriptionEntityValues(section);
+    if (!entities.length)
+        return renderMarkdown(section.body);
+    return `
+        <div class="description-entity-badges" aria-label="${escapeHtml(section.title)} entities">
+            ${entities.map(entity => `
+                <button type="button" class="description-entity-badge" data-action="resolve-description-entity" data-entity-label="${escapeHtml(entity)}">
+                    ${escapeHtml(entity)}
+                </button>
+            `).join("")}
+        </div>
+    `;
+}
+/** Convert compact model-authored inline lists into Markdown list lines. */
+function normalizeSectionBody(body) {
+    if (/^[-*]\s+/.test(body))
+        return body.replace(/\s+([-*])\s+/g, "\n$1 ");
+    if (/^\d+\.\s+/.test(body))
+        return body.replace(/\s+(\d+\.)\s+/g, "\n$1 ");
+    return body;
+}
+/** Create a unique, selector-safe section identity. */
+function createSection(title, body, index) {
+    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "section";
+    return { id: `${slug}-${index + 1}`, title, body };
+}
+/** Remove residual Markdown emphasis from disclosure labels. */
+function normalizeSectionTitle(title) {
+    return String(title || "Description")
+        .replace(/^\*+|\*+$/g, "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .replace(/:$/, "") || "Description";
+}
+
+cache=(()=>{return { parseDescriptionSections: parseDescriptionSections, renderDescriptionCard: renderDescriptionCard, descriptionEntityValues: descriptionEntityValues };})();return cache;};})();
 __brainExplorerModule0();

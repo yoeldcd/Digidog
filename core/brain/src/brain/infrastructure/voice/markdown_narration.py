@@ -11,6 +11,15 @@ import re
 FENCE_PATTERN = re.compile(r"^\s*(`{3,}|~{3,})")
 TABLE_DIVIDER_PATTERN = re.compile(r"^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$")
 TABLE_ROW_PATTERN = re.compile(r"^\s*\|?.+\|.+\|?\s*$")
+EMOJI_CHARACTER_PATTERN = re.compile(
+    r"[#*0-9]\ufe0f?\u20e3"
+    r"|[\U0001F1E6-\U0001F1FF]"
+    r"|[\U0001F300-\U0001FAFF]"
+    r"|[\u2300-\u23FF]"
+    r"|[\u2600-\u27BF]"
+    r"|[\u2B00-\u2BFF]"
+    r"|[\u200D\uFE0E\uFE0F]"
+)
 
 
 def markdown_text_for_speech(source: str) -> str:
@@ -27,7 +36,7 @@ def markdown_text_for_speech(source: str) -> str:
     Returns:
         A compact plain-text narration suitable for text-to-speech.
     """
-    text = _unwrap_legacy_dialogue(source)
+    text = _normalize_legacy_line_breaks(_unwrap_legacy_dialogue(source))
     lines = text.splitlines()
     table_lines = _table_line_indexes(lines)
     spoken_lines: list[str] = []
@@ -46,6 +55,11 @@ def markdown_text_for_speech(source: str) -> str:
             spoken_lines.append(narrated)
 
     return re.sub(r"\s+", " ", " ".join(spoken_lines)).strip()
+
+
+def _normalize_legacy_line_breaks(source: str) -> str:
+    """Decode escaped line breaks left by legacy shell argument transport."""
+    return source.replace(r"\r\n", "\n").replace(r"\n", "\n").replace(r"\r", "\n")
 
 
 def _unwrap_legacy_dialogue(source: str) -> str:
@@ -101,4 +115,6 @@ def _narratable_inline_text(line: str) -> str:
         text = text.replace(f"\ufff0{index}\ufff1", content)
     text = re.sub(r"<[^>]+>", "", text)
     text = re.sub(r"https?://\S+", "", text)
+    text = EMOJI_CHARACTER_PATTERN.sub("", text)
+    text = re.sub(r"\s+([,.;:!?])", r"\1", text)
     return re.sub(r"\s+", " ", text).strip()

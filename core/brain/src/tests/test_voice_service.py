@@ -215,6 +215,8 @@ def test_speak_delegates_to_worker_without_synthesizing() -> None:
         emotion="",
         signal_key="",
         codex_thread_id="",
+        source_command="",
+        source_phase="",
     )
 
 
@@ -229,6 +231,8 @@ def test_speak_forwards_generic_emotion() -> None:
         emotion="happy",
         signal_key="",
         codex_thread_id="",
+        source_command="",
+        source_phase="",
     )
 
 
@@ -244,6 +248,8 @@ def test_voice_preserves_original_markdown_for_visual_presentation() -> None:
         emotion="happy",
         signal_key="",
         codex_thread_id="",
+        source_command="",
+        source_phase="",
     )
 
 
@@ -295,6 +301,40 @@ def test_speech_cleanup_narrates_inline_code_without_backticks() -> None:
     )
 
 
+def test_speech_cleanup_normalizes_legacy_escaped_line_breaks() -> None:
+    """Do not pronounce escaped transport newlines from legacy CLI callers."""
+    assert clean_text_for_speech(r"Primera linea.\n\nNarra `brain.py` tambien.") == (
+        "Primera linea. Narra brain.py tambien."
+    )
+
+
+def test_speech_cleanup_omits_emoji_sequences() -> None:
+    """Keep visual emoji, modifiers, flags, and joined sequences out of TTS."""
+    source = "Listo 🩷🐾. Café ☕, familia 👨‍👩‍👧‍👦, bandera 🇪🇸 y tecla 1️⃣."
+
+    assert clean_text_for_speech(source) == "Listo. Café, familia, bandera y tecla."
+
+
+def test_voice_preserves_emojis_only_in_display_text() -> None:
+    """Retain expressive emoji visually while dispatching emoji-free speech."""
+    service = VoiceService()
+    original = "Hola, papi 🩷🐾"
+
+    with patch("brain.infrastructure.voice.service.VoiceDaemonClient.speak") as speak:
+        service.speak(original, emotion="happy")
+
+    speak.assert_called_once_with(
+        text="Hola, papi",
+        display_text=original,
+        lang="es",
+        emotion="happy",
+        signal_key="",
+        codex_thread_id="",
+        source_command="",
+        source_phase="",
+    )
+
+
 def test_speech_cleanup_projects_semantic_markdown_and_omits_visual_only_blocks() -> None:
     message = """# Informe narrable
 
@@ -334,6 +374,8 @@ def test_voice_keeps_visual_only_markdown_in_display_text() -> None:
         emotion="",
         signal_key="",
         codex_thread_id="",
+        source_command="",
+        source_phase="",
     )
 
 

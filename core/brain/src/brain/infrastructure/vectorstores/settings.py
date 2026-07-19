@@ -7,9 +7,9 @@ from __future__ import annotations
 
 # Standard Libraries Imports
 import json
-import os
 
 # Application Modules Imports
+from brain.application.knowledge.runtime.config_store import resolve_secret
 from brain.infrastructure.runtime.paths import get_brain_configs_path
 
 
@@ -49,6 +49,5 @@ def _resolve_config_value(value: object) -> object:
         object: Resolved value or original value.
     """
     if isinstance(value, str) and value.startswith("$"):
-        env_var = value[1:]
-        return os.environ.get(env_var, value)
+        return resolve_secret(value)
     return value

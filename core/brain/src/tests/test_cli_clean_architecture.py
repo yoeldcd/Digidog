@@ -121,6 +121,36 @@ class CliCleanArchitectureTest(unittest.TestCase):
         self.assertTrue(stdin_args.stdin_json)
         self.assertTrue(stdin_args.json)
 
+    def test_avatar_message_stdin_json_preserves_multiline_markdown(self) -> None:
+        """Keep shell-sensitive Markdown intact at the CLI presentation boundary."""
+        from brain.presentation.actions.general.command_speak import handle
+
+        message = "Síntesis válida.\n\nNarra `brain.py` también."
+        envelope = '{\n  "text": "Síntesis válida.\\n\\nNarra `brain.py` también.",\n  "emotion": "focused"\n}'
+        args = Namespace(
+            text=None,
+            body=None,
+            lang="es",
+            emotion="",
+            codex_thread_id="",
+            stdin_json=True,
+            json=True,
+            color=False,
+        )
+
+        with patch("sys.stdin", StringIO(envelope)), patch(
+            "brain.presentation.actions.general.command_speak.VoiceService.speak"
+        ) as speak:
+            result = handle(args)
+
+        self.assertEqual(result, 0)
+        speak.assert_called_once_with(
+            text=message,
+            lang="es",
+            emotion="focused",
+            codex_thread_id="",
+        )
+
     def test_query_messages_flag_selects_persisted_messages(self) -> None:
         """Keep the convenience flag equivalent to the explicit messages source."""
         from brain.presentation.actions.general.command_query import _resolve_query_source

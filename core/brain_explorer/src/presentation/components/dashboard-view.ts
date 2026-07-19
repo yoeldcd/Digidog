@@ -101,7 +101,7 @@ export class DashboardView extends HTMLElement {
                 <div class="knowledge-empty-state">
                     ${icon("document")}
                     <h2>Contexto no cargado</h2>
-                    <p>Actualiza para leer el contexto vivo del workspace.</p>
+                    <p>Refresh to read the live workspace context.</p>
                 </div>
             `;
         }
@@ -110,7 +110,7 @@ export class DashboardView extends HTMLElement {
             <article class="context-document-root context-outline">
                 <div class="context-document-actions">
                     <span>${escapeHtml(String(entryCount))} enlaces</span>
-                    <button data-action="refresh-dashboard" class="icon-action compact-action" title="Actualizar contexto" aria-label="Actualizar contexto">${icon("refresh")}</button>
+                    <button data-action="refresh-dashboard" class="icon-action compact-action" title="Refresh context" aria-label="Refresh context">${icon("refresh")}</button>
                 </div>
                 <div class="context-tree-document">
                     ${this.#contextSections.map(section => this.#renderContextSection(section)).join("")}
@@ -161,7 +161,7 @@ export class DashboardView extends HTMLElement {
         if (kind === "logs") {
             const chronologicalEntries = this.#sortLogsNewestFirst(entries);
             return `
-                <nav class="context-log-links" aria-label="Entradas recientes de logs">
+                <nav class="context-log-links" aria-label="Recent log entries">
                     ${chronologicalEntries.map(entry => this.#renderContextLine(entry, "context-link-line")).join("")}
                 </nav>
             `;
@@ -175,7 +175,7 @@ export class DashboardView extends HTMLElement {
         }
         if (kind === "profiles") {
             return `
-                <nav class="context-profile-links" aria-label="Perfiles disponibles">
+                <nav class="context-profile-links" aria-label="Available profiles">
                     ${entries.map(entry => this.#renderContextLine(entry, "context-profile-link")).join("")}
                 </nav>
             `;
@@ -285,7 +285,7 @@ export class DashboardView extends HTMLElement {
                 kind: "workspace",
                 icon: "home",
                 typeLabel: "Workspace",
-                label: "Raiz del workspace",
+                label: "Workspace root",
                 summary: section.path || section.summary || "",
                 route: "settings",
                 target: { panel: "workspace" }
@@ -295,8 +295,8 @@ export class DashboardView extends HTMLElement {
             return {
                 kind: "system",
                 icon: "pulse",
-                typeLabel: "Sistema",
-                label: section.status === "ok" ? "Chequeos correctos" : "Chequeos con errores",
+                typeLabel: "System",
+                label: section.status === "ok" ? "Checks passed" : "Checks with errors",
                 summary: section.summary || "",
                 route: "settings",
                 target: { panel: "health" }
@@ -381,7 +381,7 @@ export class DashboardView extends HTMLElement {
             return `Diario ${item.date || ""}`.trim();
         }
         if (section.kind === "logs") {
-            return "Entrada de log";
+            return "Log entry";
         }
         return section.title || "Contexto";
     }
@@ -398,7 +398,7 @@ export class DashboardView extends HTMLElement {
             return item.command || `read-profile ${item.label || ""}`;
         }
         if (section.kind === "diary") {
-            return item.target?.path || item.command || "Entrada de diario";
+            return item.target?.path || item.command || "Diary entry";
         }
         if (section.kind === "logs") {
             return `${item.domain || "logs"} - ${item.changeType || "registro"}`;
@@ -432,10 +432,10 @@ export class DashboardView extends HTMLElement {
     #sectionTitle(section) {
         return {
             workspace: "Workspace",
-            profiles: "Perfiles",
+            profiles: "Profiles",
             diary: "Diario reciente",
             logs: "Logs recientes",
-            system: "Sistema",
+            system: "System",
             notice: "Avisos"
         }[section.kind] || "Contexto";
     }
@@ -449,9 +449,9 @@ export class DashboardView extends HTMLElement {
      */
     #sectionSummary(section, count) {
         if (section.kind === "workspace") {
-            return section.path || "Raiz del workspace";
+            return section.path || "Workspace root";
         }
-        return `${count} entradas enlazadas`;
+        return `${count} linked entries`;
     }
 
     /**

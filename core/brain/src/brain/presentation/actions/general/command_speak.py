@@ -22,7 +22,7 @@ def handle(args: argparse.Namespace) -> int:
         emotion = getattr(args, "emotion", "")
         codex_thread_id = getattr(args, "codex_thread_id", "")
         if getattr(args, "stdin_json", False):
-            envelope = json.loads(sys.stdin.readline())
+            envelope = json.loads(sys.stdin.read())
             text = str(envelope.get("text", ""))
             lang = str(envelope.get("lang", lang))
             emotion = str(envelope.get("emotion", emotion))

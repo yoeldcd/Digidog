@@ -65,13 +65,13 @@ export class SettingsView extends HTMLElement {
                 <main class="settings-layout">
                     <button class="settings-tile settings-action-tile" data-action="refresh-health">
                         <span>${escapeHtml("Accion")}</span>
-                        <strong>${icon("refresh")}Actualizar runtime</strong>
+                        <strong>${icon("refresh")}Refresh runtime</strong>
                         <small>health local</small>
                     </button>
-                    ${this.#tile("Servidor", this.#health?.ok ? "OK" : "Pendiente", "brain_explorer")}
+                    ${this.#tile("Server", this.#health?.ok ? "OK" : "Pending", "brain_explorer")}
                     ${this.#tile("Dist", this.#health?.distDir || "No cargado", "runtime estatico")}
-                    ${this.#tile("Workspace", this.#health?.workspaceRoot || "No cargado", "raiz activa")}
-                    ${this.#tile("Agent home", this.#health?.agentHome || "No cargado", "memoria compartida")}
+                    ${this.#tile("Workspace", this.#health?.workspaceRoot || "Not loaded", "active root")}
+                    ${this.#tile("Agent home", this.#health?.agentHome || "Not loaded", "shared memory")}
                 </main>
             </section>
         `;

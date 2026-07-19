@@ -14,49 +14,49 @@ export interface NotificationText {
 export function notificationText(payload: ApiResponse, method: string, requestLabel = ""): NotificationText {
     const data = asRecord(payload.data);
     if (!payload.ok) {
-        return { title: "No se pudo completar", message: readableError(payload, data) };
+        return { title: "Could not complete", message: readableError(payload, data) };
     }
     return { title: successTitle(data, method), message: successMessage(data, requestLabel) };
 }
 
 function successTitle(data: Record<string, unknown>, method: string): string {
     const command = String(data.command || "");
-    if (command.includes("delete") || method === "DELETE") return "Elemento eliminado";
-    if (command.includes("add") || command.includes("create")) return "Elemento creado";
-    if (typeof data.domain === "string" && typeof data.key === "string") return "Cambios guardados";
-    if (command.includes("set") || command.includes("edit") || command.includes("save")) return "Cambios guardados";
-    return "Operación completada";
+    if (command.includes("delete") || method === "DELETE") return "Item deleted";
+    if (command.includes("add") || command.includes("create")) return "Item created";
+    if (typeof data.domain === "string" && typeof data.key === "string") return "Changes saved";
+    if (command.includes("set") || command.includes("edit") || command.includes("save")) return "Changes saved";
+    return "Operation completed";
 }
 
 function successMessage(data: Record<string, unknown>, requestLabel: string): string {
     const command = String(data.command || "");
     const task = asRecord(data.task);
     if (Object.keys(task).length) {
-        const title = quoted(task.title || task.id || "tarea");
+        const title = quoted(task.title || task.id || "task");
         const status = String(task.status || "");
-        if (command === "add-task") return `Se creó la tarea ${title}.`;
-        if (command === "edit-task") return `Se actualizaron los datos de ${title}.`;
-        if (status === "DONE") return `La tarea ${title} quedó completada.`;
-        if (status === "WORKING") return `La tarea ${title} está en progreso.`;
-        if (status === "TODO") return `La tarea ${title} volvió a pendientes.`;
+        if (command === "add-task") return `Task ${title} was created.`;
+        if (command === "edit-task") return `Task ${title} was updated.`;
+        if (status === "DONE") return `Task ${title} was completed.`;
+        if (status === "WORKING") return `Task ${title} is in progress.`;
+        if (status === "TODO") return `Task ${title} returned to pending.`;
     }
     if (command === "delete-task" || data.deleted === true) {
-        return `Se eliminó la tarea ${quoted(data.taskId || "seleccionada")}.`;
+        return `Task ${quoted(data.taskId || "selected")} was deleted.`;
     }
     if (typeof data.domain === "string" && typeof data.key === "string") {
         const entry = quoted(`${data.domain}.${data.key}`);
-        return command.includes("delete") ? `Se eliminó la memoria ${entry}.` : `Se guardó la memoria ${entry}.`;
+        return command.includes("delete") ? `Memory ${entry} was deleted.` : `Memory ${entry} was saved.`;
     }
     if (typeof data.domain === "string") {
-        if (command.includes("delete")) return `Se eliminó el dominio ${quoted(data.domain)}.`;
-        if (command.includes("add")) return `Se creó el dominio ${quoted(data.domain)}.`;
+        if (command.includes("delete")) return `Domain ${quoted(data.domain)} was deleted.`;
+        if (command.includes("add")) return `Domain ${quoted(data.domain)} was created.`;
     }
-    if (command === "clone-snippet") return `Se clonó el snippet ${quoted(data.snippet || "seleccionado")}.`;
+    if (command === "clone-snippet") return `Snippet ${quoted(data.snippet || "selected")} was cloned.`;
     if (command === "register-project") {
         const project = asRecord(data.project);
-        return `Se registró el proyecto ${quoted(project.name || project.path || "seleccionado")}.`;
+        return `Project ${quoted(project.name || project.path || "selected")} was registered.`;
     }
-    if (command === "speak" || requestLabel.includes("voice")) return "La solicitud de voz fue procesada correctamente.";
+    if (command === "speak" || requestLabel.includes("voice")) return "The voice request was processed successfully.";
     return humanString(data.message) || requestFallback(requestLabel);
 }
 
@@ -65,17 +65,17 @@ function readableError(payload: ApiResponse, data: Record<string, unknown>): str
         const message = humanString(candidate);
         if (message) return message;
     }
-    return "La operación no pudo completarse. Revisa los datos e inténtalo de nuevo.";
+    return "The operation could not be completed. Review the data and try again.";
 }
 
 function requestFallback(requestLabel: string): string {
     const label = requestLabel.toLowerCase();
-    if (label.includes("memory/entry")) return "La entrada de memoria fue actualizada.";
-    if (label.includes("memory/domain")) return "El dominio de memoria fue actualizado.";
-    if (label.includes("backlog/task")) return "La tarea fue actualizada.";
-    if (label.includes("voice/replay")) return "La reproducción de voz comenzó.";
-    if (label.includes("voice/pause")) return "La reproducción de voz se pausó.";
-    return "Los cambios se aplicaron correctamente.";
+    if (label.includes("memory/entry")) return "The memory entry was updated.";
+    if (label.includes("memory/domain")) return "The memory domain was updated.";
+    if (label.includes("backlog/task")) return "The task was updated.";
+    if (label.includes("voice/replay")) return "Voice playback started.";
+    if (label.includes("voice/pause")) return "Voice playback paused.";
+    return "The changes were applied successfully.";
 }
 
 /** Accept only plain human strings, never serialized JSON documents. */

@@ -49,14 +49,15 @@ class VoiceRoutesMixin:
         )
         selected_date = str(query.get("date", "")).strip()
         selected_chat_id = str(query.get("chatId", "")).strip()
+        include_all = str(query.get("all", "")).casefold() == "true"
         history = [
             record.as_mapping()
             for record in repository.list_messages(
-                limit=500,
+                limit=2000 if include_all else 500,
                 date=selected_date,
                 chat_id_exact=selected_chat_id,
             )
-        ] if selected_date else []
+        ] if selected_date or include_all else []
         sessions = repository.list_session_summaries()
         return {
             "ok": True,

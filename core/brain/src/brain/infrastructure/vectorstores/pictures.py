@@ -7,6 +7,8 @@ from typing import Any
 import hashlib
 
 from brain.infrastructure.pictures.repository import PictureRepository
+from brain.application.pictures.config import load_pictures_config
+from brain.infrastructure.pictures.knowledge_graph import project_picture_descriptions
 from brain.infrastructure.pictures.scanner import scan_pictures
 from brain.infrastructure.runtime.paths import get_vectorstore_dir
 from brain.infrastructure.vectorstores.manager import VectorStoreManager
@@ -19,6 +21,10 @@ def sync_picture_vectors(db_path: Path | None = None, reset: bool = False) -> di
     """Synchronize picture search text while storing only SQLite references."""
     scan_stats = scan_pictures()
     repository = PictureRepository()
+    graph_stats = project_picture_descriptions(
+        records=repository.list(),
+        guidance=load_pictures_config().guidance,
+    )
     manager = VectorStoreManager(
         db_path=db_path or get_vectorstore_dir(scope="global"),
         collection_name=PICTURE_VECTOR_COLLECTION,
@@ -57,6 +63,7 @@ def sync_picture_vectors(db_path: Path | None = None, reset: bool = False) -> di
         "entries_created": entries_created,
         "entries_deleted": entries_deleted,
         "scan": scan_stats,
+        "knowledge_graph": graph_stats,
         "reference_only": True,
     }
 

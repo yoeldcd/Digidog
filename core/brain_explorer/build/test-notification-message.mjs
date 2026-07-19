@@ -21,8 +21,8 @@ const memoryNotice = notificationText(
     "POST /api/memory/entry",
 );
 assert.deepEqual(memoryNotice, {
-    title: "Cambios guardados",
-    message: "Se guardó la memoria “profiles.academical_paper_critical”.",
+    title: "Changes saved",
+    message: "Memory “profiles.academical_paper_critical” was saved.",
 });
 
 const taskNotice = notificationText(
@@ -36,7 +36,7 @@ const taskNotice = notificationText(
     "POST",
     "POST /api/backlog/task",
 );
-assert.equal(taskNotice.message, "La tarea “Revisar contrato” quedó completada.");
+assert.equal(taskNotice.message, "Task “Revisar contrato” was completed.");
 
 const jsonErrorNotice = notificationText(
     { ok: false, error: '{"ok":false,"error":"raw"}' },
@@ -45,6 +45,6 @@ const jsonErrorNotice = notificationText(
 );
 assert.equal(
     jsonErrorNotice.message,
-    "La operación no pudo completarse. Revisa los datos e inténtalo de nuevo.",
+    "The operation could not be completed. Review the data and try again.",
 );
 assert.equal(jsonErrorNotice.message.startsWith("{"), false);

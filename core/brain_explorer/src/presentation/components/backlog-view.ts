@@ -168,7 +168,7 @@ export class BacklogView extends HTMLElement {
      */
     async #deleteTask(taskId, status) {
         const force = status !== "DONE";
-        if (force && !window.confirm("La tarea sigue en curso. Eliminarla de todos modos?")) {
+        if (force && !window.confirm("This task is still in progress. Delete it anyway?")) {
             return;
         }
         const result = await this.#api.updateBacklog({ action: "delete", taskId, force });
@@ -219,32 +219,32 @@ export class BacklogView extends HTMLElement {
                         <div class="content-head">
                             <strong style="display: inline-flex; align-items: center; gap: 8px;">
                                 ${escapeHtml(this.#selectedDomain || "Backlog")}
-                                <span class="backlog-task-count" style="font-size: 13px; font-weight: normal; color: var(--text-muted);">(${visibleTasks.length} tareas)</span>
+                                <span class="backlog-task-count" style="font-size: 13px; font-weight: normal; color: var(--text-muted);">(${visibleTasks.length} tasks)</span>
                             </strong>
                             <div class="backlog-header-actions" style="display: flex; gap: 8px; align-items: center;">
                                 <details class="action-menu filter-menu backlog-filter-menu" ${this.#filtersOpen ? "open" : ""}>
-                                    <summary class="icon-action" title="Filtrar tareas" aria-label="Filtrar tareas">
+                                    <summary class="icon-action" title="Filter tasks" aria-label="Filter tasks">
                                         ${icon("filter")}
                                         <span class="backlog-filter-count" ${this.#activeFilterCount() ? "" : "hidden"}>${this.#activeFilterCount()}</span>
                                     </summary>
                                     <div class="action-menu-panel filter-menu-panel">
-                                        <fieldset class="checkbox-filter-group"><legend>Estado</legend>
-                                            ${[["TODO", "Pendientes"], ["WORKING", "En progreso"], ["DONE", "Completadas"]].map(([value, label]) => `<label><input type="checkbox" data-filter-kind="status" value="${value}" ${this.#statusFilter.has(value) ? "checked" : ""}><span>${label}</span></label>`).join("")}
+                                        <fieldset class="checkbox-filter-group"><legend>Status</legend>
+                                            ${[["TODO", "Pending"], ["WORKING", "In progress"], ["DONE", "Completed"]].map(([value, label]) => `<label><input type="checkbox" data-filter-kind="status" value="${value}" ${this.#statusFilter.has(value) ? "checked" : ""}><span>${label}</span></label>`).join("")}
                                         </fieldset>
-                                        <fieldset class="checkbox-filter-group"><legend>Prioridad</legend>
-                                            ${[["HIGH", "Alta"], ["MEDIUM", "Media"], ["LOW", "Baja"]].map(([value, label]) => `<label><input type="checkbox" data-filter-kind="priority" value="${value}" ${this.#priorityFilter.has(value) ? "checked" : ""}><span>${label}</span></label>`).join("")}
+                                        <fieldset class="checkbox-filter-group"><legend>Priority</legend>
+                                            ${[["HIGH", "High"], ["MEDIUM", "Medium"], ["LOW", "Low"]].map(([value, label]) => `<label><input type="checkbox" data-filter-kind="priority" value="${value}" ${this.#priorityFilter.has(value) ? "checked" : ""}><span>${label}</span></label>`).join("")}
                                         </fieldset>
-                                        <button data-action="clear-backlog-filters" class="ghost-action">${icon("close")}Limpiar filtros</button>
+                                        <button data-action="clear-backlog-filters" class="ghost-action">${icon("close")}Clear filters</button>
                                     </div>
                                 </details>
-                                <button data-action="open-create-modal" class="ghost-action compact-action" style="font-size: 13px; height: 32px; display: inline-flex; align-items: center; gap: 6px;">${icon("plus")} Crear tarea</button>
-                                <button data-action="toggle-pip" class="ghost-action compact-action" style="font-size: 13px; height: 32px; display: inline-flex; align-items: center; gap: 6px;" ${pipSupported ? "" : "disabled"} title="${pipSupported ? "Abrir ventana Picture-in-Picture" : "Document Picture-in-Picture no está disponible en este navegador"}">${icon("eye")} Vista PIP</button>
+                                <button data-action="open-create-modal" class="ghost-action compact-action" style="font-size: 13px; height: 32px; display: inline-flex; align-items: center; gap: 6px;">${icon("plus")} Create task</button>
+                                <button data-action="toggle-pip" class="ghost-action compact-action" style="font-size: 13px; height: 32px; display: inline-flex; align-items: center; gap: 6px;" ${pipSupported ? "" : "disabled"} title="${pipSupported ? "Open Picture-in-Picture window" : "Document Picture-in-Picture is unavailable in this browser"}">${icon("eye")} PIP view</button>
                             </div>
                         </div>
                         <div class="backlog-workspace scroll-area" style="padding: 14px;">
                             <div class="task-list">
                                 ${this.#renderTaskList(domainTasks)}
-                                <p class="empty-state backlog-filter-empty" hidden>No hay tareas para estos filtros.</p>
+                                <p class="empty-state backlog-filter-empty" hidden>No tasks match these filters.</p>
                             </div>
                         </div>
                     </main>
@@ -259,7 +259,7 @@ export class BacklogView extends HTMLElement {
 
     #renderTaskList(visibleTasks) {
         if (!visibleTasks.length) {
-            return `<p class="empty-state">No hay tareas visibles para este dominio.</p>`;
+            return `<p class="empty-state">No visible tasks in this domain.</p>`;
         }
         const directTasks = [];
         const subgroupMap = new Map();
@@ -289,7 +289,7 @@ export class BacklogView extends HTMLElement {
                     <summary class="subdomain-group-header">
                         ${icon("chevronRight")}
                         <strong>${escapeHtml(relDomain)}</strong>
-                        <span class="subdomain-task-count">(${tasks.length} tareas)</span>
+                        <span class="subdomain-task-count">(${tasks.length} tasks)</span>
                         <span class="subdomain-line-separator"></span>
                     </summary>
                     <div class="subdomain-group-content">
@@ -306,7 +306,7 @@ export class BacklogView extends HTMLElement {
             <dialog id="backlog-modal" class="backlog-dialog" style="border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 0; width: 720px; height: 540px; max-width: 90vw; max-height: 90vh; box-shadow: var(--shadow); background: var(--surface); color: var(--text);">
                 <form method="dialog" class="backlog-modal-form" data-role="modal-form" style="display: flex; flex-direction: column; height: 100%;">
                     <header class="modal-header" style="display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border); background: var(--surface-strong);">
-                        <strong data-role="modal-title" style="font-size: 16px; color: var(--text-strong);">Crear nueva tarea</strong>
+                        <strong data-role="modal-title" style="font-size: 16px; color: var(--text-strong);">Create task</strong>
                         <button type="button" class="icon-action close-modal-btn" data-action="close-modal" style="border: 0; background: transparent; cursor: pointer; color: var(--text);">${icon("close")}</button>
                     </header>
                     <div class="modal-body" style="padding: 18px; flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden;">
@@ -314,39 +314,39 @@ export class BacklogView extends HTMLElement {
                         <input type="hidden" data-role="modal-domain" value="">
 
                         <div class="modal-toolbar" style="display: flex; gap: 10px; align-items: center; padding-bottom: 12px; border-bottom: 1px solid var(--border);">
-                            <input type="text" data-role="modal-title-input" placeholder="Título de la tarea" required style="flex: 1; min-height: 38px;">
+                            <input type="text" data-role="modal-title-input" placeholder="Task title" required style="flex: 1; min-height: 38px;">
                             <select data-role="modal-priority" style="width: 110px; min-height: 38px;">
                                 <option value="HIGH">HIGH</option>
                                 <option value="MEDIUM">MEDIUM</option>
                                 <option value="LOW">LOW</option>
                             </select>
                             <button type="button" data-action="open-visual-reference" class="ghost-action compact-action" style="display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px; font-weight: bold; background: var(--surface-muted); color: var(--primary); height: 38px;">
-                                ${icon("camera")} Referencia Visual
+                                ${icon("camera")} Visual Reference
                             </button>
                         </div>
 
                         <div style="flex: 1; display: flex; min-height: 0; margin-top: 12px;">
-                            <textarea data-role="modal-description" placeholder="Escribe detalles y descripción de la tarea aquí..." required style="flex: 1; border: 0; padding: 0; outline: none; background: transparent; font-family: inherit; font-size: 14px; line-height: 1.6; resize: none; overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none;"></textarea>
+                            <textarea data-role="modal-description" placeholder="Write task details and description here..." required style="flex: 1; border: 0; padding: 0; outline: none; background: transparent; font-family: inherit; font-size: 14px; line-height: 1.6; resize: none; overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none;"></textarea>
                         </div>
                     </div>
                     <footer class="modal-footer" style="display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 14px 18px; border-top: 1px solid var(--border); background: var(--surface-strong);">
-                        <button type="button" class="ghost-action" data-action="close-modal">Cancelar</button>
-                        <button type="submit" class="primary-action" data-role="modal-submit-btn">Crear</button>
+                        <button type="button" class="ghost-action" data-action="close-modal">Cancel</button>
+                        <button type="submit" class="primary-action" data-role="modal-submit-btn">Create</button>
                     </footer>
                 </form>
             </dialog>
 
             <dialog id="visual-reference-modal" class="backlog-dialog visual-reference-dialog">
                 <header class="modal-header" style="display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border); background: var(--surface-strong);">
-                    <strong style="font-size: 16px; color: var(--text-strong);">Referencia Visual</strong>
+                    <strong style="font-size: 16px; color: var(--text-strong);">Visual Reference</strong>
                     <button type="button" class="icon-action close-modal-btn" data-action="close-visual-reference" style="border: 0; background: transparent; cursor: pointer; color: var(--text);">${icon("close")}</button>
                 </header>
                 <div class="modal-body visual-reference-body">
                     <div class="file-upload-zone visual-reference-upload" data-role="image-upload-zone">
-                        <span class="visual-reference-label">Adjuntar Imagen / Captura (Opcional)</span>
+                        <span class="visual-reference-label">Attach image / screenshot (optional)</span>
                         <input type="file" data-role="modal-image-file" accept="image/*" class="file-input" style="display: none;">
                         <div class="image-preview-area" data-role="image-preview-area">
-                            <span class="upload-placeholder" style="color: var(--text-muted); font-size: 13px; text-align: center; padding: 12px;">Haga clic o arrastre una imagen aquí</span>
+                            <span class="upload-placeholder" style="color: var(--text-muted); font-size: 13px; text-align: center; padding: 12px;">Click or drag an image here</span>
                         </div>
                     </div>
                 </div>
@@ -447,7 +447,7 @@ export class BacklogView extends HTMLElement {
                     if (!result.ok) {
                         return {
                             ok: false,
-                            message: result.error || result.stderr || "No se pudo crear la tarea."
+                            message: result.error || result.stderr || "Could not create the task."
                         };
                     }
                     this.#selectedDomain = domVal;
@@ -457,7 +457,7 @@ export class BacklogView extends HTMLElement {
                     console.error("Unable to add a task from Document PiP.", error);
                     return {
                         ok: false,
-                        message: "No se pudo crear la tarea. Intenta de nuevo."
+                        message: "Could not create the task. Try again."
                     };
                 }
             };
@@ -560,7 +560,7 @@ export class BacklogView extends HTMLElement {
             statusClass = "task-status-done";
         } else if (task.status === "WORKING") {
             statusIcon = `
-                <div class="working-spinner" title="En progreso">
+                <div class="working-spinner" title="In progress">
                     <span class="dot dot-blue"></span>
                     <span class="dot dot-cyan"></span>
                     <span class="dot dot-green"></span>
@@ -584,7 +584,7 @@ export class BacklogView extends HTMLElement {
         const status = task.status || "TODO";
         let statusButtons = "";
         if (status === "DONE") {
-            statusButtons = `<button data-action="set-task-status" data-task-id="${escapeHtml(task.id)}" data-task-status="TODO">${icon("clock")}Reabrir</button>`;
+            statusButtons = `<button data-action="set-task-status" data-task-id="${escapeHtml(task.id)}" data-task-status="TODO">${icon("clock")}Reopen</button>`;
         } else if (status === "TODO") {
             statusButtons = `
                 <button data-action="set-task-status" data-task-id="${escapeHtml(task.id)}" data-task-status="WORKING">
@@ -600,19 +600,19 @@ export class BacklogView extends HTMLElement {
                     </span>
                     Iniciar trabajo
                 </button>
-                <button data-action="set-task-status" data-task-id="${escapeHtml(task.id)}" data-task-status="DONE">${icon("checkSquare")}Marcar hecha</button>
+                <button data-action="set-task-status" data-task-id="${escapeHtml(task.id)}" data-task-status="DONE">${icon("checkSquare")}Mark done</button>
             `;
         } else if (status === "WORKING") {
             statusButtons = `
-                <button data-action="set-task-status" data-task-id="${escapeHtml(task.id)}" data-task-status="DONE">${icon("checkSquare")}Marcar hecha</button>
-                <button data-action="set-task-status" data-task-id="${escapeHtml(task.id)}" data-task-status="TODO">${icon("clock")}Pausar (TODO)</button>
+                <button data-action="set-task-status" data-task-id="${escapeHtml(task.id)}" data-task-status="DONE">${icon("checkSquare")}Mark done</button>
+                <button data-action="set-task-status" data-task-id="${escapeHtml(task.id)}" data-task-status="TODO">${icon("clock")}Pause (TODO)</button>
             `;
         }
         const imageTaskId = task.id.replace(/^#/, "");
         const hasImage = this.#tasksWithImages.includes(imageTaskId);
         const imageThumbnail = hasImage
-            ? `<button class="task-image-thumbnail" type="button" data-action="view-image" data-task-id="${escapeHtml(imageTaskId)}" title="Ver imagen de referencia">
-                  <img src="/api/backlog/image?taskId=${escapeHtml(imageTaskId)}" alt="Referencia visual de ${escapeHtml(task.title)}">
+            ? `<button class="task-image-thumbnail" type="button" data-action="view-image" data-task-id="${escapeHtml(imageTaskId)}" title="View reference image">
+                  <img src="/api/backlog/image?taskId=${escapeHtml(imageTaskId)}" alt="Visual reference for ${escapeHtml(task.title)}">
                </button>`
             : "";
         return `
@@ -627,9 +627,9 @@ export class BacklogView extends HTMLElement {
                     <details class="action-menu">
                         <summary class="icon-action borderless-summary" title="Opciones">${icon("more")}</summary>
                         <div class="action-menu-panel">
-                            <button data-action="edit-task" data-task-id="${escapeHtml(task.id)}">${icon("edit")}Editar</button>
+                            <button data-action="edit-task" data-task-id="${escapeHtml(task.id)}">${icon("edit")}Edit</button>
                             ${statusButtons}
-                            <button data-action="delete-task" data-task-id="${escapeHtml(task.id)}" data-task-status="${status}" class="danger-button">${icon("trash")}Eliminar tarea</button>
+                            <button data-action="delete-task" data-task-id="${escapeHtml(task.id)}" data-task-status="${status}" class="danger-button">${icon("trash")}Delete task</button>
                         </div>
                     </details>
                 </div>
@@ -692,13 +692,13 @@ export class BacklogView extends HTMLElement {
             toggleOnBranchSelect: true,
             title: "Backlog",
             toolbarActions: [
-                { id: "new-domain", label: "Nuevo dominio", icon: "plus" },
-                { id: "refresh", label: "Actualizar backlog", icon: "refresh" }
+                { id: "new-domain", label: "New domain", icon: "plus" },
+                { id: "refresh", label: "Refresh backlog", icon: "refresh" }
             ],
             defaultBranchIcon: "folder",
             defaultLeafIcon: "checkSquare",
             searchQuery: this.#filter,
-            emptyText: "Sin dominios de backlog. Actualiza para cargar tareas."
+            emptyText: "No backlog domains. Refresh to load tasks."
         };
         treeElement.addEventListener("brain-tree-select", event => this.#onTreeSelected(event));
         treeElement.addEventListener("brain-tree-toolbar-action", event => this.#onTreeToolbarAction(event));
@@ -762,7 +762,7 @@ export class BacklogView extends HTMLElement {
      */
     #onTreeToolbarAction(event) {
         if (event.detail.action === "new-domain") {
-            const newDomain = prompt("Introduce el nombre del nuevo dominio (ej. mi.nuevo.dominio):");
+            const newDomain = prompt("Enter the new domain name (for example, my.new.domain):");
             if (newDomain && newDomain.trim()) {
                 const requestedDomain = newDomain.trim();
                 const targetDomain = this.#selectedDomain && !requestedDomain.includes(".")
@@ -782,11 +782,11 @@ export class BacklogView extends HTMLElement {
                     if (imgInput) imgInput.value = "";
                     const previewArea = this.querySelector("[data-role='image-preview-area']");
                     if (previewArea) {
-                        previewArea.innerHTML = `<span class="upload-placeholder" style="color: var(--text-muted); font-size: 13px; text-align: center; padding: 12px;">Haga clic o arrastre una imagen aquí</span>`;
+                        previewArea.innerHTML = `<span class="upload-placeholder" style="color: var(--text-muted); font-size: 13px; text-align: center; padding: 12px;">Click or drag an image here</span>`;
                     }
                     this.#setVisualReferenceHasImage(false);
-                    this.querySelector("[data-role='modal-title']").textContent = `Crear nueva tarea en ${newDomain.trim()}`;
-                    this.querySelector("[data-role='modal-submit-btn']").textContent = "Crear";
+                    this.querySelector("[data-role='modal-title']").textContent = `Create task in ${newDomain.trim()}`;
+                    this.querySelector("[data-role='modal-submit-btn']").textContent = "Create";
                     dialog.showModal();
                 }
             }
@@ -854,7 +854,7 @@ export class BacklogView extends HTMLElement {
         this.#applyTaskFiltersToDom();
         const countSpan = this.querySelector(".backlog-task-count");
         if (countSpan) {
-            countSpan.textContent = `(${visibleTasks.length} tareas)`;
+            countSpan.textContent = `(${visibleTasks.length} tasks)`;
         }
         const filterCount = this.querySelector(".backlog-filter-count");
         if (filterCount) {
@@ -971,12 +971,12 @@ export class BacklogView extends HTMLElement {
                 <svg id="marking-svg" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: crosshair; touch-action: none;"></svg>
             </div>
             <details class="marking-toolbar-pill">
-                <summary>${icon("edit")}<span>Marcas</span>${icon("chevronDown")}</summary>
+                <summary>${icon("edit")}<span>Marks</span>${icon("chevronDown")}</summary>
                 <div class="marking-toolbar">
-                    <label class="mark-color-control"><span>Color</span><input type="color" data-action="change-mark-color" value="#ff3b30" aria-label="Color de marca"></label>
-                    <button type="button" class="mark-delete-control" data-action="delete-selected-mark" title="Eliminar marca seleccionada" aria-label="Eliminar marca seleccionada" disabled>${icon("trash")}</button>
-                    <label class="mark-shape-control"><span>Forma</span><select data-action="change-mark-shape"><option value="rectangle">Rectángulo</option><option value="arrow">Flecha</option><option value="path">Trazo</option><option value="label">LABEL</option></select></label>
-                    <label class="mark-label-control"><span>Etiqueta</span><input type="text" data-action="change-mark-label" placeholder="Texto para LABEL"></label>
+                    <label class="mark-color-control"><span>Color</span><input type="color" data-action="change-mark-color" value="#ff3b30" aria-label="Mark color"></label>
+                    <button type="button" class="mark-delete-control" data-action="delete-selected-mark" title="Delete selected mark" aria-label="Delete selected mark" disabled>${icon("trash")}</button>
+                    <label class="mark-shape-control"><span>Shape</span><select data-action="change-mark-shape"><option value="rectangle">Rectangle</option><option value="arrow">Arrow</option><option value="path">Path</option><option value="label">LABEL</option></select></label>
+                    <label class="mark-label-control"><span>Label</span><input type="text" data-action="change-mark-label" placeholder="LABEL text"></label>
                 </div>
             </details>
         `;
@@ -1311,15 +1311,15 @@ export class BacklogView extends HTMLElement {
             if (imgInput) imgInput.value = "";
             const previewArea = this.querySelector("[data-role='image-preview-area']");
             if (previewArea) {
-                previewArea.innerHTML = `<span class="upload-placeholder" style="color: var(--text-muted); font-size: 13px; text-align: center; padding: 12px;">Haga clic o arrastre una imagen aquí</span>`;
+                previewArea.innerHTML = `<span class="upload-placeholder" style="color: var(--text-muted); font-size: 13px; text-align: center; padding: 12px;">Click or drag an image here</span>`;
             }
             this.#setVisualReferenceHasImage(false);
             const imgUploadZone = this.querySelector("[data-role='image-upload-zone']");
             if (imgUploadZone) {
                 imgUploadZone.style.removeProperty("display");
             }
-            this.querySelector("[data-role='modal-title']").textContent = "Crear nueva tarea";
-            this.querySelector("[data-role='modal-submit-btn']").textContent = "Crear";
+            this.querySelector("[data-role='modal-title']").textContent = "Create task";
+            this.querySelector("[data-role='modal-submit-btn']").textContent = "Create";
             dialog.showModal();
         });
 
@@ -1348,7 +1348,7 @@ export class BacklogView extends HTMLElement {
                 if (imgInput) imgInput.value = "";
                 const previewArea = this.querySelector("[data-role='image-preview-area']");
                 if (previewArea) {
-                    previewArea.innerHTML = `<span class="upload-placeholder" style="color: var(--text-muted); font-size: 13px; text-align: center; padding: 12px;">Haga clic o arrastre una imagen aquí</span>`;
+                    previewArea.innerHTML = `<span class="upload-placeholder" style="color: var(--text-muted); font-size: 13px; text-align: center; padding: 12px;">Click or drag an image here</span>`;
                 }
                 this.#setVisualReferenceHasImage(false);
                 const imageTaskId = task.id.replace(/^#/, "");
@@ -1356,8 +1356,8 @@ export class BacklogView extends HTMLElement {
                     this.#displayImageToMark(`/api/backlog/image?taskId=${encodeURIComponent(imageTaskId)}`);
                 }
 
-                this.querySelector("[data-role='modal-title']").textContent = `Editar tarea #${task.id}`;
-                this.querySelector("[data-role='modal-submit-btn']").textContent = "Guardar";
+                this.querySelector("[data-role='modal-title']").textContent = `Edit task #${task.id}`;
+                this.querySelector("[data-role='modal-submit-btn']").textContent = "Save";
                 dialog.showModal();
             });
         });

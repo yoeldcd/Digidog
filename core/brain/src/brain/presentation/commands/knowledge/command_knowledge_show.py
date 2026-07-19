@@ -26,7 +26,7 @@ SCHEMA = CommandSchema(
         ArgumentSchema(
             flags=["--scope"],
             default="global",
-            help="Knowledge DB scope: global or local. Defaults to global.",
+            help="Knowledge DB scope: all, global, or local. Defaults to global.",
         ),
         ArgumentSchema(flags=["-j", "--json"], action="store_true", help="Output results as JSON."),
     ],

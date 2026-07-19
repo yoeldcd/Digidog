@@ -109,11 +109,11 @@ export class ProfilesView extends HTMLElement {
                 <main class="structure-layout profiles-layout">
                     <aside class="structure-tree">
                         <header class="structure-panel-header">
-                            <strong>Disponibles</strong>
+                            <strong>Available</strong>
                             <details class="action-menu">
-                                <summary>${icon("more")}<span class="sr-only">Acciones</span></summary>
+                                <summary>${icon("more")}<span class="sr-only">Actions</span></summary>
                                 <div class="action-menu-panel">
-                                    <button data-action="refresh-profiles">${icon("refresh")}Actualizar perfiles</button>
+                                    <button data-action="refresh-profiles">${icon("refresh")}Refresh profiles</button>
                                 </div>
                             </details>
                         </header>
@@ -123,16 +123,16 @@ export class ProfilesView extends HTMLElement {
                     </aside>
                     <section class="structure-content">
                         <div class="content-head">
-                            <strong>${escapeHtml(this.#selectedProfile || "Sin perfil")}</strong>
+                            <strong>${escapeHtml(this.#selectedProfile || "No profile")}</strong>
                             <div class="profile-entry-actions">
                                 ${this.#profileEntries.length ? `
-                                    <select data-role="profile-entry" aria-label="Entrada del perfil">
+                                    <select data-role="profile-entry" aria-label="Profile entry">
                                         ${this.#profileEntries.map(entry => `<option value="${escapeHtml(entry.key)}" ${entry.key === this.#selectedEntryKey ? "selected" : ""}>${escapeHtml(entry.key)}</option>`).join("")}
                                     </select>
                                     ${this.#editing ? `
-                                        <button class="icon-action" data-action="cancel-profile-edit" title="Cancelar edición" aria-label="Cancelar edición">${icon("close")}</button>
-                                        <button class="icon-action primary-icon-action" data-action="save-profile" title="Guardar entrada" aria-label="Guardar entrada">${icon("save")}</button>
-                                    ` : `<button class="icon-action" data-action="edit-profile" title="Editar entrada" aria-label="Editar entrada">${icon("edit")}</button>`}
+                                        <button class="icon-action" data-action="cancel-profile-edit" title="Cancel editing" aria-label="Cancel editing">${icon("close")}</button>
+                                        <button class="icon-action primary-icon-action" data-action="save-profile" title="Save entry" aria-label="Save entry">${icon("save")}</button>
+                                    ` : `<button class="icon-action" data-action="edit-profile" title="Edit entry" aria-label="Edit entry">${icon("edit")}</button>`}
                                 ` : ""}
                             </div>
                         </div>
@@ -170,7 +170,7 @@ export class ProfilesView extends HTMLElement {
      */
     #renderProfiles() {
         if (!this.#profiles.length) {
-            return `<p class="empty-state">Sin perfiles.</p>`;
+            return `<p class="empty-state">No profiles.</p>`;
         }
         return this.#profiles.map(profile => `
             <button class="profile-row ${profile === this.#selectedProfile ? "is-active" : ""}" data-profile="${escapeHtml(profile)}">
@@ -198,16 +198,16 @@ export class ProfilesView extends HTMLElement {
             `;
         }
         if (!this.#selectedProfile) {
-            return `<div class="knowledge-empty-state">${icon("users")}<h2>Selecciona un perfil</h2></div>`;
+            return `<div class="knowledge-empty-state">${icon("users")}<h2>Select a profile</h2></div>`;
         }
         const entry = this.#profileEntries.find(item => item.key === this.#selectedEntryKey);
         if (this.#editing && entry) {
-            return `<textarea class="profile-editor" data-role="profile-editor" aria-label="Contenido de ${escapeHtml(entry.key)}">${escapeHtml(entry.content || entry.text || "")}</textarea>`;
+            return `<textarea class="profile-editor" data-role="profile-editor" aria-label="${escapeHtml(entry.key)} content">${escapeHtml(entry.content || entry.text || "")}</textarea>`;
         }
         if (entry) {
-            return renderMarkdown(entry.content || entry.text || "Sin contenido cargado.");
+            return renderMarkdown(entry.content || entry.text || "No content loaded.");
         }
-        return renderMarkdown(this.#profileText || "Sin contenido cargado.");
+        return renderMarkdown(this.#profileText || "No content loaded.");
     }
 
     /** Save the selected profile entry through the memory facade. */
@@ -234,7 +234,7 @@ export class ProfilesView extends HTMLElement {
      */
     #profileMarkdown(result, profile) {
         if (Array.isArray(result.data?.entries)) {
-            return [`# Profile: ${profile}`, "", ...result.data.entries.map(entry => `## ${entry.key || entry.name || "entrada"}\n\n${entry.content || entry.text || ""}`)].join("\n");
+            return [`# Profile: ${profile}`, "", ...result.data.entries.map(entry => `## ${entry.key || entry.name || "entry"}\n\n${entry.content || entry.text || ""}`)].join("\n");
         }
         return result.stdout || result.data?.text || result.error || result.stderr || "";
     }

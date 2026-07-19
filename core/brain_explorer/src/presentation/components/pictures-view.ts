@@ -1,8 +1,9 @@
 /** Modern registry-backed picture browser and carousel. */
 
-import type { PictureRecord } from "../../application/contracts/api-dtos.ts";
+import type { ApiResponse, PictureDescriptionPayload, PictureRecord } from "../../application/contracts/api-dtos.ts";
 import { escapeHtml } from "../utils/html.ts";
 import { icon } from "../utils/icons.ts";
+import { renderDescriptionCard } from "./description-card.ts";
 import { StructureTree } from "./structure-tree.ts";
 
 void StructureTree;
@@ -22,6 +23,9 @@ export class PicturesView extends HTMLElement {
     #domainFocused = false;
     #selectedId = "";
     #loading = false;
+    #descriptionRequestPending = false;
+    #descriptionEditing = false;
+    #copyFeedbackTimer: ReturnType<typeof setTimeout> | null = null;
     #search = "";
     #expandedDomains = new Set<string>(["pictures:all"]);
     #imageHydrationToken = 0;
@@ -61,6 +65,7 @@ export class PicturesView extends HTMLElement {
     disconnectedCallback() {
         window.removeEventListener("keydown", this.#handleKeyDown);
         if (this.#viewerScaleTimer !== null) clearTimeout(this.#viewerScaleTimer);
+        if (this.#copyFeedbackTimer !== null) clearTimeout(this.#copyFeedbackTimer);
     }
 
     /** Load the complete hierarchy once without eagerly returning picture records. */
@@ -127,6 +132,7 @@ export class PicturesView extends HTMLElement {
         this.#selectedId = this.#pictures.some(picture => picture.id === candidate)
             ? candidate
             : this.#pictures[0]?.id ?? "";
+        this.#descriptionEditing = false;
     }
 
     #selected(): PictureRecord | null {
@@ -145,6 +151,7 @@ export class PicturesView extends HTMLElement {
         const picture = this.#pictures.find(candidate => candidate.id === pictureId);
         if (!picture || picture.id === this.#selectedId) return;
         this.#selectedId = picture.id;
+        this.#descriptionEditing = false;
         this.#hydrateSelection(picture);
         this.#focusSelectedThumbnail();
     }
@@ -155,28 +162,28 @@ export class PicturesView extends HTMLElement {
         this.innerHTML = `
             <section class="page-surface pictures-console">
                 <div class="structure-layout pictures-layout">
-                    <aside class="structure-tree pictures-domains" aria-label="Dominios de pictures">
+                    <aside class="structure-tree pictures-domains" aria-label="Picture domains">
                         <div class="tree-list scroll-list">
                             <brain-structure-tree data-role="pictures-domain-tree"></brain-structure-tree>
                         </div>
                     </aside>
                     <main class="pictures-stage">
-                    ${this.#loading ? `<div class="loading-state"><span></span><strong>Sincronizando pictures...</strong></div>` : selected ? `
-                        <section class="picture-carousel" aria-label="Carrusel de pictures">
+                    ${this.#loading ? `<div class="loading-state"><span></span><strong>Syncing pictures...</strong></div>` : selected ? `
+                        <section class="picture-carousel" aria-label="Picture carousel">
                             <header>
                                 <div><span class="status-pill" data-role="picture-domain">${escapeHtml(selected.domain)}</span><strong data-role="picture-filename">${escapeHtml(selected.filename)}</strong></div>
                                 <span data-role="picture-position">${selectedIndex + 1} / ${this.#pictures.length}</span>
                             </header>
                             <div class="picture-viewport">
-                                <button class="carousel-arrow is-previous" data-action="previous-picture" aria-label="Picture anterior">${icon("chevronRight")}</button>
+                                <button class="carousel-arrow is-previous" data-action="previous-picture" aria-label="Previous picture">${icon("chevronRight")}</button>
                                 <div class="picture-render-layer">
-                                    <button class="picture-render-trigger" data-action="open-picture-viewer" aria-label="Abrir ${escapeHtml(selected.filename)} en visor fullscreen">
+                                    <button class="picture-render-trigger" data-action="open-picture-viewer" aria-label="Open ${escapeHtml(selected.filename)} in fullscreen viewer">
                                         <img data-role="selected-picture-image" src="${this.#api?.pictureUrl(selected.id) ?? ""}" alt="${escapeHtml(selected.description || selected.filename)}" loading="eager" decoding="async" fetchpriority="high">
                                     </button>
                                 </div>
-                                <button class="carousel-arrow is-next" data-action="next-picture" aria-label="Picture siguiente">${icon("chevronRight")}</button>
+                                <button class="carousel-arrow is-next" data-action="next-picture" aria-label="Next picture">${icon("chevronRight")}</button>
                             </div>
-                            <div class="picture-thumbnails" role="listbox" aria-label="Miniaturas">
+                            <div class="picture-thumbnails" role="listbox" aria-label="Thumbnails">
                                 ${this.#pictures.map(picture => `
                                     <button role="option" aria-selected="${picture.id === selected.id}" data-picture-id="${escapeHtml(picture.id)}" title="${escapeHtml(picture.filename)}">
                                         <img src="${this.#api?.pictureUrl(picture.id) ?? ""}" alt="" loading="lazy" decoding="async" fetchpriority="low">
@@ -187,17 +194,22 @@ export class PicturesView extends HTMLElement {
                         <aside class="picture-inspector">
                             <header><strong>Inspector</strong><span data-role="picture-dimensions">${selected.width} × ${selected.height}</span></header>
                             <dl>
-                                <div><dt>Ruta</dt><dd data-role="picture-path">${escapeHtml(selected.relative_path)}</dd></div>
-                                <div><dt>Tipo</dt><dd data-role="picture-mime">${escapeHtml(selected.mime_type)}</dd></div>
-                                <div><dt>Tamaño</dt><dd data-role="picture-size">${this.#formatBytes(selected.size_bytes)}</dd></div>
-                                <div><dt>Descripción</dt><dd data-role="picture-description-source">${escapeHtml(selected.description_source || "pendiente")}</dd></div>
+                                <div class="picture-path-row">
+                                    <dt>Path</dt>
+                                    <dd>
+                                        <span data-role="picture-path">${escapeHtml(selected.relative_path)}</span>
+                                        <button class="picture-copy-path" data-action="copy-picture-path" data-copy-path="${escapeHtml(selected.absolute_path || "")}" title="Copy absolute path" aria-label="Copy absolute picture path">
+                                            ${icon("copy")}<span>Copy</span>
+                                        </button>
+                                    </dd>
+                                </div>
+                                <div><dt>Type</dt><dd data-role="picture-mime">${escapeHtml(selected.mime_type)}</dd></div>
+                                <div><dt>Size</dt><dd data-role="picture-size">${this.#formatBytes(selected.size_bytes)}</dd></div>
+                                <div><dt>Description</dt><dd data-role="picture-description-source">${escapeHtml(selected.description_source || "pending")}</dd></div>
                             </dl>
-                            <label>Descripción
-                                <textarea data-role="picture-description" placeholder="Describe personas, escena, objetos, texto y contexto...">${escapeHtml(selected.description)}</textarea>
-                            </label>
-                            <button class="primary-button" data-action="save-picture-description">${icon("save")} Guardar descripción</button>
+                            ${this.#renderDescriptionPanel(selected)}
                         </aside>
-                    ` : `<section class="search-empty">${icon("camera")}<h2>${this.#domainFocused ? "Sin pictures" : "Selecciona un dominio"}</h2><p>${this.#domainFocused ? "No hay imágenes registradas en este dominio." : "El árbol ya está disponible; las imágenes se cargarán al enfocar un elemento."}</p></section>`}
+                    ` : `<section class="search-empty">${icon("camera")}<h2>${this.#domainFocused ? "No pictures" : "Select a domain"}</h2><p>${this.#domainFocused ? "No pictures are registered in this domain." : "The tree is ready; pictures load when an item is focused."}</p></section>`}
                     </main>
                 </div>
                 ${selected ? this.#renderViewer(selected) : ""}
@@ -222,13 +234,17 @@ export class PicturesView extends HTMLElement {
         this.#setText("picture-position", `${position} / ${this.#pictures.length}`);
         this.#setText("picture-dimensions", `${picture.width} × ${picture.height}`);
         this.#setText("picture-path", picture.relative_path);
+        const copyPath = this.querySelector<HTMLButtonElement>("[data-action='copy-picture-path']");
+        if (copyPath) {
+            copyPath.dataset.copyPath = picture.absolute_path || "";
+            copyPath.disabled = !picture.absolute_path;
+        }
         this.#setText("picture-mime", picture.mime_type);
         this.#setText("picture-size", this.#formatBytes(picture.size_bytes));
-        this.#setText("picture-description-source", picture.description_source || "pendiente");
-        const textarea = this.querySelector<HTMLTextAreaElement>("[data-role='picture-description']");
-        if (textarea) textarea.value = picture.description;
+        this.#setText("picture-description-source", picture.description_source || "pending");
+        this.#mountDescriptionPanel(picture);
         const trigger = this.querySelector<HTMLElement>("[data-action='open-picture-viewer']");
-        trigger?.setAttribute("aria-label", `Abrir ${picture.filename} en visor fullscreen`);
+        trigger?.setAttribute("aria-label", `Open ${picture.filename} in fullscreen viewer`);
         this.querySelectorAll<HTMLElement>("[data-picture-id]").forEach(option => {
             option.setAttribute("aria-selected", String(option.dataset.pictureId === picture.id));
         });
@@ -261,13 +277,13 @@ export class PicturesView extends HTMLElement {
     #renderViewer(selected: PictureRecord) {
         if (!this.#viewerOpen) return "";
         return `
-            <section class="picture-viewer" role="dialog" aria-modal="true" aria-label="Visor fullscreen de ${escapeHtml(selected.filename)}">
+            <section class="picture-viewer" role="dialog" aria-modal="true" aria-label="Fullscreen viewer for ${escapeHtml(selected.filename)}">
                 <strong class="picture-viewer-title">${escapeHtml(selected.filename)}</strong>
-                <button class="picture-viewer-close" data-action="close-picture-viewer" aria-label="Cerrar visor">${icon("close")}</button>
-                <div class="picture-viewer-zoom-fabs" aria-label="Controles de zoom">
-                    <button data-action="viewer-zoom-in" aria-label="Acercar">${icon("plus")}</button>
-                    <button data-action="viewer-zoom-out" aria-label="Alejar">${icon("minus")}</button>
-                    <button data-action="viewer-reset" aria-label="Restablecer zoom y posicion">${icon("refresh")}</button>
+                <button class="picture-viewer-close" data-action="close-picture-viewer" aria-label="Close viewer">${icon("close")}</button>
+                <div class="picture-viewer-zoom-fabs" aria-label="Zoom controls">
+                    <button data-action="viewer-zoom-in" aria-label="Zoom in">${icon("plus")}</button>
+                    <button data-action="viewer-zoom-out" aria-label="Zoom out">${icon("minus")}</button>
+                    <button data-action="viewer-reset" aria-label="Reset zoom and position">${icon("refresh")}</button>
                 </div>
                 <output class="picture-viewer-scale" data-role="viewer-scale">${Math.round(this.#viewerScale * 100)}%</output>
                 <div class="picture-viewer-viewport" data-role="picture-viewer-viewport">
@@ -399,10 +415,10 @@ export class PicturesView extends HTMLElement {
             expandedPaths: this.#expandedDomains,
             toggleOnBranchSelect: true,
             title: "Pictures",
-            toolbarActions: [{ id: "refresh", label: "Actualizar pictures", icon: "refresh" }],
+            toolbarActions: [{ id: "refresh", label: "Refresh pictures", icon: "refresh" }],
             searchQuery: this.#search,
-            searchPlaceholder: "Buscar pictures...",
-            emptyText: this.#loading ? "Sincronizando pictures..." : "No hay dominios registrados.",
+            searchPlaceholder: "Search pictures...",
+            emptyText: this.#loading ? "Syncing pictures..." : "No registered domains.",
             defaultBranchIcon: "folder",
             defaultLeafIcon: "folder"
         };
@@ -426,9 +442,86 @@ export class PicturesView extends HTMLElement {
         this.querySelectorAll("[data-picture-id]").forEach(button => button.addEventListener("click", () => {
             this.#selectPicture(button.getAttribute("data-picture-id") || "");
         }));
-        this.querySelector("[data-action='save-picture-description']")?.addEventListener("click", () => void this.#saveDescription());
+        this.#bindDescriptionEvents();
+        this.querySelector("[data-action='copy-picture-path']")?.addEventListener("click", event => void this.#copyPicturePath(event.currentTarget as HTMLButtonElement));
         this.querySelector("[data-action='open-picture-viewer']")?.addEventListener("click", () => this.#openViewer());
         this.#bindViewerEvents();
+    }
+
+    /** Copy the server-resolved canonical image path and expose feedback in place. */
+    async #copyPicturePath(button: HTMLButtonElement) {
+        const absolutePath = button.dataset.copyPath || "";
+        if (!absolutePath || !navigator.clipboard?.writeText) return;
+        if (this.#copyFeedbackTimer !== null) clearTimeout(this.#copyFeedbackTimer);
+        try {
+            await navigator.clipboard.writeText(absolutePath);
+            button.innerHTML = `${icon("check")}<span>Copied</span>`;
+            button.title = absolutePath;
+            this.#copyFeedbackTimer = setTimeout(() => {
+                button.innerHTML = `${icon("copy")}<span>Copy</span>`;
+                button.title = "Copy absolute path";
+                this.#copyFeedbackTimer = null;
+            }, 2200);
+        } catch (_error) {
+            button.innerHTML = `${icon("warning")}<span>Copy failed</span>`;
+        }
+    }
+
+    /** Render the mutually exclusive read and edit states for one description. */
+    #renderDescriptionPanel(picture: PictureRecord) {
+        if (!this.#descriptionEditing) {
+            return `
+                <section class="picture-description-panel" data-role="picture-description-panel" data-mode="read">
+                    <div class="picture-description-toolbar">
+                        <strong>Description</strong>
+                        <button class="secondary-action" data-action="edit-picture-description">${icon("edit")} Edit</button>
+                    </div>
+                    ${renderDescriptionCard(picture.description, { title: "Image analysis" })}
+                </section>
+            `;
+        }
+        return `
+            <section class="picture-description-panel" data-role="picture-description-panel" data-mode="edit">
+                <label>Description editor
+                    <textarea data-role="picture-description" placeholder="Describe people, scene, objects, text, and context...">${escapeHtml(picture.description)}</textarea>
+                </label>
+                <div class="picture-description-actions">
+                    <button class="secondary-action" data-action="cancel-picture-description">${icon("close")} Cancel</button>
+                    <button class="secondary-action" data-action="generate-picture-description">${icon("camera")} Regenerate</button>
+                    <button class="primary-button" data-action="save-picture-description">${icon("save")} Save</button>
+                </div>
+            </section>
+        `;
+    }
+
+    /** Replace only the description surface so carousel and image state remain mounted. */
+    #mountDescriptionPanel(picture: PictureRecord) {
+        const panel = this.querySelector<HTMLElement>("[data-role='picture-description-panel']");
+        if (!panel) return;
+        panel.outerHTML = this.#renderDescriptionPanel(picture);
+        this.#bindDescriptionEvents();
+    }
+
+    /** Bind controls owned by the current description mode. */
+    #bindDescriptionEvents() {
+        this.querySelector("[data-action='edit-picture-description']")?.addEventListener("click", () => this.#setDescriptionEditing(true));
+        this.querySelector("[data-action='cancel-picture-description']")?.addEventListener("click", () => this.#setDescriptionEditing(false));
+        this.querySelector("[data-action='save-picture-description']")?.addEventListener("click", () => void this.#saveDescription());
+        this.querySelector("[data-action='generate-picture-description']")?.addEventListener("click", () => void this.#generateDescription());
+        this.querySelectorAll("[data-action='resolve-description-entity']").forEach(button => {
+            button.addEventListener("click", () => {
+                this.#state?.setRouteTarget?.("knowledge", { entityLabel: button.getAttribute("data-entity-label") || "" });
+            });
+        });
+    }
+
+    /** Toggle between the structured card and textarea without changing selection. */
+    #setDescriptionEditing(editing: boolean) {
+        const selected = this.#selected();
+        if (!selected || this.#descriptionRequestPending) return;
+        this.#descriptionEditing = editing;
+        this.#mountDescriptionPanel(selected);
+        if (editing) requestAnimationFrame(() => this.querySelector<HTMLTextAreaElement>("[data-role='picture-description']")?.focus());
     }
 
     /** Bind controls owned only by a mounted fullscreen viewer. */
@@ -452,10 +545,65 @@ export class PicturesView extends HTMLElement {
     async #saveDescription() {
         const selected = this.#selected();
         const textarea = this.querySelector<HTMLTextAreaElement>("[data-role='picture-description']");
-        if (!selected || !textarea || !this.#api) return;
-        const response = await this.#api.describePicture(selected.id, textarea.value.trim());
-        this.#state?.setLastResult(response);
-        if (response.ok) await this.#loadDomain(this.#domain, true, selected.id);
+        if (!selected || !textarea || !this.#api || this.#descriptionRequestPending) return;
+        await this.#submitDescription(
+            selected,
+            () => this.#api.describePicture(selected.id, textarea.value.trim()),
+            "Saving..."
+        );
+    }
+
+    /** Generate a model-backed description without overwriting the mounted draft on failure. */
+    async #generateDescription() {
+        const selected = this.#selected();
+        if (!selected || !this.#api || this.#descriptionRequestPending) return;
+        await this.#submitDescription(
+            selected,
+            () => this.#api.generatePictureDescription(selected.id),
+            "Generating..."
+        );
+    }
+
+    /** Serialize description mutations and patch the cached record without rebuilding the carousel. */
+    async #submitDescription(selected: PictureRecord, request: () => Promise<ApiResponse<PictureDescriptionPayload>>, pendingLabel: string) {
+        this.#descriptionRequestPending = true;
+        this.#setDescriptionActionsBusy(true, pendingLabel);
+        try {
+            const response = await request();
+            this.#state?.setLastResult(response);
+            const updated = response.data?.picture as PictureRecord | undefined;
+            if (!response.ok || !updated) return;
+            const index = this.#pictures.findIndex(picture => picture.id === updated.id);
+            if (index >= 0) this.#pictures[index] = updated;
+            this.#picturesByDomain.set(this.#domain, this.#pictures);
+            if (this.#selectedId === updated.id) {
+                this.#descriptionEditing = false;
+                this.#hydrateSelection(updated);
+            }
+        } finally {
+            this.#descriptionRequestPending = false;
+            this.#setDescriptionActionsBusy(false);
+        }
+    }
+
+    /** Keep both mutually exclusive description actions synchronized and accessible. */
+    #setDescriptionActionsBusy(busy: boolean, pendingLabel = "") {
+        const generate = this.querySelector<HTMLButtonElement>("[data-action='generate-picture-description']");
+        const save = this.querySelector<HTMLButtonElement>("[data-action='save-picture-description']");
+        if (generate) {
+            generate.disabled = busy;
+            generate.setAttribute("aria-busy", String(busy));
+            generate.innerHTML = busy && pendingLabel === "Generating..."
+                ? `${icon("refresh")} ${pendingLabel}`
+                : `${icon("camera")} Regenerate`;
+        }
+        if (save) {
+            save.disabled = busy;
+            save.setAttribute("aria-busy", String(busy));
+            save.innerHTML = busy && pendingLabel === "Saving..."
+                ? `${icon("refresh")} ${pendingLabel}`
+                : `${icon("save")} Save description`;
+        }
     }
 
     #formatBytes(bytes: number) {

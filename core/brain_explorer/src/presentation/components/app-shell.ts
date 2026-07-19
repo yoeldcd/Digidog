@@ -20,17 +20,17 @@ import { icon } from "../utils/icons.ts";
 import { notificationText } from "../utils/notification-message.ts";
 
 const ROUTES = [
-    { id: "dashboard", label: "Proyecto", icon: "home", element: DashboardView.selector },
-    { id: "messages", label: "Mensajes", icon: "messageCircle", element: MessagesView.selector },
-    { id: "memory", label: "Memoria", icon: "database", element: MemoryView.selector },
-    { id: "knowledge", label: "Conocimiento", icon: "graph", element: KnowledgeView.selector },
+    { id: "dashboard", label: "Project", icon: "home", element: DashboardView.selector },
+    { id: "messages", label: "Messages", icon: "messageCircle", element: MessagesView.selector },
+    { id: "memory", label: "Memory", icon: "database", element: MemoryView.selector },
+    { id: "knowledge", label: "Knowledge", icon: "graph", element: KnowledgeView.selector },
     { id: "pictures", label: "Pictures", icon: "camera", element: PicturesView.selector },
-    { id: "query", label: "Resultados", icon: "search", element: QueryView.selector, nav: false },
-    { id: "profiles", label: "Perfiles", icon: "users", element: ProfilesView.selector },
+    { id: "query", label: "Results", icon: "search", element: QueryView.selector, nav: false },
+    { id: "profiles", label: "Profiles", icon: "users", element: ProfilesView.selector },
     { id: "logs", label: "Logs", icon: "document", element: LogsView.selector },
     { id: "backlog", label: "Backlog", icon: "checkSquare", element: BacklogView.selector },
     { id: "wikis", label: "Wikis", icon: "book", element: WikisView.selector },
-    { id: "settings", label: "Ajustes", icon: "settings", element: SettingsView.selector }
+    { id: "settings", label: "Settings", icon: "settings", element: SettingsView.selector }
 ];
 
 /**
@@ -115,7 +115,7 @@ export class BrainExplorerApp extends HTMLElement {
                             Brain ~&nbsp;
                             <details class="action-menu project-selector-menu" style="position: relative; display: inline-block;">
                                 <summary style="cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: 4px; padding-right: 14px; background-image: url(&quot;data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23888888' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>&quot;); background-repeat: no-repeat; background-position: right center; background-size: 10px; outline: none; user-select: none;" data-role="project-selector-summary">
-                                    Cargando...
+                                    Loading...
                                 </summary>
                                 <div class="action-menu-panel project-selector-panel" data-role="project-selector-options">
                                 </div>
@@ -125,37 +125,37 @@ export class BrainExplorerApp extends HTMLElement {
                     <div class="global-search-cluster">
                         <div class="global-search">
                             ${icon("search")}
-                            <input data-role="global-shell-search" placeholder="Buscar en todo el conocimiento...">
+                            <input data-role="global-shell-search" placeholder="Search all knowledge...">
                             <kbd>Ctrl + Alt + S</kbd>
                         </div>
                         <details class="action-menu search-options-menu">
-                            <summary title="Fuentes y modos de búsqueda" aria-label="Fuentes y modos de búsqueda">${icon("sliders")}</summary>
+                            <summary title="Search sources and modes" aria-label="Search sources and modes">${icon("sliders")}</summary>
                             <div class="action-menu-panel search-options-panel">
                                 <fieldset>
-                                    <legend>Fuentes</legend>
-                                    <label><input type="checkbox" name="search-source" value="memory" checked>Memoria</label>
-                                    <label><input type="checkbox" name="search-source" value="knowledge" checked>Conocimiento</label>
-                                    <label><input type="checkbox" name="search-source" value="messages" checked>Mensajes</label>
+                                    <legend>Sources</legend>
+                                    <label><input type="checkbox" name="search-source" value="memory" checked>Memory</label>
+                                    <label><input type="checkbox" name="search-source" value="knowledge" checked>Knowledge</label>
+                                    <label><input type="checkbox" name="search-source" value="messages" checked>Messages</label>
                                     <label><input type="checkbox" name="search-source" value="pictures" checked>Pictures</label>
                                 </fieldset>
                                 <fieldset>
-                                    <legend>Modos</legend>
-                                    <label><input type="checkbox" name="search-mechanism" value="graph" checked>Grafo</label>
-                                    <label><input type="checkbox" name="search-mechanism" value="vector" checked>Vectorial</label>
-                                    <label><input type="checkbox" name="search-mechanism" value="text" checked>Texto</label>
+                                    <legend>Modes</legend>
+                                    <label><input type="checkbox" name="search-mechanism" value="graph" checked>Graph</label>
+                                    <label><input type="checkbox" name="search-mechanism" value="vector" checked>Vector</label>
+                                    <label><input type="checkbox" name="search-mechanism" value="text" checked>Text</label>
                                 </fieldset>
                             </div>
                         </details>
                     </div>
                     <div class="header-actions">
-                        <button class="voice-header-toggle" data-action="play-latest-voice" title="Reproducir último mensaje" aria-label="Reproducir último mensaje">${icon("volume")}</button>
-                        <button class="theme-toggle" data-action="toggle-theme" title="Cambiar tema"></button>
+                        <button class="voice-header-toggle" data-action="play-latest-voice" title="Replay latest message" aria-label="Replay latest message">${icon("volume")}</button>
+                        <button class="theme-toggle" data-action="toggle-theme" title="Change theme"></button>
                     </div>
                 </header>
 
                 <aside class="side-nav">
                     <button class="sidebar-collapse" data-action="toggle-sidebar"></button>
-                    <nav data-role="side-nav-list" aria-label="Navegacion principal">
+                    <nav data-role="side-nav-list" aria-label="Main navigation">
                         ${this.#renderNav()}
                     </nav>
                 </aside>
@@ -168,12 +168,12 @@ export class BrainExplorerApp extends HTMLElement {
                     <span data-role="footer-route"></span>
                     <span data-role="footer-call"></span>
                     <button data-action="toggle-diagnostics" class="footer-link">${icon("terminal")}CLI</button>
-                    <span>Sistema local <i class="live-dot"></i></span>
+                    <span>Local system <i class="live-dot"></i></span>
                 </footer>
 
                 <div data-command-overlay-host></div>
                 <div data-diagnostics-host></div>
-                <section class="notification-stack" data-notification-stack aria-live="polite" aria-label="Notificaciones"></section>
+                <section class="notification-stack" data-notification-stack aria-live="polite" aria-label="Notifications"></section>
             </div>
         `;
         this.#bindShellEvents();
@@ -205,7 +205,8 @@ export class BrainExplorerApp extends HTMLElement {
                             }
                             allProjects.sort((a, b) => a.path.localeCompare(b.path));
                             
-                            if (!activePath && defaultPath) {
+                            const activeProjectIsRegistered = allProjects.some(project => project.path === activePath);
+                            if (!activeProjectIsRegistered && defaultPath) {
                                 activePath = defaultPath;
                                 localStorage.setItem("active_project_path", defaultPath);
                             }
@@ -293,7 +294,7 @@ export class BrainExplorerApp extends HTMLElement {
             if (payload && !payload.ok) {
                 this.#pushNotification({
                     tone: "error",
-                    title: "No se pudo completar",
+                    title: "Could not complete",
                     message: feedback?.message
                 });
             } else if (payload && method !== "GET") {
@@ -308,7 +309,7 @@ export class BrainExplorerApp extends HTMLElement {
     }
 
     /** Add one timed, hover-pausable notification pill to the global stack. */
-    #pushNotification({ tone = "info", title = "Mensaje", message = "" }) {
+    #pushNotification({ tone = "info", title = "Message", message = "" }) {
         const stack = this.querySelector("[data-notification-stack]");
         if (!stack) return;
         const id = `notification-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -322,7 +323,7 @@ export class BrainExplorerApp extends HTMLElement {
                 <strong>${escapeHtml(title)}</strong>
                 <span>${escapeHtml(String(message || title))}</span>
             </button>
-            <button class="notification-close" type="button" aria-label="Cerrar notificación"><i></i></button>
+            <button class="notification-close" type="button" aria-label="Close notification"><i></i></button>
         `;
         stack.append(element);
         const record = { timer: 0, remaining: lifetime, startedAt: performance.now() };
@@ -541,11 +542,11 @@ export class BrainExplorerApp extends HTMLElement {
         if (!button) {
             return;
         }
-        const label = this.#state.sidebarOpen ? "Contraer" : "Expandir";
+        const label = this.#state.sidebarOpen ? "Collapse" : "Expand";
         const iconName = this.#state.sidebarOpen ? "collapseLeft" : "expandRight";
-        button.title = `${label} navegacion`;
-        button.dataset.tooltip = `${label} navegacion`;
-        button.setAttribute("aria-label", `${label} navegacion`);
+        button.title = `${label} navigation`;
+        button.dataset.tooltip = `${label} navigation`;
+        button.setAttribute("aria-label", `${label} navigation`);
         button.innerHTML = `${icon(iconName)}<span class="nav-label">${label}</span>`;
     }
 
@@ -566,7 +567,7 @@ export class BrainExplorerApp extends HTMLElement {
             return;
         }
         if (!lastCall) {
-            callLabel.textContent = "CLI sin llamadas";
+            callLabel.textContent = "No CLI calls";
             return;
         }
         const command = lastCall.command.split(" ").slice(-2).join(" ") || "API";
@@ -611,15 +612,15 @@ export class BrainExplorerApp extends HTMLElement {
      */
     #renderDiagnosticsDrawer() {
         return `
-            <aside class="diagnostics-drawer" aria-label="Consola CLI">
+            <aside class="diagnostics-drawer" aria-label="CLI console">
                 <div class="diagnostics-head">
                     <div>
-                        <strong>Llamadas CLI</strong>
-                        <span>Historial, comando activo y prompter allowlisted</span>
+                        <strong>CLI calls</strong>
+                        <span>History, active command, and allowlisted prompt</span>
                     </div>
                     <div class="diagnostics-actions">
-                        <button data-action="clear-cli-log" class="ghost-action">${icon("trash")}Vaciar</button>
-                        <button data-action="close-diagnostics" class="icon-action cli-close-action" title="Cerrar consola" aria-label="Cerrar consola">${icon("close")}</button>
+                        <button data-action="clear-cli-log" class="ghost-action">${icon("trash")}Clear</button>
+                        <button data-action="close-diagnostics" class="icon-action cli-close-action" title="Close console" aria-label="Close console">${icon("close")}</button>
                     </div>
                 </div>
                 ${this.#renderDiagnosticsActiveCommand()}
@@ -628,13 +629,13 @@ export class BrainExplorerApp extends HTMLElement {
                 </div>
                 <form class="cli-prompter" data-role="cli-prompter">
                     <label>
-                        <span>Comando</span>
+                        <span>Command</span>
                         <input data-role="cli-prompt" list="cli-command-suggestions" placeholder="get-context">
                     </label>
                     <datalist id="cli-command-suggestions">
                         ${this.#renderPromptSuggestions()}
                     </datalist>
-                    <button type="button" data-action="run-cli-command" class="primary-action">${icon("terminal")}Ejecutar</button>
+                    <button type="button" data-action="run-cli-command" class="primary-action">${icon("terminal")}Run</button>
                 </form>
             </aside>
         `;
@@ -672,7 +673,7 @@ export class BrainExplorerApp extends HTMLElement {
         host.innerHTML = activeCommand ? `
             <div class="command-blocking-overlay" role="status" aria-live="polite">
                 <span class="loading-spinner"></span>
-                <strong>Ejecutando comando</strong>
+                <strong>Running command</strong>
                 <code>${escapeHtml(activeCommand.command)}</code>
             </div>
         ` : "";
@@ -703,12 +704,12 @@ export class BrainExplorerApp extends HTMLElement {
     #renderDiagnosticsActiveCommand() {
         const activeCommand = this.#state.activeCommand;
         if (!activeCommand) {
-            return `<div data-role="diagnostics-active-command" class="diagnostics-active-strip is-empty">Sin comando en curso.</div>`;
+            return `<div data-role="diagnostics-active-command" class="diagnostics-active-strip is-empty">No command is running.</div>`;
         }
         return `
             <div data-role="diagnostics-active-command" class="diagnostics-active-strip">
                 <span class="loading-spinner small-spinner"></span>
-                <strong>En curso</strong>
+                <strong>Running</strong>
                 <code>${escapeHtml(activeCommand.command)}</code>
             </div>
         `;
@@ -722,7 +723,7 @@ export class BrainExplorerApp extends HTMLElement {
     #renderCallLog() {
         const calls = this.#state.callLog;
         if (!calls.length) {
-            return `<p class="empty-state">Sin llamadas registradas todavia.</p>`;
+            return `<p class="empty-state">No calls recorded yet.</p>`;
         }
         return calls.map(call => `
             <details class="call-log-item" data-call-id="${escapeHtml(call.id)}" ${this.#openCallIds.has(call.id) ? "open" : ""}>
@@ -730,7 +731,7 @@ export class BrainExplorerApp extends HTMLElement {
                     <span class="${call.ok ? "status-dot ok" : "status-dot error"}"></span>
                     <strong>${escapeHtml(call.command.split(" ").slice(-3).join(" ") || "API call")}</strong>
                     <time>${escapeHtml(call.time)} - ${escapeHtml(String(call.durationMs))} ms</time>
-                    <button type="button" data-action="delete-cli-call" data-call-id="${escapeHtml(call.id)}" class="icon-action call-delete" title="Borrar llamada">${icon("trash")}</button>
+                    <button type="button" data-action="delete-cli-call" data-call-id="${escapeHtml(call.id)}" class="icon-action call-delete" title="Delete call">${icon("trash")}</button>
                 </summary>
                 ${codeBlock({
                     ok: call.ok,

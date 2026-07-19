@@ -46,6 +46,36 @@ final result: passed
 
 ---
 
+# Picture description action design QA
+
+- Source visual truth: `C:/Users/user/AppData/Local/Temp/codex-clipboard-a55c8260-c957-451f-9f25-034ec392647c.png`
+- Runtime route: `http://127.0.0.1:8127/#/pictures`
+- Viewport: 1280 × 720
+- State: `family` domain loaded with `angi-yoi-mia-chocolate-cake.png` selected.
+
+## Comparison evidence
+
+The implementation preserves the Inspector hierarchy, metadata grid, textarea, and existing manual-save action from the source. A full-width **Generar descripción** control now sits directly above **Guardar descripción**, reusing the Explorer button, icon, spacing, border, and focus contracts.
+
+Runtime inspection confirmed both actions are exposed as distinct accessible buttons. The generated-description request is serialized, reports `Generando...`, disables both conflicting actions while pending, and updates the selected cached record in place after success. A failed request leaves the mounted textarea draft unchanged.
+
+## Findings
+
+No actionable P0, P1, P2, or P3 mismatch remains. The additional action fits the existing 300 px Inspector without clipping, keeps the original manual workflow available, and does not reconstruct the carousel DOM.
+
+## Implementation checklist
+
+- [x] One-image model-backed generation action.
+- [x] Duplicate-request prevention and accessible busy state.
+- [x] Manual draft preserved on failure.
+- [x] Selected metadata and description patched in place on success.
+- [x] Existing manual save remains available.
+- [x] TypeScript, structural regression tests, production build, and live runtime inspection pass.
+
+final result: passed
+
+---
+
 # Carousel edge-centering design QA
 
 - Source visual truth: `C:/Users/user/AppData/Local/Temp/codex-clipboard-a46523de-51b8-4db2-bef3-82563c19f2fc.png`

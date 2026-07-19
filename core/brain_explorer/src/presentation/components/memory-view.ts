@@ -23,7 +23,7 @@ export class MemoryView extends HTMLElement {
     #selectedPath = "";
     #selectedDomain = "";
     #content = "";
-    #status = "Preparando memoria...";
+    #status = "Preparing memory...";
     #filter = "";
     #mode = "browse";
     #loadingTree = false;
@@ -73,7 +73,7 @@ export class MemoryView extends HTMLElement {
         if (this.#selectedDomain) {
             this.#expandedNodes.add(this.#selectedDomain);
         }
-        this.#status = result.ok ? `${this.#leafPaths().length} entradas` : result.stderr || result.error || "No se pudo cargar memoria.";
+        this.#status = result.ok ? `${this.#leafPaths().length} entries` : result.stderr || result.error || "Could not load memory.";
         this.#loadingTree = false;
         if (await this.#applyPendingTarget(forceRefresh)) {
             return;
@@ -127,7 +127,7 @@ export class MemoryView extends HTMLElement {
         const result = await this.#api.memoryEntry(path, { forceRefresh });
         this.#state?.setLastResult(result);
         this.#content = result.data?.content || result.stdout || "";
-        this.#status = result.ok ? compactLabel(path) : result.stderr || result.error || "No se pudo leer la entrada.";
+        this.#status = result.ok ? compactLabel(path) : result.stderr || result.error || "Could not read the entry.";
         this.#loadingEntry = false;
         this.#render();
     }
@@ -139,10 +139,10 @@ export class MemoryView extends HTMLElement {
      */
     #newEntry() {
         const baseDomain = this.#selectedDomain || this.#topDomains()[0] || "notes";
-        this.#selectedPath = `${baseDomain}.nueva_entrada`;
-        this.#content = "# Nueva entrada\n\nEscribe memoria Markdown aqui.";
+        this.#selectedPath = `${baseDomain}.new_entry`;
+        this.#content = "# New entry\n\nWrite Markdown memory here.";
         this.#mode = "edit";
-        this.#status = "Nueva entrada";
+        this.#status = "New entry";
         this.#render();
     }
 
@@ -155,7 +155,7 @@ export class MemoryView extends HTMLElement {
         const path = this.querySelector("[data-role='memory-path']")?.value.trim();
         const content = this.querySelector("[data-role='memory-content']")?.value || this.#content;
         if (!path) {
-            this.#status = "Define una ruta antes de guardar.";
+            this.#status = "Define a path before saving.";
             this.#render();
             return;
         }
@@ -166,7 +166,7 @@ export class MemoryView extends HTMLElement {
         this.#selectedPath = path;
         this.#selectedDomain = this.#parentPath(path) || path.split(".")[0] || "";
         this.#content = content;
-        this.#status = result.ok ? compactLabel(path) : result.stderr || result.error || "No se pudo guardar.";
+        this.#status = result.ok ? compactLabel(path) : result.stderr || result.error || "Could not save.";
         this.#saving = false;
         await this.#loadTree(true);
         this.#mode = "read";
@@ -205,7 +205,7 @@ export class MemoryView extends HTMLElement {
         this.#selectedPath = "";
         this.#content = "";
         this.#mode = "browse";
-        this.#status = result.ok ? "Entrada eliminada" : result.stderr || result.error || "No se pudo eliminar.";
+        this.#status = result.ok ? "Entry deleted" : result.stderr || result.error || "Could not delete.";
         await this.#loadTree(true);
     }
 
@@ -217,7 +217,7 @@ export class MemoryView extends HTMLElement {
     async #createDomain() {
         const domain = this.querySelector("[data-role='domain-name']")?.value.trim();
         if (!domain) {
-            this.#status = "Escribe un dominio.";
+            this.#status = "Enter a domain.";
             this.#render();
             return;
         }
@@ -226,7 +226,7 @@ export class MemoryView extends HTMLElement {
         this.#selectedDomain = domain;
         this.#selectedPath = "";
         this.#expandedNodes.add(domain.split(".")[0]);
-        this.#status = result.ok ? `Dominio ${domain}` : result.stderr || result.error || "No se pudo crear dominio.";
+        this.#status = result.ok ? `Domain ${domain}` : result.stderr || result.error || "Could not create domain.";
         await this.#loadTree(true);
     }
 
@@ -246,7 +246,7 @@ export class MemoryView extends HTMLElement {
         this.#selectedPath = "";
         this.#content = "";
         this.#mode = "browse";
-        this.#status = result.ok ? "Dominio eliminado" : result.stderr || result.error || "No se pudo eliminar dominio.";
+        this.#status = result.ok ? "Domain deleted" : result.stderr || result.error || "Could not delete domain.";
         await this.#loadTree(true);
     }
 
@@ -281,12 +281,12 @@ export class MemoryView extends HTMLElement {
      */
     #renderPrimaryAction() {
         if (this.#mode === "edit") {
-            return this.#renderIconButton("save-entry", "save", this.#saving ? "Guardando entrada" : "Guardar entrada", "primary-action compact-action", this.#saving);
+            return this.#renderIconButton("save-entry", "save", this.#saving ? "Saving entry" : "Save entry", "primary-action compact-action", this.#saving);
         }
         if (this.#mode === "domains") {
-            return this.#renderIconButton("create-domain", "folderPlus", "Crear dominio", "primary-action compact-action");
+            return this.#renderIconButton("create-domain", "folderPlus", "Create domain", "primary-action compact-action");
         }
-        return this.#renderIconButton("new-entry", "documentPlus", "Nueva entrada", "primary-action compact-action");
+        return this.#renderIconButton("new-entry", "documentPlus", "New entry", "primary-action compact-action");
     }
 
     /**
@@ -299,7 +299,7 @@ export class MemoryView extends HTMLElement {
         const label = this.#modeLabel(this.#mode);
         return `
             <details class="action-menu mode-menu">
-                <summary class="icon-action" title="Modo: ${escapeHtml(label)}" aria-label="Modo de memoria: ${escapeHtml(label)}">
+                <summary class="icon-action" title="Mode: ${escapeHtml(label)}" aria-label="Memory mode: ${escapeHtml(label)}">
                     ${icon(this.#modeIcon(this.#mode))}
                 </summary>
                 <div class="action-menu-panel">
@@ -360,8 +360,8 @@ export class MemoryView extends HTMLElement {
         return {
             browse: "Explorar",
             read: "Leer",
-            edit: "Editar",
-            domains: "Dominios"
+            edit: "Edit",
+            domains: "Domains"
         }[mode] || "Explorar";
     }
 
@@ -372,22 +372,22 @@ export class MemoryView extends HTMLElement {
      */
     #renderActionMenu() {
         const isEntry = Boolean(this.#selectedPath);
-        const label = isEntry ? "Entrada" : "Dominio";
+        const label = isEntry ? "Entry" : "Domain";
         const entryActions = `
-            <button data-action="refresh-memory">${icon("refresh")}Actualizar</button>
-            <button data-action="edit-entry" ${this.#selectedPath ? "" : "disabled"}>${icon("edit")}Editar entrada</button>
-            <button data-action="duplicate-entry" ${this.#selectedPath ? "" : "disabled"}>${icon("copy")}Duplicar entrada</button>
-            <button data-action="delete-entry" class="danger-button" ${this.#selectedPath ? "" : "disabled"}>${icon("trash")}Eliminar entrada</button>
+            <button data-action="refresh-memory">${icon("refresh")}Refresh</button>
+            <button data-action="edit-entry" ${this.#selectedPath ? "" : "disabled"}>${icon("edit")}Edit entry</button>
+            <button data-action="duplicate-entry" ${this.#selectedPath ? "" : "disabled"}>${icon("copy")}Duplicate entry</button>
+            <button data-action="delete-entry" class="danger-button" ${this.#selectedPath ? "" : "disabled"}>${icon("trash")}Delete entry</button>
         `;
         const domainActions = `
-            <button data-action="refresh-memory">${icon("refresh")}Actualizar arbol</button>
-            <button data-action="new-entry" ${this.#selectedDomain ? "" : "disabled"}>${icon("plus")}Nueva entrada aqui</button>
-            <button data-action="domain-mode">${icon("folder")}Gestionar dominio</button>
-            <button data-action="delete-domain" class="danger-button" ${this.#selectedDomain ? "" : "disabled"}>${icon("trash")}Eliminar dominio</button>
+            <button data-action="refresh-memory">${icon("refresh")}Refresh tree</button>
+            <button data-action="new-entry" ${this.#selectedDomain ? "" : "disabled"}>${icon("plus")}New entry here</button>
+            <button data-action="domain-mode">${icon("folder")}Manage domain</button>
+            <button data-action="delete-domain" class="danger-button" ${this.#selectedDomain ? "" : "disabled"}>${icon("trash")}Delete domain</button>
         `;
         return `
             <details class="action-menu">
-                <summary class="icon-action" title="Acciones de ${escapeHtml(label.toLowerCase())}" aria-label="Acciones de ${escapeHtml(label.toLowerCase())}">
+                <summary class="icon-action" title="${escapeHtml(label)} actions" aria-label="${escapeHtml(label)} actions">
                     ${icon("more")}
                 </summary>
                 <div class="action-menu-panel">
@@ -424,11 +424,11 @@ export class MemoryView extends HTMLElement {
         const children = this.#childItemsForSelectedDomain();
         return `
             <div class="content-head">
-                <strong>${escapeHtml(this.#selectedDomain || "Memoria")}</strong>
-                <span>${escapeHtml(String(children.length))} visibles</span>
+                <strong>${escapeHtml(this.#selectedDomain || "Memory")}</strong>
+                <span>${escapeHtml(String(children.length))} visible</span>
             </div>
             <div class="entry-list scroll-list">
-                ${children.length ? children.map(item => this.#renderContentItem(item)).join("") : `<p class="empty-state">Selecciona un nodo del arbol.</p>`}
+                ${children.length ? children.map(item => this.#renderContentItem(item)).join("") : `<p class="empty-state">Select a tree node.</p>`}
             </div>
         `;
     }
@@ -442,7 +442,7 @@ export class MemoryView extends HTMLElement {
     #renderContentItem(item) {
         const isBranch = item.children.size > 0;
         const action = isBranch ? "select-domain" : "select-entry";
-        const count = isBranch ? `${this.#leafPathsUnder(item.path).length} entradas` : "Entrada";
+        const count = isBranch ? `${this.#leafPathsUnder(item.path).length} entries` : "Entry";
         return `
             <button class="entry-row ${item.path === this.#selectedPath ? "is-active" : ""}" data-action="${action}" data-node-path="${escapeHtml(item.path)}">
                 ${icon(isBranch ? "folder" : "document")}
@@ -462,11 +462,11 @@ export class MemoryView extends HTMLElement {
     #renderReadContent() {
         return `
             <div class="content-head">
-                <strong>${escapeHtml(compactLabel(this.#selectedPath) || "Sin entrada")}</strong>
+                <strong>${escapeHtml(compactLabel(this.#selectedPath) || "No entry")}</strong>
                 <span>${escapeHtml(this.#selectedPath || this.#status)}</span>
             </div>
             <article class="markdown-preview scroll-area">
-                ${this.#loadingEntry ? this.#loadingState("Renderizando Markdown") : renderMarkdown(this.#content || "Selecciona una entrada.")}
+                ${this.#loadingEntry ? this.#loadingState("Rendering Markdown") : renderMarkdown(this.#content || "Select an entry.")}
             </article>
         `;
     }
@@ -480,8 +480,8 @@ export class MemoryView extends HTMLElement {
         return `
             <div class="content-head editor-path-row">
                 <label class="path-compact">
-                    <span>Ruta</span>
-                    <input data-role="memory-path" value="${escapeHtml(this.#selectedPath)}" placeholder="dominio.entrada">
+                    <span>Path</span>
+                    <input data-role="memory-path" value="${escapeHtml(this.#selectedPath)}" placeholder="domain.entry">
                 </label>
             </div>
             <textarea class="markdown-editor scroll-area" data-role="memory-content" spellcheck="false">${escapeHtml(this.#content)}</textarea>
@@ -497,8 +497,8 @@ export class MemoryView extends HTMLElement {
         return `
             <div class="content-head editor-path-row">
                 <label class="path-compact">
-                    <span>Dominio</span>
-                    <input data-role="domain-name" value="${escapeHtml(this.#selectedDomain)}" placeholder="nuevo.dominio">
+                    <span>Domain</span>
+                    <input data-role="domain-name" value="${escapeHtml(this.#selectedDomain)}" placeholder="new.domain">
                 </label>
             </div>
             <div class="domain-grid scroll-list">
@@ -506,9 +506,9 @@ export class MemoryView extends HTMLElement {
                     <button class="domain-tile ${domain === this.#selectedDomain ? "is-active" : ""}" data-action="select-domain" data-node-path="${escapeHtml(domain)}">
                         ${icon("database")}
                         <strong>${escapeHtml(domain)}</strong>
-                        <span>${escapeHtml(String(this.#leafPathsUnder(domain).length))} entradas</span>
+                        <span>${escapeHtml(String(this.#leafPathsUnder(domain).length))} entries</span>
                     </button>
-                `).join("") || `<p class="empty-state">Sin dominios.</p>`}
+                `).join("") || `<p class="empty-state">No domains.</p>`}
             </div>
         `;
     }
@@ -566,16 +566,16 @@ export class MemoryView extends HTMLElement {
             selectedPath: this.#selectedPath || this.#selectedDomain,
             expandedPaths: this.#expandedNodes,
             toggleOnBranchSelect: true,
-            title: "Memoria",
+            title: "Memory",
             toolbarActions: [
-                { id: "new-entry", label: "Nueva entrada", icon: "plus" },
-                { id: "create-domain", label: "Nuevo dominio", icon: "folder" },
-                { id: "refresh", label: "Actualizar arbol", icon: "refresh" }
+                { id: "new-entry", label: "New entry", icon: "plus" },
+                { id: "create-domain", label: "New domain", icon: "folder" },
+                { id: "refresh", label: "Refresh tree", icon: "refresh" }
             ],
             defaultBranchIcon: "folder",
             defaultLeafIcon: "database",
             searchQuery: this.#filter,
-            emptyText: this.#loadingTree ? "Cargando arbol..." : "Sin rutas cargadas."
+            emptyText: this.#loadingTree ? "Loading tree..." : "No paths loaded."
         };
         treeElement.addEventListener("brain-tree-select", event => this.#onTreeSelected(event));
         treeElement.addEventListener("brain-tree-toolbar-action", event => this.#onTreeToolbarAction(event));
@@ -609,14 +609,14 @@ export class MemoryView extends HTMLElement {
                 children,
                 actions: hasChildren
                     ? [
-                        { id: "new-entry", label: "Nueva entrada", icon: "plus" },
-                        { id: "delete-domain", label: "Eliminar dominio", icon: "trash", danger: true }
+                        { id: "new-entry", label: "New entry", icon: "plus" },
+                        { id: "delete-domain", label: "Delete domain", icon: "trash", danger: true }
                     ]
                     : [
-                        { id: "open-entry", label: "Abrir", icon: "document" },
-                        { id: "edit-entry", label: "Editar", icon: "edit" },
+                        { id: "open-entry", label: "Open", icon: "document" },
+                        { id: "edit-entry", label: "Edit", icon: "edit" },
                         { id: "duplicate-entry", label: "Duplicar", icon: "duplicate" },
-                        { id: "delete-entry", label: "Eliminar", icon: "trash", danger: true }
+                        { id: "delete-entry", label: "Delete", icon: "trash", danger: true }
                     ]
             };
         };

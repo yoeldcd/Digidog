@@ -19,9 +19,7 @@ function bootstrapBrainExplorer() {
     }
     const api = new BrainApiClient();
     const activePath = localStorage.getItem("active_project_path");
-    if (activePath) {
-        api.setWorkspaceRootOverride(activePath);
-    }
+
     app.context = {
         api,
         state: new AppState(activePath || "")

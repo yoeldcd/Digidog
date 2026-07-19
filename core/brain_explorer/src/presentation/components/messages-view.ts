@@ -37,10 +37,12 @@ export class MessagesView extends HTMLElement {
     #expandedTreePaths = new Set<string>();
     #generatingAudioIds = new Set<string>();
     #generatedAudioSpeakIds = new Map<string, string>();
+    #pendingTarget = null;
 
     set context(context) {
         this.#api = context.api;
         this.#state = context.state;
+        this.#pendingTarget = this.#state?.consumeRouteTarget?.("messages") || null;
         void this.#loadMessages();
         void this.#pollVoiceStatus();
     }
@@ -101,6 +103,16 @@ export class MessagesView extends HTMLElement {
             this.#speaks = response.data?.speaks ?? [];
             this.#history = response.data?.history ?? [];
             this.#sessions = response.data?.sessions ?? [];
+            if (this.#pendingTarget && this.#sessions.length) {
+                const target = this.#pendingTarget;
+                this.#pendingTarget = null;
+                this.#selectedSessionId = String(target.sessionId || this.#selectedSessionId || this.#sessions[0].id);
+                const targetSession = this.#sessions.find(session => session.id === this.#selectedSessionId);
+                if (targetSession) this.#expandSessionPath(targetSession);
+                if (target.messageId) this.#expandedIds.add(String(target.messageId));
+                await this.#loadMessages(true);
+                return;
+            }
             if (!this.#selectedSessionId && this.#sessions.length) {
                 this.#selectedSessionId = this.#sessions[0].id;
                 this.#expandSessionPath(this.#sessions[0]);
@@ -119,16 +131,16 @@ export class MessagesView extends HTMLElement {
         this.innerHTML = `
             <section class="page-surface messages-console">
                 <div class="structure-layout messages-structure">
-                    <aside class="structure-tree" aria-label="Sesiones de mensajes">
+                    <aside class="structure-tree" aria-label="Message sessions">
                         <brain-structure-tree data-role="message-session-tree"></brain-structure-tree>
                     </aside>
                     <main class="structure-content">
                         <header class="content-head">
                             <strong>${escapeHtml(this.#selectedSessionLabel())}</strong>
-                            <span>${this.#selectedSessionId && this.#history.length ? `${this.#history.length} mensajes` : ""}</span>
+                            <span>${this.#selectedSessionId && this.#history.length ? `${this.#history.length} messages` : ""}</span>
                         </header>
-                        <section class="voice-message-list" aria-label="Mensajes de la sesion">
-                            ${this.#loading ? `<div class="loading-state"><span></span><strong>Cargando mensajes...</strong></div>` : this.#renderMessages()}
+                        <section class="voice-message-list" aria-label="Session messages">
+                            ${this.#loading ? `<div class="loading-state"><span></span><strong>Loading messages...</strong></div>` : this.#renderMessages()}
                         </section>
                     </main>
                 </div>
@@ -157,10 +169,10 @@ export class MessagesView extends HTMLElement {
 
     #renderMessages() {
         if (!this.#selectedSessionId) {
-            return `<div class="voice-empty-state">${icon("messageCircle")}<strong>Selecciona una sesion</strong></div>`;
+            return `<div class="voice-empty-state">${icon("messageCircle")}<strong>Select a session</strong></div>`;
         }
         if (!this.#history.length) {
-            return `<div class="voice-empty-state">${icon("messageCircle")}<strong>Esta sesion no contiene mensajes</strong></div>`;
+            return `<div class="voice-empty-state">${icon("messageCircle")}<strong>This session has no messages</strong></div>`;
         }
         const pairedNames = new Set<string>();
         const persistedItems = this.#history.map(record => {
@@ -208,7 +220,7 @@ export class MessagesView extends HTMLElement {
                     children: sessions.map(session => ({
                         id: session.id,
                         path: session.id,
-                        label: session.chatId ? session.label : `Sesion ${this.#formatTime(session.startedAt)}`,
+                        label: session.chatId ? session.label : `Session ${this.#formatTime(session.startedAt)}`,
                         icon: "messageCircle",
                         count: session.messageCount
                     }))
@@ -226,12 +238,12 @@ export class MessagesView extends HTMLElement {
             selectedPath: this.#selectedSessionId,
             expandedPaths: this.#expandedTreePaths,
             toggleOnBranchSelect: true,
-            title: "Mensajes",
-            toolbarActions: [{ id: "refresh", label: "Actualizar mensajes", icon: "refresh" }],
+            title: "Messages",
+            toolbarActions: [{ id: "refresh", label: "Refresh messages", icon: "refresh" }],
             defaultBranchIcon: "folder",
             defaultLeafIcon: "messageCircle",
-            searchPlaceholder: "Buscar sesiones...",
-            emptyText: this.#loading ? "Cargando sesiones..." : "No hay sesiones almacenadas."
+            searchPlaceholder: "Search sessions...",
+            emptyText: this.#loading ? "Loading sessions..." : "No stored sessions."
         };
         tree.addEventListener("brain-tree-select", event => {
             if (!event.detail.branch) void this.#selectSession(event.detail.path);
@@ -252,8 +264,8 @@ export class MessagesView extends HTMLElement {
     /** Return the content-panel heading for the selected session. */
     #selectedSessionLabel() {
         const session = this.#sessions.find(candidate => candidate.id === this.#selectedSessionId);
-        if (!session) return "Selecciona una sesion";
-        return session.chatId ? session.label : `Sesion del ${session.date} a las ${this.#formatTime(session.startedAt)}`;
+        if (!session) return "Select a session";
+        return session.chatId ? session.label : `Session on ${session.date} at ${this.#formatTime(session.startedAt)}`;
     }
 
     /** Select a durable session and request only its messages. */
@@ -296,15 +308,15 @@ export class MessagesView extends HTMLElement {
                 ${expanded ? `
                     <div class="voice-message-detail">
                         <div class="voice-message-markdown">${renderMarkdown(text)}</div>
-                        ${speak?.error ? `<section class="voice-error-detail" role="alert"><strong>Detalle del error</strong><pre>${escapeHtml(speak.error)}</pre></section>` : ""}
+                        ${speak?.error ? `<section class="voice-error-detail" role="alert"><strong>Error details</strong><pre>${escapeHtml(speak.error)}</pre></section>` : ""}
                         <footer class="voice-message-footer">
                             <div class="voice-message-actions">
                                 ${name
-                                    ? `<button class="voice-icon-action" data-action="play-message" data-name="${escapeHtml(name)}" title="Reproducir mensaje" aria-label="Reproducir mensaje">${icon(name === this.#playingName ? "pause" : "play")}</button>`
-                                    : `<button class="voice-icon-action" data-action="generate-message-audio" data-message-id="${escapeHtml(id)}" ${generatingAudio ? "disabled" : ""} title="Generar audio" aria-label="Generar audio">${icon("volume")}</button>`
+                                    ? `<button class="voice-icon-action" data-action="play-message" data-name="${escapeHtml(name)}" title="Play message" aria-label="Play message">${icon(name === this.#playingName ? "pause" : "play")}</button>`
+                                    : `<button class="voice-icon-action" data-action="generate-message-audio" data-message-id="${escapeHtml(id)}" ${generatingAudio ? "disabled" : ""} title="Generate audio" aria-label="Generate audio">${icon("volume")}</button>`
                                 }
-                                ${message ? `<a class="voice-download-button labeled" href="${this.#api?.voiceMessageUrl(message.name) ?? "#"}" download="${escapeHtml(message.name)}" title="Descargar mensaje">${icon("download")} ${this.#formatBytes(message.sizeBytes)}</a>` : ""}
-                                <button class="voice-icon-action" data-action="copy-message" data-text="${escapeHtml(text)}" title="Copiar mensaje" aria-label="Copiar mensaje">${icon("copy")}</button>
+                                ${message ? `<a class="voice-download-button labeled" href="${this.#api?.voiceMessageUrl(message.name) ?? "#"}" download="${escapeHtml(message.name)}" title="Download message">${icon("download")} ${this.#formatBytes(message.sizeBytes)}</a>` : ""}
+                                <button class="voice-icon-action" data-action="copy-message" data-text="${escapeHtml(text)}" title="Copy message" aria-label="Copy message">${icon("copy")}</button>
                             </div>
                         </footer>
                     </div>
@@ -315,7 +327,7 @@ export class MessagesView extends HTMLElement {
 
     #renderLegacyMessageItem(message: VoiceMessageRecord) {
         const createdAt = message.createdAt;
-        const text = message.text ?? "Audio histórico sin transcripción";
+        const text = message.text ?? "Historical audio without transcription";
         const id = message.id ?? message.name;
         const expanded = this.#expandedIds.has(id);
         return `
@@ -335,9 +347,9 @@ export class MessagesView extends HTMLElement {
                         <div class="voice-message-markdown">${renderMarkdown(text)}</div>
                         <footer class="voice-message-footer">
                             <div class="voice-message-actions">
-                                <button class="voice-icon-action" data-action="play-message" data-name="${escapeHtml(message.name)}" title="Reproducir mensaje" aria-label="Reproducir mensaje">${icon(message.name === this.#playingName ? "pause" : "play")}</button>
-                                <a class="voice-download-button labeled" href="${this.#api?.voiceMessageUrl(message.name) ?? "#"}" download="${escapeHtml(message.name)}" title="Descargar mensaje">${icon("download")} ${this.#formatBytes(message.sizeBytes)}</a>
-                                <button class="voice-icon-action" data-action="copy-message" data-text="${escapeHtml(text)}" title="Copiar mensaje" aria-label="Copiar mensaje">${icon("copy")}</button>
+                                <button class="voice-icon-action" data-action="play-message" data-name="${escapeHtml(message.name)}" title="Play message" aria-label="Play message">${icon(message.name === this.#playingName ? "pause" : "play")}</button>
+                                <a class="voice-download-button labeled" href="${this.#api?.voiceMessageUrl(message.name) ?? "#"}" download="${escapeHtml(message.name)}" title="Download message">${icon("download")} ${this.#formatBytes(message.sizeBytes)}</a>
+                                <button class="voice-icon-action" data-action="copy-message" data-text="${escapeHtml(text)}" title="Copy message" aria-label="Copy message">${icon("copy")}</button>
                             </div>
                         </footer>
                     </div>
@@ -350,9 +362,9 @@ export class MessagesView extends HTMLElement {
     #renderLeadingAudioAction(id: string, name: string, generatingAudio: boolean) {
         if (name) {
             const playing = name === this.#playingName;
-            return `<button class="voice-icon-action voice-message-leading-action" data-action="play-message" data-name="${escapeHtml(name)}" title="${playing ? "Pausar mensaje" : "Reproducir mensaje"}" aria-label="${playing ? "Pausar mensaje" : "Reproducir mensaje"}">${icon(playing ? "pause" : "play")}</button>`;
+            return `<button class="voice-icon-action voice-message-leading-action" data-action="play-message" data-name="${escapeHtml(name)}" title="${playing ? "Pause message" : "Play message"}" aria-label="${playing ? "Pause message" : "Play message"}">${icon(playing ? "pause" : "play")}</button>`;
         }
-        return `<button class="voice-icon-action voice-message-leading-action" data-action="generate-message-audio" data-message-id="${escapeHtml(id)}" ${generatingAudio ? "disabled" : ""} title="Generar y reproducir audio" aria-label="Generar y reproducir audio">${icon("play")}</button>`;
+        return `<button class="voice-icon-action voice-message-leading-action" data-action="generate-message-audio" data-message-id="${escapeHtml(id)}" ${generatingAudio ? "disabled" : ""} title="Generate and play audio" aria-label="Generate and play audio">${icon("play")}</button>`;
     }
 
     async #copyMessage(button: Element) {
@@ -434,12 +446,12 @@ export class MessagesView extends HTMLElement {
     }
 
     #formatTime(value: string) {
-        return new Intl.DateTimeFormat("es", { hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+        return new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit" }).format(new Date(value));
     }
 
     #monthLabel(value: string) {
         const date = new Date(2026, Number(value) - 1, 1);
-        return new Intl.DateTimeFormat("es", { month: "long" }).format(date);
+        return new Intl.DateTimeFormat("en", { month: "long" }).format(date);
     }
 
     #formatBytes(value: number) {

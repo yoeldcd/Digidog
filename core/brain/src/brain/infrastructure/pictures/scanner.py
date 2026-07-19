@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import mimetypes
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
@@ -15,12 +16,15 @@ from brain.infrastructure.runtime.paths import get_pictures_dir
 
 
 DEFAULT_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
+PictureScanEvent = Callable[[str, str], None]
+"""Callback receiving one scan state and its concrete picture reference."""
 
 
 def scan_pictures(
     repository: PictureRepository | None = None,
     pictures_root: Path | None = None,
     extensions: set[str] | None = None,
+    on_event: PictureScanEvent | None = None,
 ) -> dict[str, object]:
     """Synchronize current files, preserving descriptions and recognizing moves."""
     repo = repository or PictureRepository()
@@ -37,6 +41,8 @@ def scan_pictures(
         existing = repo.get(relative_path=relative_path)
         if existing and existing.mtime_ns == stat.st_mtime_ns and existing.size_bytes == stat.st_size and existing.active:
             summary["unchanged"] = int(summary["unchanged"]) + 1
+            if on_event is not None:
+                on_event("unchanged", relative_path)
             continue
         try:
             content_hash = _hash_file(path)
@@ -45,6 +51,8 @@ def scan_pictures(
             errors = summary["errors"]
             assert isinstance(errors, list)
             errors.append({"path": relative_path, "error": str(exc)})
+            if on_event is not None:
+                on_event("error", relative_path)
             continue
 
         moved = None if existing else repo.find_active_by_hash(content_hash=content_hash, excluded_paths=current_paths)
@@ -87,9 +95,14 @@ def scan_pictures(
         repo.upsert(record)
         key = "moved" if moved else "changed" if existing else "added"
         summary[key] = int(summary[key]) + 1
+        if on_event is not None:
+            on_event(key, relative_path)
 
     missing_ids = repo.deactivate_missing(active_paths=current_paths, updated_at=now)
     summary["deleted"] = len(missing_ids)
+    if on_event is not None:
+        for picture_id in missing_ids:
+            on_event("deleted", picture_id)
     summary["total"] = len(repo.list())
     summary["database"] = repo.database_path.as_posix()
     summary["root"] = root.as_posix()

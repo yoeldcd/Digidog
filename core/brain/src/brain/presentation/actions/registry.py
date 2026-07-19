@@ -70,10 +70,13 @@ ACTION_HANDLERS: dict[str, str] = {
     "start-avatar-service": "brain.presentation.actions.general.command_start_avatar_service",
     "stop-avatar-service": "brain.presentation.actions.general.command_stop_avatar_service",
     "avatar-service-status": "brain.presentation.actions.general.command_avatar_service_status",
-    "scan-pictures": "brain.presentation.actions.pictures.command_scan_pictures",
+    "scan-images": "brain.presentation.actions.pictures.command_scan_pictures",
     "list-pictures": "brain.presentation.actions.pictures.command_list_pictures",
-    "describe-picture": "brain.presentation.actions.pictures.command_describe_picture",
+    "describe-image": "brain.presentation.actions.pictures.command_describe_picture",
     "picture-status": "brain.presentation.actions.pictures.command_picture_status",
+    "list-picture-guidance": "brain.presentation.actions.pictures.command_picture_guidance",
+    "set-picture-guidance": "brain.presentation.actions.pictures.command_picture_guidance",
+    "delete-picture-guidance": "brain.presentation.actions.pictures.command_picture_guidance",
 }
 """Command name to lazy action-module import path."""
 

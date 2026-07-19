@@ -5,6 +5,7 @@
 
 import { escapeHtml, optionTags } from "../utils/html.ts";
 import { icon } from "../utils/icons.ts";
+import { renderDescriptionCard } from "./description-card.ts";
 import { StructureTree } from "./structure-tree.ts";
 
 void StructureTree;
@@ -20,7 +21,9 @@ export class KnowledgeView extends HTMLElement {
 
     #api = null;
     #state = null;
-    #scope = "global";
+    #scope = "all";
+    #selectedScopes = new Set(["global", "local"]);
+    #treeScope = "all";
     #mode = "all";
     #domain = "all";
     #query = "";
@@ -31,20 +34,48 @@ export class KnowledgeView extends HTMLElement {
     #edges = [];
     #selectedNodeId = "";
     #selectedRelationId = "";
+    #hoveredRelationId = "";
+    #hoveredNodeId = "";
     #regionNodeIds = new Set();
     #regionEdgeIds = new Set();
     #regionPositions = new Map();
+    #regionHistory = [];
+    #regionRootNodeId = "";
     #dragNode = null;
     #panState = null;
     #cameraAnimationFrame = 0;
     #viewport = { x: 0, y: 0, scale: 1 };
     #renderFrustum = null;
-    #expandedDomains = new Set(["all"]);
+    #edgeLabelBounds = new Map();
+    #nodeLabelBounds = new Map();
+    #viewportNodeIds = new Set();
+    #viewportBadgeSignature = "";
+    #viewportInspectorTimer = 0;
+    #viewportBadgeRankingFrozen = false;
+    #expandedDomains = new Set(["global::all", "local::all"]);
     #resizeObserver = null;
     #loadScheduled = false;
+    #graphBusyDepth = 0;
+    #graphBusyLabel = "Loading graph";
     #needsViewportFit = true;
     #filtersOpen = false;
     #domainTreeNodes = [];
+    #memoryPaths = [];
+    #pictures = [];
+    #messages = [];
+    #messageSessions = [];
+    #logEntries = [];
+    #selectedTreePath = "";
+    #sourcePath = "";
+    #sourceKind = "";
+    #treeVisualType = "";
+    #focusViewport = null;
+    #relationHoverViewport = null;
+    #badgeHoverViewport = null;
+    #pointerCandidate = null;
+    #domainColors = new Map();
+    #usedDomainColors = new Set();
+    #pendingEntityLabel = "";
 
     /**
      * Assign runtime dependencies.
@@ -55,8 +86,11 @@ export class KnowledgeView extends HTMLElement {
     set context(context) {
         this.#api = context.api;
         this.#state = context.state;
+        const target = this.#state?.consumeRouteTarget?.("knowledge") || null;
+        this.#pendingEntityLabel = String(target?.entityLabel || "").trim();
         this.#render();
         this.#scheduleInitialLoad();
+        if (this.#output) queueMicrotask(() => this.#resolvePendingEntity());
     }
 
     /**
@@ -77,6 +111,7 @@ export class KnowledgeView extends HTMLElement {
     disconnectedCallback() {
         this.#resizeObserver?.disconnect();
         cancelAnimationFrame(this.#cameraAnimationFrame);
+        clearTimeout(this.#viewportInspectorTimer);
     }
 
     /**
@@ -102,15 +137,29 @@ export class KnowledgeView extends HTMLElement {
         if (!this.#api) {
             return;
         }
-        this.#readControls();
-        const result = await this.#api.knowledgeShow({
-            scope: this.#scope,
-            mode: "all"
-        }, { forceRefresh });
-        this.#state?.setLastResult(result);
-        this.#output = result;
-        this.#ingestGraph(result.data);
-        this.#render();
+        this.#beginGraphBusy(forceRefresh ? "Refreshing graph" : "Loading graph");
+        try {
+            this.#readControls();
+            const [result, memoryResult, pictureResult, messageResult, logResult] = await Promise.all([
+                this.#api.knowledgeShow({ scope: "all", mode: "all" }, { forceRefresh }),
+                this.#api.memoryTree({ forceRefresh }),
+                this.#api.pictures({}, { forceRefresh }),
+                this.#api.getVoiceMessages({ all: "true" }, { forceRefresh, silent: true }),
+                this.#api.logIndex({}, { forceRefresh, silent: true })
+            ]);
+            this.#state?.setLastResult(result);
+            this.#output = result;
+            this.#memoryPaths = Array.isArray(memoryResult.data) ? memoryResult.data.map(path => String(path)) : [];
+            this.#pictures = Array.isArray(pictureResult.data?.pictures) ? pictureResult.data.pictures : [];
+            this.#messages = Array.isArray(messageResult.data?.history) ? messageResult.data.history : [];
+            this.#messageSessions = Array.isArray(messageResult.data?.sessions) ? messageResult.data.sessions : [];
+            this.#logEntries = Array.isArray(logResult.data?.entries) ? logResult.data.entries : [];
+            this.#ingestGraph(result.data);
+            this.#render();
+            this.#resolvePendingEntity();
+        } finally {
+            this.#endGraphBusy();
+        }
     }
 
     /**
@@ -124,19 +173,24 @@ export class KnowledgeView extends HTMLElement {
         }
         this.#readControls();
         if (!this.#query) {
-            this.#applyFilters();
+            await this.#applyFilters();
             return;
         }
-        const result = await this.#api.knowledgeQuery({
-            q: this.#query,
-            scope: this.#scope,
-            limit: "120",
-            explain: "true"
-        });
-        this.#state?.setLastResult(result);
-        this.#output = result;
-        this.#ingestGraph(result.data);
-        this.#render();
+        this.#beginGraphBusy("Searching graph");
+        try {
+            const result = await this.#api.knowledgeQuery({
+                q: this.#query,
+                scope: this.#scope,
+                limit: "120",
+                explain: "true"
+            });
+            this.#state?.setLastResult(result);
+            this.#output = result;
+            this.#ingestGraph(result.data);
+            this.#render();
+        } finally {
+            this.#endGraphBusy();
+        }
     }
 
     /**
@@ -148,16 +202,21 @@ export class KnowledgeView extends HTMLElement {
         if (!this.#api) {
             return;
         }
-        this.#readControls();
-        const result = await this.#api.knowledgeDeltas({
-            scope: this.#scope,
-            limit: "80",
-            status: "pending"
-        }, { forceRefresh: true });
-        this.#state?.setLastResult(result);
-        this.#output = result;
-        this.#ingestGraph(result.data);
-        this.#render();
+        this.#beginGraphBusy("Reviewing graph deltas");
+        try {
+            this.#readControls();
+            const result = await this.#api.knowledgeDeltas({
+                scope: this.#scope,
+                limit: "80",
+                status: "pending"
+            }, { forceRefresh: true });
+            this.#state?.setLastResult(result);
+            this.#output = result;
+            this.#ingestGraph(result.data);
+            this.#render();
+        } finally {
+            this.#endGraphBusy();
+        }
     }
 
     /**
@@ -178,6 +237,8 @@ export class KnowledgeView extends HTMLElement {
         this.#regionNodeIds.clear();
         this.#regionEdgeIds.clear();
         this.#regionPositions.clear();
+        this.#regionHistory = [];
+        this.#regionRootNodeId = "";
         this.#needsViewportFit = true;
         this.#prepareGraph();
     }
@@ -188,7 +249,10 @@ export class KnowledgeView extends HTMLElement {
      * @returns {void}
      */
     #readControls() {
-        this.#scope = this.querySelector("[data-role='kg-scope']")?.value || this.#scope;
+        this.#selectedScopes = new Set(
+            [...this.querySelectorAll("[data-filter-kind='kg-scope']:checked")].map(input => input.value)
+        );
+        this.#scope = this.#selectedScopes.size === 1 ? [...this.#selectedScopes][0] : "all";
         const selectedModes = [...this.querySelectorAll("[data-filter-kind='kg-mode']:checked")]
             .map(input => input.value);
         this.#mode = selectedModes.length === 1 ? selectedModes[0] : "all";
@@ -211,38 +275,38 @@ export class KnowledgeView extends HTMLElement {
                     </aside>
                     <main class="structure-content knowledge-content">
                         <div class="content-head graph-toolbar">
-                            <input class="graph-search-input" aria-label="Buscar en el grafo" data-role="kg-query" value="${escapeHtml(this.#query)}" placeholder="Filtrar o buscar en el grafo">
+                            <input class="graph-search-input" aria-label="Search graph" data-role="kg-query" value="${escapeHtml(this.#query)}" placeholder="Filter or search graph">
                             <details class="action-menu filter-menu knowledge-filter-menu" ${this.#filtersOpen ? "open" : ""}>
-                                <summary class="compact-action">${icon("filter")}<span>Filtros</span></summary>
+                                <summary class="compact-action">${icon("filter")}<span>Filters</span></summary>
                                 <div class="action-menu-panel filter-menu-panel">
-                                    <header class="knowledge-filter-heading">
-                                        <strong>Vista del grafo</strong>
-                                        <small>Ajusta el alcance y el contenido visible.</small>
-                                    </header>
-                                    <label class="knowledge-filter-control">
-                                        <span>Alcance</span>
-                                        <select data-role="kg-scope">
-                                            <option value="global" ${this.#scope === "global" ? "selected" : ""}>Global</option>
-                                            <option value="local" ${this.#scope === "local" ? "selected" : ""}>Local</option>
-                                        </select>
-                                    </label>
-                                    <fieldset class="checkbox-filter-group">
-                                        <legend>Contenido visible</legend>
+                                    <fieldset class="checkbox-filter-group knowledge-scope-filter">
+                                        <legend>Scope</legend>
                                         <div class="knowledge-filter-options">
-                                            <label><input type="checkbox" data-filter-kind="kg-mode" value="entities" ${this.#mode === "all" || this.#mode === "entities" ? "checked" : ""}><span>Entidades</span></label>
-                                            <label><input type="checkbox" data-filter-kind="kg-mode" value="classes" ${this.#mode === "all" || this.#mode === "classes" ? "checked" : ""}><span>Clases</span></label>
+                                            <label><input type="checkbox" data-filter-kind="kg-scope" value="global" ${this.#selectedScopes.has("global") ? "checked" : ""}><span>Global</span></label>
+                                            <label><input type="checkbox" data-filter-kind="kg-scope" value="local" ${this.#selectedScopes.has("local") ? "checked" : ""}><span>Local</span></label>
+                                        </div>
+                                    </fieldset>
+                                    <fieldset class="checkbox-filter-group">
+                                        <legend>Visible content</legend>
+                                        <div class="knowledge-filter-options">
+                                            <label><input type="checkbox" data-filter-kind="kg-mode" value="entities" ${this.#mode === "all" || this.#mode === "entities" ? "checked" : ""}><span>Entities</span></label>
+                                            <label><input type="checkbox" data-filter-kind="kg-mode" value="classes" ${this.#mode === "all" || this.#mode === "classes" ? "checked" : ""}><span>Classes</span></label>
                                         </div>
                                     </fieldset>
                                 </div>
                             </details>
-                            <button data-action="query-records" class="primary-action">${icon("search")}Buscar</button>
+                            <button data-action="query-records" class="primary-action">${icon("search")}Search</button>
                         </div>
                         <div class="knowledge-canvas-layout">
                             <main class="graph-viewport">
-                                <button class="graph-focus-back secondary-action compact-action" data-action="clear-graph-focus" ${this.#regionNodeIds.size ? "" : "hidden"}>
-                                    ${icon("chevronRight")} Atrás
+                                <button class="graph-focus-back secondary-action compact-action" data-action="navigate-region-back" ${this.#regionHistory.length ? "" : "hidden"}>
+                                    ${icon("chevronLeft")} Back
                                 </button>
-                                <canvas class="knowledge-graph-canvas" data-role="knowledge-canvas" aria-label="Grafo de conocimiento"></canvas>
+                                <canvas class="knowledge-graph-canvas" data-role="knowledge-canvas" aria-label="Knowledge graph"></canvas>
+                                ${this.#renderGraphBusyState()}
+                                <div data-role="relation-preview-host">
+                                    ${this.#renderRelationPreview()}
+                                </div>
                                 ${this.#renderCanvasEmptyState()}
                             </main>
                             <aside class="graph-detail-list">
@@ -270,9 +334,75 @@ export class KnowledgeView extends HTMLElement {
         return `
             <div class="knowledge-empty-state canvas-empty">
                 ${icon("graph")}
-                <h2>${this.#output?.ok === false ? "No se pudo consultar" : "Cargando grafo"}</h2>
-                <p>${escapeHtml(this.#output?.error || this.#output?.stderr || "Los nodos apareceran aqui.")}</p>
+                <h2>${this.#output?.ok === false ? "Query failed" : "Loading graph"}</h2>
+                <p>${escapeHtml(this.#output?.error || this.#output?.stderr || "Nodes will appear here.")}</p>
             </div>
+        `;
+    }
+
+    /** Render the bounded operation status overlay for the canvas. */
+    #renderGraphBusyState() {
+        return `
+            <div class="graph-busy-overlay" data-role="graph-busy-overlay" role="status" aria-live="polite" ${this.#graphBusyDepth ? "" : "hidden"}>
+                <span class="graph-busy-spinner" aria-hidden="true"></span>
+                <strong data-role="graph-busy-label">${escapeHtml(this.#graphBusyLabel)}</strong>
+            </div>
+        `;
+    }
+
+    /** Begin one graph operation and expose its latest user-facing status. */
+    #beginGraphBusy(label) {
+        this.#graphBusyDepth += 1;
+        this.#graphBusyLabel = String(label || "Loading graph");
+        this.#syncGraphBusyState();
+    }
+
+    /** Finish one graph operation without hiding another overlapping operation. */
+    #endGraphBusy() {
+        this.#graphBusyDepth = Math.max(0, this.#graphBusyDepth - 1);
+        this.#syncGraphBusyState();
+    }
+
+    /** Synchronize busy state without rebuilding the Knowledge component. */
+    #syncGraphBusyState() {
+        const overlay = this.querySelector("[data-role='graph-busy-overlay']");
+        const viewport = this.querySelector(".graph-viewport");
+        if (overlay) {
+            overlay.hidden = this.#graphBusyDepth === 0;
+            const label = overlay.querySelector("[data-role='graph-busy-label']");
+            if (label) {
+                label.textContent = this.#graphBusyLabel;
+            }
+        }
+        viewport?.setAttribute("aria-busy", String(this.#graphBusyDepth > 0));
+    }
+
+    /** Yield one paint frame so synchronous graph projection can expose the spinner. */
+    #waitForGraphPaint() {
+        return new Promise(resolve => requestAnimationFrame(() => resolve()));
+    }
+
+    /** Render the complete subject-predicate-object preview for the selected relation. */
+    #renderRelationPreview() {
+        const relationId = this.#hoveredRelationId || this.#selectedRelationId;
+        const relation = this.#edges.find(edge => edge.id === relationId);
+        if (!relation) {
+            return "";
+        }
+        const source = this.#nodes.find(node => node.id === relation.from);
+        const target = this.#nodes.find(node => node.id === relation.to);
+        return `
+            <section class="graph-relation-preview" role="status" aria-label="Focused relation preview">
+                <button class="graph-relation-endpoint" data-action="navigate-relation-endpoint" data-node-id="${escapeHtml(relation.from)}" style="--entity-color: ${escapeHtml(source?.color || "var(--primary)")}">
+                    ${escapeHtml(relation.fromLabel)}
+                </button>
+                <span class="graph-relation-connector">
+                    <strong class="graph-relation-predicate" title="${escapeHtml(relation.label)}">${escapeHtml(relation.label)}</strong>
+                </span>
+                <button class="graph-relation-endpoint" data-action="navigate-relation-endpoint" data-node-id="${escapeHtml(relation.to)}" style="--entity-color: ${escapeHtml(target?.color || "var(--primary)")}">
+                    ${escapeHtml(relation.toLabel)}
+                </button>
+            </section>
         `;
     }
 
@@ -282,29 +412,171 @@ export class KnowledgeView extends HTMLElement {
      * @returns {string} HTML.
      */
     #renderDomainTree() {
-        const root = { label: "Todo el conocimiento", path: "all", children: new Map() };
-        this.#domains().forEach(domain => {
-            const parts = this.#domainParts(domain);
+        this.#domainTreeNodes = [
+            this.#scopeTreeRoot("global", "Global knowledge", this.#memoryPaths),
+            this.#scopeTreeRoot("local", "Local knowledge", [])
+        ].filter(root => this.#selectedScopes.has(root.scope));
+        return `<brain-structure-tree data-role="knowledge-domain-tree"></brain-structure-tree>`;
+    }
+
+    /** Build one physical-scope root without hiding canonical empty sources. */
+    #scopeTreeRoot(scope, label, canonicalPaths) {
+        let children = [];
+        if (scope === "global") {
+            const leaves = new Set(canonicalPaths.filter(path => !canonicalPaths.some(candidate => candidate.startsWith(`${path}.`))));
+            const memoryEntries = canonicalPaths.map(path => ({
+                segments: this.#domainParts(path),
+                domain: path,
+                sourcePath: leaves.has(path) ? `memory/${path.replaceAll(".", "/")}.md` : ""
+            }));
+            const pictureEntries = this.#pictures.map(picture => this.#pictureTreeEntry(picture));
+            children = [
+                this.#sourceCategory(scope, "memory", "Global memory", memoryEntries, "memory"),
+                this.#classSuperDomain(scope),
+                this.#sourceCategory(scope, "pictures", "Pictures", pictureEntries, "camera")
+            ];
+        } else {
+            children = [
+                this.#sourceCategory(scope, "memory", "Local memory", [], "memory"),
+                this.#classSuperDomain(scope),
+                this.#sourceCategory(scope, "logs", "Logs", this.#logTreeEntries(), "document"),
+                this.#sourceCategory(scope, "messages", "Messages", this.#messageTreeEntries(), "messageCircle")
+            ];
+        }
+        return {
+            id: `${scope}::all`,
+            path: `${scope}::all`,
+            label,
+            icon: "database",
+            count: this.#graphCountLabel("all", scope),
+            children,
+            actions: [{ id: "filter-source", label: "FILTER", icon: "filter" }],
+            scope,
+            domain: "all"
+        };
+    }
+
+    /** Build one canonical picture-tree entry without duplicating its domain prefix. */
+    #pictureTreeEntry(picture) {
+        const sourcePath = String(picture.relative_path || picture.filename || "").replaceAll("\\", "/");
+        const sourceSegments = sourcePath.split("/").filter(Boolean);
+        const domainSegments = this.#domainParts(String(picture.domain || "no-domain"));
+        const alreadyPrefixed = domainSegments.every((segment, index) => (
+            String(sourceSegments[index] || "").toLowerCase() === segment.toLowerCase()
+        ));
+        const segments = alreadyPrefixed ? sourceSegments : [...domainSegments, ...sourceSegments];
+        return {
+            segments,
+            sourcePrefixes: segments.map((_, index) => segments.slice(0, index + 1).join("/")),
+            domain: "pictures",
+            sourcePath,
+            openRoute: "pictures",
+            openTarget: { pictureId: String(picture.id) },
+            detail: String(picture.description || "")
+        };
+    }
+
+    /** Build a canonical source category from filesystem or registry entries. */
+    #sourceCategory(scope, key, label, entries, categoryIcon) {
+        const root = { children: new Map() };
+        entries.forEach(entry => {
             let node = root;
-            parts.forEach((part, index) => {
-                const path = parts.slice(0, index + 1).join(".");
-                if (!node.children.has(part)) {
-                    node.children.set(part, { label: part, path, children: new Map() });
+            entry.segments.forEach((part, index) => {
+                const terminal = index === entry.segments.length - 1;
+                const branchSourcePath = String(entry.sourcePrefixes?.[index] || "");
+                const baseId = `${scope}::source:${key}/${entry.segments.slice(0, index + 1).join("/")}`;
+                const id = terminal && entry.sourcePath ? `${baseId}::${entry.sourcePath}` : baseId;
+                const childKey = terminal && entry.sourcePath ? `${part}::${entry.sourcePath}` : part;
+                const branchDomain = key === "memory"
+                    ? entry.segments.slice(0, index + 1).join(".")
+                    : entry.domain;
+                if (!node.children.has(childKey)) {
+                    node.children.set(childKey, {
+                        label: part,
+                        path: id,
+                        scope,
+                        domain: branchDomain,
+                        sourceKind: key,
+                        sourcePath: branchSourcePath,
+                        children: new Map()
+                    });
                 }
-                node = node.children.get(part);
+                node = node.children.get(childKey);
+                if (key === "memory") node.domain = branchDomain;
+                if (terminal) Object.assign(node, entry);
             });
         });
-        const children = this.#knowledgeTreeNodes([...root.children.values()]);
-        this.#domainTreeNodes = [{
-            id: "all",
-            path: "all",
-            label: "Todo el conocimiento",
-            icon: "database",
-            count: this.#records.length + this.#relations.length,
-            children,
-            actions: []
-        }];
-        return `<brain-structure-tree data-role="knowledge-domain-tree"></brain-structure-tree>`;
+        const sourceChildren = this.#knowledgeTreeNodes([...root.children.values()]);
+        return {
+            id: `${scope}::source:${key}`,
+            path: `${scope}::source:${key}`,
+            label,
+            icon: categoryIcon,
+            count: this.#graphCountLabel("all", scope, key),
+            children: sourceChildren,
+            actions: [{ id: "filter-source", label: "FILTER", icon: "filter" }],
+            scope,
+            domain: "all",
+            sourceKind: key,
+            folder: true,
+            sortKey: `${({ memory: 0, pictures: 2, logs: 2, messages: 3 })[key] ?? 4}:${label}`
+        };
+    }
+
+    /** Build a non-owning class projection while retaining each class in its source branch. */
+    #classSuperDomain(scope) {
+        return {
+            id: `${scope}::classes`,
+            path: `${scope}::classes`,
+            label: "Classes",
+            icon: "graph",
+            count: this.#graphCountLabel("all", scope, "", "", "class"),
+            children: [],
+            actions: [{ id: "filter-source", label: "FILTER", icon: "filter" }],
+            scope,
+            domain: "all",
+            sourceKind: "",
+            visualType: "class",
+            folder: true,
+            sortKey: "1:Classes"
+        };
+    }
+
+    /** Project persisted message bodies beneath their canonical sessions. */
+    #messageTreeEntries() {
+        const sessions = new Map(this.#messageSessions.map(session => [`${session.date}:${session.chatId}`, session]));
+        return this.#messages.map(message => {
+            const session = sessions.get(`${message.date}:${message.chat_id}`) || null;
+            const date = String(session?.date || message.created_at || "no-date").slice(0, 10);
+            const sessionLabel = String(session?.label || session?.chatId || message.chat_id || "session");
+            const body = String(message.text || message.display_text || "Message has no body");
+            return {
+                segments: [...date.split("-"), sessionLabel, this.#shortLabel(body.replace(/\s+/g, " "), 54)],
+                domain: "messages",
+                sourcePath: `messages/${message.id}`,
+                openRoute: "messages",
+                openTarget: { messageId: String(message.id), sessionId: String(session?.id || "") },
+                detail: body
+            };
+        });
+    }
+
+    /** Project the persisted log index as canonical local-memory sources. */
+    #logTreeEntries() {
+        return this.#logEntries.map((entry, index) => {
+            const domain = String(entry.domain || "logs");
+            const timestamp = String(entry.timestamp || "");
+            const [date = "", ...timeParts] = timestamp.split(" ");
+            const time = timeParts.join(" ");
+            return {
+                segments: [...this.#domainParts(domain), String(entry.title || timestamp || `log-${index + 1}`)],
+                domain: "logs",
+                sourcePath: `logs/${domain}/${timestamp || "undated"}/${index}`,
+                openRoute: "logs",
+                openTarget: { domain, date, time },
+                detail: String(entry.title || "")
+            };
+        });
     }
 
     /**
@@ -322,9 +594,23 @@ export class KnowledgeView extends HTMLElement {
                     path: node.path,
                     label: node.label,
                     color: this.#domainColor(node.path),
-                    count: this.#countRecordsInDomain(node.path),
+                    count: this.#graphCountLabel(node.domain, node.scope, node.sourceKind, node.sourcePath || ""),
                     children,
-                    actions: []
+                    actions: [
+                        { id: "consolidate-source", label: "CONSOLIDATE", icon: "graph" },
+                        { id: "filter-source", label: "FILTER", icon: "filter" },
+                        ...(node.openRoute ? [{ id: "open-source", label: "OPEN", icon: "chevronRight" }] : [])
+                    ],
+                    scope: node.scope,
+                    domain: node.domain,
+                    sourceKind: node.sourceKind || "",
+                    visualType: node.visualType || "",
+                    sortKey: node.sortKey,
+                    sourcePath: node.sourcePath || "",
+                    openRoute: node.openRoute || "",
+                    openTarget: node.openTarget || null,
+                    detail: node.detail || "",
+                    folder: children.length > 0 || (!node.sourcePath && !node.openRoute)
                 };
             })
             .sort((left, right) => left.label.localeCompare(right.label));
@@ -342,14 +628,14 @@ export class KnowledgeView extends HTMLElement {
         }
         treeElement.model = {
             nodes: this.#domainTreeNodes,
-            selectedPath: this.#domain,
+            selectedPath: this.#selectedTreePath,
             expandedPaths: this.#expandedDomains,
             toggleOnBranchSelect: true,
-            title: "Conocimiento",
+            title: "Knowledge",
             toolbarActions: [
-                { id: "refresh-graph", label: "Actualizar grafo", icon: "refresh" },
-                { id: "review-deltas", label: "Revisar deltas", icon: "graph" },
-                { id: "fit-graph", label: "Centrar canvas", icon: "filter" }
+                { id: "refresh-graph", label: "Refresh graph", icon: "refresh" },
+                { id: "review-deltas", label: "Review deltas", icon: "graph" },
+                { id: "fit-graph", label: "Fit canvas", icon: "filter" }
             ],
             defaultBranchIcon: "folder",
             defaultLeafIcon: "document"
@@ -366,11 +652,14 @@ export class KnowledgeView extends HTMLElement {
      * @returns {void}
      */
     #onDomainTreeSelected(event) {
-        if (event.detail.branch && event.detail.clickedCaret) {
-            return;
-        }
-        this.#domain = event.detail.path || "all";
-        this.#applyFilters();
+        const node = event.detail.node || {};
+        this.#selectedTreePath = String(node.path || "");
+        this.#treeScope = String(node.scope || "all");
+        this.#domain = String(node.domain || "all");
+        this.#sourceKind = String(node.sourceKind || "");
+        this.#treeVisualType = String(node.visualType || "");
+        this.#sourcePath = String(node.sourcePath || "");
+        this.#applyTreeSelection();
     }
 
     /**
@@ -400,8 +689,23 @@ export class KnowledgeView extends HTMLElement {
         if (!event.detail.node?.path) {
             return;
         }
-        this.#domain = event.detail.node.path;
-        this.#applyFilters();
+        if (event.detail.action === "filter-source") {
+            this.#selectedTreePath = String(event.detail.node.path);
+            this.#treeScope = String(event.detail.node.scope || "all");
+            this.#domain = String(event.detail.node.domain || "all");
+            this.#sourceKind = String(event.detail.node.sourceKind || "");
+            this.#treeVisualType = String(event.detail.node.visualType || "");
+            this.#sourcePath = String(event.detail.node.sourcePath || "");
+            this.#applyTreeSelection();
+            return;
+        }
+        if (event.detail.action === "open-source" && event.detail.node.openRoute) {
+            this.#state?.setRouteTarget?.(event.detail.node.openRoute, event.detail.node.openTarget || {});
+            return;
+        }
+        if (event.detail.action === "consolidate-source") {
+            this.#reviewDeltas();
+        }
     }
 
     /**
@@ -447,16 +751,21 @@ export class KnowledgeView extends HTMLElement {
         if (selected) {
             return this.#renderNodeDetails(selected);
         }
-        const domains = this.#domains();
+        const importantNodes = this.#importantNodes();
         return `
             <div class="content-head">
                 <strong>Inspector</strong>
-                <span>${escapeHtml(String(this.#nodes.length))} nodos · ${escapeHtml(String(this.#edges.length))} relaciones</span>
+                <span>${escapeHtml(String(this.#nodes.length))} nodes · ${escapeHtml(String(this.#edges.length))} relations</span>
             </div>
             <div class="node-inspector scroll-list">
-                <p>Selecciona un nodo o una relacion del canvas. Los nodos se arrastran; el lienzo acepta pan y zoom.</p>
-                <div class="source-chip-row">
-                    ${domains.slice(0, 12).map(domain => `<span>${escapeHtml(domain)}</span>`).join("")}
+                <p>Select a canvas node or relation. Nodes are draggable; the canvas supports pan and zoom.</p>
+                <div class="source-chip-row important-node-chips" aria-label="Important entities">
+                    ${importantNodes.map(node => `
+                        <button data-action="focus-node" data-node-id="${escapeHtml(node.id)}" title="Focus ${escapeHtml(node.label)}" style="--entity-color: ${escapeHtml(node.color)}">
+                            <strong>${escapeHtml(node.label)}</strong>
+                            <small>${escapeHtml(String(node.degree))}</small>
+                        </button>
+                    `).join("")}
                 </div>
             </div>
         `;
@@ -469,23 +778,61 @@ export class KnowledgeView extends HTMLElement {
      * @returns {string} HTML.
      */
     #renderNodeDetails(selected) {
+        const picture = this.#pictureForNode(selected);
+        const message = this.#messageForNode(selected);
+        const pictureTag = this.#isPictureTagNode(selected);
         return `
             <div class="content-head">
                 <strong>${escapeHtml(selected.label)}</strong>
                 <span>${escapeHtml(selected.domain)}</span>
             </div>
             <div class="node-inspector scroll-list">
+                ${picture ? `
+                    <button class="knowledge-source-preview" data-action="open-detail-source" data-route="pictures" data-picture-id="${escapeHtml(String(picture.id))}">
+                        <img src="${escapeHtml(this.#api?.pictureUrl(String(picture.id)) || "")}" alt="${escapeHtml(picture.description || picture.filename)}">
+                        <span>Open in Pictures</span>
+                    </button>
+                ` : ""}
+                ${message ? `
+                    <blockquote class="knowledge-message-preview">${escapeHtml(String(message.text || ""))}</blockquote>
+                    <button class="secondary-action" data-action="open-detail-source" data-route="messages" data-message-id="${escapeHtml(String(message.id))}">Open in Messages</button>
+                ` : ""}
                 <dl>
-                    <dt>Contexto</dt><dd>${escapeHtml(selected.context)}</dd>
-                    <dt>Dominio</dt><dd>${escapeHtml(selected.domain)}</dd>
-                    <dt>Fuente</dt><dd>${escapeHtml(selected.source)}</dd>
-                    <dt>Clase sugerida</dt><dd>${escapeHtml(selected.classHint || "-")}</dd>
-                    <dt>Confianza</dt><dd>${escapeHtml(String(selected.confidence || "-"))}</dd>
+                    <dt>Context</dt><dd>${escapeHtml(selected.context)}</dd>
+                    <dt>Domain</dt><dd>${escapeHtml(selected.domain)}</dd>
+                    <dt>${pictureTag ? "Provenance" : "Source"}</dt><dd>${pictureTag
+                        ? `Derived from image analysis · ${escapeHtml(selected.source)}`
+                        : escapeHtml(selected.source)}</dd>
+                    <dt>Suggested class</dt><dd>${escapeHtml(selected.classHint || "-")}</dd>
+                    <dt>Confidence</dt><dd>${escapeHtml(String(selected.confidence || "-"))}</dd>
                 </dl>
-                <p>${escapeHtml(selected.description || "Sin descripcion disponible.")}</p>
+                ${renderDescriptionCard(
+                    selected.description || "",
+                    { title: picture ? "Image description" : "Entity description" }
+                )}
                 ${this.#renderRelatedNodes(selected)}
             </div>
         `;
+    }
+
+    /** Resolve an image registry record from one graph source reference. */
+    #pictureForNode(node) {
+        if (this.#isPictureTagNode(node)) return null;
+        const source = String(node.source || "").replaceAll("\\", "/").toLowerCase();
+        const pictureId = String(node.raw?.picture_id || "");
+        return this.#pictures.find(picture => pictureId === String(picture.id)
+            || source.endsWith(String(picture.relative_path || "").replaceAll("\\", "/").toLowerCase())) || null;
+    }
+
+    /** Return whether a semantic image-analysis tag is being inspected, not its picture source. */
+    #isPictureTagNode(node) {
+        return String(node.classHint || "").trim().toLowerCase() === "misc.tag";
+    }
+
+    /** Resolve a persisted message body from one graph source reference. */
+    #messageForNode(node) {
+        const source = String(node.source || "");
+        return this.#messages.find(message => source.includes(String(message.id))) || null;
     }
 
     /**
@@ -497,20 +844,23 @@ export class KnowledgeView extends HTMLElement {
     #renderRelationDetails(relation) {
         return `
             <div class="content-head">
-                <strong>Relacion</strong>
+                <strong>Relation</strong>
                 <span>${escapeHtml(relation.label)}</span>
             </div>
             <div class="node-inspector relation-inspector scroll-list">
                 <dl>
-                    <dt>Nombre</dt><dd>${escapeHtml(relation.label)}</dd>
-                    <dt>Origen</dt><dd>${escapeHtml(relation.fromLabel)}</dd>
-                    <dt>Destino</dt><dd>${escapeHtml(relation.toLabel)}</dd>
-                    <dt>Contexto</dt><dd>${escapeHtml(relation.context)}</dd>
-                    <dt>Dominio</dt><dd>${escapeHtml(relation.domain)}</dd>
-                    <dt>Fuente</dt><dd>${escapeHtml(relation.source)}</dd>
-                    <dt>Confianza</dt><dd>${escapeHtml(String(relation.confidence || "-"))}</dd>
+                    <dt>Name</dt><dd>${escapeHtml(relation.label)}</dd>
+                    <dt>Source node</dt><dd>${escapeHtml(relation.fromLabel)}</dd>
+                    <dt>Target node</dt><dd>${escapeHtml(relation.toLabel)}</dd>
+                    <dt>Context</dt><dd>${escapeHtml(relation.context)}</dd>
+                    <dt>Domain</dt><dd>${escapeHtml(relation.domain)}</dd>
+                    <dt>Source</dt><dd>${escapeHtml(relation.source)}</dd>
+                    <dt>Confidence</dt><dd>${escapeHtml(String(relation.confidence || "-"))}</dd>
                 </dl>
-                <p>${escapeHtml(relation.description || "Relacion detectada por el facade CLI.")}</p>
+                ${renderDescriptionCard(
+                    relation.description || "Relation detected by the CLI facade.",
+                    { title: "Relation description" }
+                )}
                 <div class="graph-list">
                     ${[relation.from, relation.to].map(nodeId => {
                         const node = this.#nodes.find(item => item.id === nodeId);
@@ -540,7 +890,7 @@ export class KnowledgeView extends HTMLElement {
             return "";
         }
         return `
-            <h2>Relaciones visibles</h2>
+            <h2>Visible relations</h2>
             <div class="graph-list">
                 ${related.map(edge => {
                     const opposite = this.#nodes.find(node => node.id === (edge.from === selected.id ? edge.to : edge.from));
@@ -553,6 +903,29 @@ export class KnowledgeView extends HTMLElement {
                 }).join("")}
             </div>
         `;
+    }
+
+    /** Return highest-connectivity entities in the currently visible graph or region. */
+    #importantNodes() {
+        const focus = this.#focusGraph();
+        const logicalCandidates = focus
+            ? this.#nodes.filter(node => focus.nodeIds.has(node.id))
+            : this.#nodes;
+        const candidates = this.#viewportBadgeSignature
+            ? logicalCandidates.filter(node => this.#viewportNodeIds.has(node.id))
+            : logicalCandidates;
+        return this.#rankImportantNodes(candidates);
+    }
+
+    /** Rank one explicit visible-node set by its internal connectivity. */
+    #rankImportantNodes(candidates) {
+        const visibleIds = new Set(candidates.map(node => node.id));
+        const degrees = this.#nodeDegrees({ nodeIds: visibleIds, edgeIds: new Set() });
+        return candidates
+            .filter(node => node.visualType !== "class")
+            .map(node => ({ ...node, degree: degrees.get(node.id) || 0 }))
+            .sort((left, right) => right.degree - left.degree || left.label.localeCompare(right.label))
+            .slice(0, 12);
     }
 
     /**
@@ -685,6 +1058,7 @@ export class KnowledgeView extends HTMLElement {
         const sourcePath = String(item?.source_path || item?.path || item?.source || "");
         const domain = this.#domainFromRecord(item, sourcePath);
         const entityId = item?.entity_id ?? item?.id ?? "";
+        const knowledgeScope = String(item?.knowledge_scope || this.#scope || "global");
         return {
             id: String(entityId || this.#nodeId(domain, label, index)),
             label,
@@ -694,6 +1068,7 @@ export class KnowledgeView extends HTMLElement {
             classHint: String(item?.entity_class || item?.class || item?.type || item?.kind || ""),
             domain,
             entityId: String(entityId),
+            knowledgeScope,
             source: sourcePath || String(item?.source_type || item?.source_title || "knowledge"),
             description: String(item?.description || item?.excerpt || item?.text || ""),
             confidence: item?.confidence ?? item?.score ?? "",
@@ -716,9 +1091,10 @@ export class KnowledgeView extends HTMLElement {
         const domain = this.#domainFromRecord(item, sourcePath);
         const fromLabel = String(item?.subject_name || item?.source_name || item?.source_label || item?.subject || item?.from || item?.head || item?.source || item?.entity || `Origen ${index + 1}`);
         const toLabel = String(item?.object_name || item?.target_name || item?.target_label || item?.object || item?.to || item?.tail || item?.target || item?.related || `Destino ${index + 1}`);
-        const label = String(item?.relation || item?.predicate || item?.label || item?.type || item?.kind || "relacion");
+        const label = String(item?.relation || item?.predicate || item?.label || item?.type || item?.kind || "relation");
         const fromEntityId = item?.subject_entity_id ?? item?.source_entity_id ?? item?.from_entity_id ?? item?.head_entity_id ?? "";
         const toEntityId = item?.object_entity_id ?? item?.target_entity_id ?? item?.to_entity_id ?? item?.tail_entity_id ?? "";
+        const knowledgeScope = String(item?.knowledge_scope || this.#scope || "global");
         return {
             id: String(item?.id || `relation:${domain}:${fromLabel}:${label}:${toLabel}:${index}`),
             kind: "relation",
@@ -729,6 +1105,7 @@ export class KnowledgeView extends HTMLElement {
             to: String(toEntityId || this.#nodeId(domain, toLabel)),
             fromEntityId: String(fromEntityId),
             toEntityId: String(toEntityId),
+            knowledgeScope,
             fromClass: String(item?.subject_class || item?.source_class || item?.from_class || ""),
             toClass: String(item?.object_class || item?.target_class || item?.to_class || ""),
             domain,
@@ -787,7 +1164,7 @@ export class KnowledgeView extends HTMLElement {
             return item;
         }
         if (item && typeof item === "object") {
-            return item.canonical_name || item.name || item.title || item.entity || item.id || `Nodo ${index + 1}`;
+            return item.canonical_name || item.name || item.title || item.entity || item.id || `Node ${index + 1}`;
         }
         return String(item || "");
     }
@@ -819,12 +1196,15 @@ export class KnowledgeView extends HTMLElement {
      * @returns {string} Domain label.
      */
     #domainFromRecord(item, sourcePath) {
-        if (sourcePath.includes("/")) {
-            const parts = sourcePath.split("/").filter(Boolean);
+        const normalizedSourcePath = String(sourcePath || "").replaceAll("\\", "/");
+        if (normalizedSourcePath.includes("/")) {
+            const parts = normalizedSourcePath.split("/").filter(Boolean);
             const memoryIndex = parts.indexOf("memory");
             if (memoryIndex >= 0 && parts[memoryIndex + 1]) {
-                const domainParts = parts.slice(memoryIndex + 1, -1);
-                return domainParts.length ? domainParts.join(".") : parts[memoryIndex + 1];
+                const domainParts = parts.slice(memoryIndex + 1);
+                const leafIndex = domainParts.length - 1;
+                domainParts[leafIndex] = domainParts[leafIndex].replace(/\.[^.]+$/, "");
+                return domainParts.filter(Boolean).join(".") || "memory";
             }
             return parts[0] || "knowledge";
         }
@@ -837,7 +1217,7 @@ export class KnowledgeView extends HTMLElement {
      * @returns {void}
      */
     #prepareGraph() {
-        const records = this.#filteredRecords();
+        const records = this.#mergeScopeRecords(this.#filteredRecords());
         const domainGroups = new Map();
         records.forEach(record => {
             if (!domainGroups.has(record.domain)) {
@@ -848,9 +1228,36 @@ export class KnowledgeView extends HTMLElement {
         const domains = Array.from(domainGroups.keys()).sort();
         this.#nodes = records.map((record, index) => this.#nodeFromRecord(record, index, domains, domainGroups));
         this.#edges = this.#edgesFromRelations(records);
+        this.#viewportNodeIds.clear();
+        this.#viewportBadgeSignature = "";
         this.#applyConnectivitySizing();
         this.#layoutGraphByNeighbors();
         this.#reconcileRegionEdges();
+    }
+
+    /** Merge same-name identities across scopes so their relations share one visible node. */
+    #mergeScopeRecords(records) {
+        const merged = new Map();
+        records.forEach(record => {
+            const key = `${record.visualType}:${record.label.toLowerCase()}`;
+            const current = merged.get(key);
+            if (!current) {
+                merged.set(key, {
+                    ...record,
+                    aliases: [record.id],
+                    knowledgeScopes: [record.knowledgeScope],
+                    sources: [record.source]
+                });
+                return;
+            }
+            current.aliases.push(record.id);
+            if (!current.knowledgeScopes.includes(record.knowledgeScope)) current.knowledgeScopes.push(record.knowledgeScope);
+            if (!current.sources.includes(record.source)) current.sources.push(record.source);
+            current.knowledgeScope = current.knowledgeScopes.length > 1 ? "all" : current.knowledgeScopes[0];
+            current.source = current.sources.filter(Boolean).join(" · ");
+            if (record.description.length > current.description.length) current.description = record.description;
+        });
+        return [...merged.values()];
     }
 
     /**
@@ -879,20 +1286,26 @@ export class KnowledgeView extends HTMLElement {
         };
     }
 
-    /** Return a unique root hue and inherited tonal variation for descendants. */
+    /** Return a stable color that is never reused by another domain or superdomain. */
     #domainColor(domain) {
         const normalized = String(domain || "knowledge").toLowerCase();
-        const parts = this.#domainParts(normalized);
-        const roots = [...new Set(this.#domains().map(item => this.#domainParts(item)[0]).filter(Boolean))].sort();
-        const rootIndex = Math.max(roots.indexOf(parts[0]), 0);
-        const hue = Math.round((206 + (rootIndex * 137.508)) % 360);
-        if (parts.length <= 1) {
-            return `hsl(${hue} 84% 58%)`;
+        const existing = this.#domainColors.get(normalized);
+        if (existing) {
+            return existing;
         }
         const hash = [...normalized].reduce((total, character) => ((total * 31) + character.charCodeAt(0)) >>> 0, 0);
-        const saturation = 68 + (hash % 17);
-        const lightness = 52 + (((parts.length * 7) + (hash % 19)) % 25);
-        return `hsl(${hue} ${saturation}% ${lightness}%)`;
+        let offset = 0;
+        let color = "";
+        do {
+            const hue = ((hash % 3600) / 10 + offset * 137.508) % 360;
+            const saturation = 68 + ((hash + offset * 7) % 17);
+            const lightness = 52 + ((hash + offset * 11) % 25);
+            color = `hsl(${hue.toFixed(1)} ${saturation}% ${lightness}%)`;
+            offset += 1;
+        } while (this.#usedDomainColors.has(color));
+        this.#domainColors.set(normalized, color);
+        this.#usedDomainColors.add(color);
+        return color;
     }
 
     /**
@@ -901,10 +1314,14 @@ export class KnowledgeView extends HTMLElement {
      * @param {object[]} records Current node records.
      * @returns {object[]} Edges.
      */
-    #edgesFromRelations(records) {
-        const nodeById = new Map(records.map(record => [record.id, record]));
+    #edgesFromRelations(records, relations = null) {
+        const nodeById = new Map();
+        records.forEach(record => {
+            nodeById.set(record.id, record);
+            (record.aliases || []).forEach(alias => nodeById.set(alias, record));
+        });
         const nodeByLabel = new Map(records.map(record => [`${record.domain}:${record.label}`.toLowerCase(), record]));
-        const domainRelations = this.#relations.filter(relation => this.#domainMatches(relation.domain));
+        const domainRelations = relations || this.#relations.filter(relation => this.#recordMatchesTree(relation));
         const edges = domainRelations
             .map((relation, index) => {
                 const from = this.#nodeForRelationEnd(nodeById, nodeByLabel, relation, "from");
@@ -953,11 +1370,35 @@ export class KnowledgeView extends HTMLElement {
         const linkedIds = new Set(this.#edges.flatMap(edge => [edge.from, edge.to]));
         const linkedNodes = this.#nodes.filter(node => linkedIds.has(node.id));
         const freeNodes = this.#nodes.filter(node => !linkedIds.has(node.id));
+        const footprints = this.#nodeLayoutFootprints();
         if (linkedNodes.length) {
-            this.#layoutConnectedNodes(linkedNodes, 0);
+            this.#layoutConnectedNodes(linkedNodes, 0, footprints);
         }
         const startY = linkedNodes.length ? 420 : 0;
-        this.#layoutDomainGrid(freeNodes, startY);
+        this.#layoutDomainGrid(freeNodes, startY, footprints);
+    }
+
+    /** Estimate each node's visual footprint from radius, labels, connectivity, and predicates. */
+    #nodeLayoutFootprints() {
+        const degrees = this.#nodeDegrees();
+        const longestPredicate = new Map(this.#nodes.map(node => [node.id, 0]));
+        this.#edges.forEach(edge => {
+            const length = String(edge.label || "").length;
+            longestPredicate.set(edge.from, Math.max(longestPredicate.get(edge.from) || 0, length));
+            longestPredicate.set(edge.to, Math.max(longestPredicate.get(edge.to) || 0, length));
+        });
+        return new Map(this.#nodes.map(node => {
+            const degree = degrees.get(node.id) || 0;
+            const connectivity = Math.min(48, Math.sqrt(degree) * 8);
+            const nodeLabelWidth = Math.min(240, Math.max(62, String(node.label || "").length * 7.2 + 24));
+            const relationLabelWidth = Math.min(180, (longestPredicate.get(node.id) || 0) * 6.2);
+            return [node.id, {
+                width: Math.max(node.radius * 2 + 24, nodeLabelWidth) + connectivity + relationLabelWidth * 0.16,
+                height: node.radius * 2 + 32 + Math.min(30, connectivity * 0.55),
+                gap: 26 + Math.min(28, relationLabelWidth * 0.12) + Math.min(18, connectivity * 0.3),
+                relationLabelWidth
+            }];
+        }));
     }
 
     /**
@@ -967,20 +1408,62 @@ export class KnowledgeView extends HTMLElement {
      * @param {number} startY Vertical offset.
      * @returns {void}
      */
-    #layoutConnectedNodes(nodes, startY) {
+    #layoutConnectedNodes(nodes, startY, footprints) {
         const byId = new Map(nodes.map(node => [node.id, node]));
         const adjacency = this.#adjacencyMap(byId);
         const visited = new Set();
-        let componentIndex = 0;
+        const components = [];
         nodes.forEach(node => {
             if (visited.has(node.id)) {
                 return;
             }
-            const component = this.#componentFromNode(node.id, adjacency, visited);
-            const offsetX = (componentIndex % 3) * 620;
-            const offsetY = startY + Math.floor(componentIndex / 3) * 460;
-            this.#positionComponent(component, adjacency, byId, offsetX, offsetY);
-            componentIndex += 1;
+            components.push(this.#componentFromNode(node.id, adjacency, visited));
+        });
+        const rowWidth = Math.min(4200, Math.max(2200, Math.sqrt(nodes.length) * 210));
+        let cursorX = 0;
+        let cursorY = startY;
+        let packedRowHeight = 0;
+        components.sort((left, right) => right.length - left.length).forEach(component => {
+            this.#positionComponent(component, adjacency, byId, 0, 0, footprints);
+            const bounds = this.#componentBounds(component, byId, footprints);
+            if (cursorX && cursorX + bounds.width > rowWidth) {
+                cursorX = 0;
+                cursorY += packedRowHeight + 220;
+                packedRowHeight = 0;
+            }
+            this.#translateComponent(component, byId, cursorX - bounds.minX, cursorY - bounds.minY);
+            cursorX += bounds.width + 220;
+            packedRowHeight = Math.max(packedRowHeight, bounds.height);
+        });
+    }
+
+    /** Return a component rectangle that includes node and label footprints. */
+    #componentBounds(component, byId, footprints) {
+        const bounds = component.reduce((result, id) => {
+            const node = byId.get(id);
+            const footprint = footprints.get(id);
+            if (!node || !footprint) return result;
+            return {
+                minX: Math.min(result.minX, node.x - footprint.width / 2),
+                maxX: Math.max(result.maxX, node.x + footprint.width / 2),
+                minY: Math.min(result.minY, node.y - footprint.height / 2),
+                maxY: Math.max(result.maxY, node.y + footprint.height / 2)
+            };
+        }, { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity });
+        return {
+            ...bounds,
+            width: Math.max(1, bounds.maxX - bounds.minX),
+            height: Math.max(1, bounds.maxY - bounds.minY)
+        };
+    }
+
+    /** Translate every node in one already-positioned connected component. */
+    #translateComponent(component, byId, deltaX, deltaY) {
+        component.forEach(id => {
+            const node = byId.get(id);
+            if (!node) return;
+            node.x += deltaX;
+            node.y += deltaY;
         });
     }
 
@@ -1035,21 +1518,44 @@ export class KnowledgeView extends HTMLElement {
      * @param {Map<string, object>} byId Visible nodes by id.
      * @param {number} offsetX Component horizontal offset.
      * @param {number} offsetY Component vertical offset.
+     * @param {Map<string, object>} footprints Estimated node footprints.
      * @returns {void}
      */
-    #positionComponent(component, adjacency, byId, offsetX, offsetY) {
+    #positionComponent(component, adjacency, byId, offsetX, offsetY, footprints) {
         const rootId = [...component].sort((left, right) => (adjacency.get(right)?.size || 0) - (adjacency.get(left)?.size || 0))[0];
         const levels = this.#neighborLevels(rootId, adjacency);
-        [...levels.entries()].forEach(([depth, ids]) => {
-            const spacing = Math.max(92, 120 - depth * 8);
-            ids.forEach((id, index) => {
-                const node = byId.get(id);
-                if (!node) {
-                    return;
-                }
-                node.x = offsetX + depth * 190;
-                node.y = offsetY + (index - (ids.length - 1) / 2) * spacing;
+        let previousRight = null;
+        [...levels.entries()].sort(([left], [right]) => left - right).forEach(([, levelIds]) => {
+            const ids = [...levelIds].sort((left, right) => {
+                const degreeDifference = (adjacency.get(right)?.size || 0) - (adjacency.get(left)?.size || 0);
+                return degreeDifference || String(byId.get(left)?.label || "").localeCompare(String(byId.get(right)?.label || ""));
             });
+            const rowsPerColumn = Math.max(1, Math.ceil(Math.sqrt(ids.length * 1.6)));
+            const columnCount = Math.ceil(ids.length / rowsPerColumn);
+            const maxWidth = Math.max(...ids.map(id => footprints.get(id)?.width || 80));
+            const maxPredicateWidth = Math.max(0, ...ids.map(id => footprints.get(id)?.relationLabelWidth || 0));
+            const columnGap = 34 + Math.min(38, maxPredicateWidth * 0.18);
+            const layerGap = 90 + Math.min(150, maxPredicateWidth * 0.72);
+            const bandWidth = columnCount * maxWidth + Math.max(0, columnCount - 1) * columnGap;
+            const bandLeft = previousRight === null ? offsetX - bandWidth / 2 : previousRight + layerGap;
+            for (let column = 0; column < columnCount; column += 1) {
+                const columnIds = ids.slice(column * rowsPerColumn, (column + 1) * rowsPerColumn);
+                const totalHeight = columnIds.reduce((total, id, index) => {
+                    const footprint = footprints.get(id) || { height: 70, gap: 28 };
+                    return total + footprint.height + (index ? footprint.gap : 0);
+                }, 0);
+                let cursorY = offsetY - totalHeight / 2;
+                columnIds.forEach((id, index) => {
+                    const node = byId.get(id);
+                    const footprint = footprints.get(id) || { height: 70, gap: 28 };
+                    if (!node) return;
+                    if (index) cursorY += footprint.gap;
+                    node.x = bandLeft + column * (maxWidth + columnGap) + maxWidth / 2;
+                    node.y = cursorY + footprint.height / 2;
+                    cursorY += footprint.height;
+                });
+            }
+            previousRight = bandLeft + bandWidth;
         });
     }
 
@@ -1087,7 +1593,7 @@ export class KnowledgeView extends HTMLElement {
      * @param {number} startY Vertical offset.
      * @returns {void}
      */
-    #layoutDomainGrid(nodes, startY) {
+    #layoutDomainGrid(nodes, startY, footprints) {
         const groups = new Map();
         nodes.forEach(node => {
             if (!groups.has(node.domain)) {
@@ -1095,14 +1601,30 @@ export class KnowledgeView extends HTMLElement {
             }
             groups.get(node.domain).push(node);
         });
+        let cursorX = 0;
+        let cursorY = startY;
+        let rowHeight = 0;
         [...groups.entries()].sort(([left], [right]) => left.localeCompare(right)).forEach(([, group], groupIndex) => {
             const columns = Math.ceil(Math.sqrt(group.length));
-            const offsetX = (groupIndex % 3) * 520;
-            const offsetY = startY + Math.floor(groupIndex / 3) * 360;
+            const columnWidth = Math.max(116, ...group.map(node => (footprints.get(node.id)?.width || 80) + 30));
+            const cellHeight = Math.max(94, ...group.map(node => {
+                const footprint = footprints.get(node.id) || { height: 64, gap: 28 };
+                return footprint.height + footprint.gap;
+            }));
+            const groupWidth = columns * columnWidth;
+            const groupRows = Math.ceil(group.length / columns);
+            const groupHeight = groupRows * cellHeight;
+            if (groupIndex && groupIndex % 3 === 0) {
+                cursorX = 0;
+                cursorY += rowHeight + 160;
+                rowHeight = 0;
+            }
             group.forEach((node, index) => {
-                node.x = offsetX + (index % columns) * 116;
-                node.y = offsetY + Math.floor(index / columns) * 94;
+                node.x = cursorX + (index % columns) * columnWidth;
+                node.y = cursorY + Math.floor(index / columns) * cellHeight;
             });
+            cursorX += groupWidth + 160;
+            rowHeight = Math.max(rowHeight, groupHeight);
         });
     }
 
@@ -1113,9 +1635,16 @@ export class KnowledgeView extends HTMLElement {
      */
     #filteredRecords() {
         const needle = this.#query.toLowerCase();
-        const visualType = this.#mode === "classes" ? "class" : this.#mode === "entities" ? "entity" : "";
-        return this.#records
-            .filter(record => this.#domainMatches(record.domain))
+        const visualType = this.#treeVisualType || (this.#mode === "classes" ? "class" : this.#mode === "entities" ? "entity" : "");
+        const projection = this.#treeProjection(
+            this.#domain,
+            this.#treeScope,
+            this.#sourceKind,
+            this.#sourcePath,
+            this.#treeVisualType
+        );
+        return projection.records
+            .filter(record => this.#selectedScopes.has(record.knowledgeScope))
             .filter(record => !visualType || record.visualType === visualType)
             .filter(record => !needle || `${record.label} ${record.description} ${record.domain} ${record.context}`.toLowerCase().includes(needle));
     }
@@ -1126,8 +1655,48 @@ export class KnowledgeView extends HTMLElement {
      * @param {string} domain Domain path.
      * @returns {boolean} True when visible.
      */
-    #domainMatches(domain) {
-        return this.#domain === "all" || domain === this.#domain || domain.startsWith(`${this.#domain}.`);
+    #recordMatchesTree(record) {
+        if (!this.#selectedScopes.has(record.knowledgeScope)) {
+            return false;
+        }
+        return this.#recordMatchesTreeSelection(
+            record,
+            this.#domain,
+            this.#treeScope,
+            this.#sourceKind,
+            this.#sourcePath,
+            this.#treeVisualType
+        );
+    }
+
+    /** Apply one explicit inclusive tree selection without depending on current UI state. */
+    #recordMatchesTreeSelection(record, domain, scope = "", sourceKind = "", sourcePath = "", visualType = "") {
+        if (scope && scope !== "all" && record.knowledgeScope !== scope) return false;
+        if (visualType && record.visualType && record.visualType !== visualType) return false;
+        if (sourceKind && !this.#recordMatchesSourceKind(record, sourceKind, scope)) return false;
+        const selectedSource = String(sourcePath || "").replaceAll("\\", "/").toLowerCase();
+        if (selectedSource) {
+            const source = String(record.source || "").replaceAll("\\", "/").toLowerCase();
+            if (!source.includes(selectedSource) && !selectedSource.includes(source)) return false;
+        }
+        return domain === "all" || record.domain === domain || record.domain.startsWith(`${domain}.`);
+    }
+
+    /** Classify one graph record into mutually exclusive canonical source families. */
+    #recordMatchesSourceKind(record, sourceKind, scope = "") {
+        const source = String(record.source || "").replaceAll("\\", "/").toLowerCase();
+        const domain = String(record.domain || "").toLowerCase();
+        const isPicture = domain === "pictures" || domain.startsWith("pictures.")
+            || this.#pictures.some(picture => source.endsWith(String(picture.relative_path || "").replaceAll("\\", "/").toLowerCase()));
+        const isMessage = domain === "messages" || domain.startsWith("messages.") || source.includes("message");
+        const isLog = domain === "logs" || domain.startsWith("logs.") || source.includes("/logs/");
+        if (sourceKind === "pictures") return isPicture;
+        if (sourceKind === "messages") return isMessage;
+        if (sourceKind === "logs") return isLog;
+        if (sourceKind === "memory") {
+            return scope === "global" ? !isPicture : !isLog && !isMessage && !isPicture;
+        }
+        return true;
     }
 
     /**
@@ -1135,10 +1704,10 @@ export class KnowledgeView extends HTMLElement {
      *
      * @returns {string[]} Domain labels.
      */
-    #domains() {
+    #domains(scope = "") {
         return [...new Set([
-            ...this.#records.map(record => record.domain),
-            ...this.#relations.map(relation => relation.domain)
+            ...this.#records.filter(record => !scope || record.knowledgeScope === scope).map(record => record.domain),
+            ...this.#relations.filter(relation => !scope || relation.knowledgeScope === scope).map(relation => relation.domain)
         ].filter(Boolean))].sort();
     }
 
@@ -1158,9 +1727,46 @@ export class KnowledgeView extends HTMLElement {
      * @param {string} domain Domain path.
      * @returns {number} Count.
      */
-    #countRecordsInDomain(domain) {
-        return this.#records.filter(record => record.domain === domain || record.domain.startsWith(`${domain}.`)).length +
-            this.#relations.filter(relation => relation.domain === domain || relation.domain.startsWith(`${domain}.`)).length;
+    #countRecordsInDomain(domain, scope = "") {
+        const domainMatches = record => domain === "all" || record.domain === domain || record.domain.startsWith(`${domain}.`);
+        const scopeMatches = record => !scope || record.knowledgeScope === scope;
+        return this.#records.filter(record => scopeMatches(record) && domainMatches(record)).length +
+            this.#relations.filter(record => scopeMatches(record) && domainMatches(record)).length;
+    }
+
+    /** Return visible entity/relation counts using the canvas' exact projection rules. */
+    #graphCountLabel(domain, scope = "", sourceKind = "", sourcePath = "", visualType = "") {
+        const projection = this.#treeProjection(domain, scope, sourceKind, sourcePath, visualType);
+        const records = this.#mergeScopeRecords(projection.records);
+        const relations = projection.relations;
+        const edges = this.#edgesFromRelations(records, relations);
+        return `E: ${records.length} R: ${edges.length}`;
+    }
+
+    /** Include relation endpoints in virtual source projections without changing their canonical ownership. */
+    #treeProjection(domain, scope = "", sourceKind = "", sourcePath = "", visualType = "") {
+        const matches = record => this.#recordMatchesTreeSelection(record, domain, scope, sourceKind, sourcePath, visualType);
+        const relations = this.#relations.filter(matches);
+        const records = this.#records.filter(matches);
+        if (!sourceKind && !sourcePath) return { records, relations };
+        const endpointIds = new Set(relations.flatMap(relation => [String(relation.from), String(relation.to)]));
+        const endpointLabels = new Set(relations.flatMap(relation => [
+            String(relation.fromLabel || "").toLowerCase(),
+            String(relation.toLabel || "").toLowerCase()
+        ]));
+        const includedIds = new Set(records.map(record => String(record.id)));
+        this.#records.forEach(record => {
+            if (scope && scope !== "all" && record.knowledgeScope !== scope) return;
+            if (visualType && record.visualType !== visualType) return;
+            const connected = endpointIds.has(String(record.id))
+                || endpointIds.has(String(record.entityId))
+                || endpointLabels.has(String(record.label || "").toLowerCase());
+            if (connected && !includedIds.has(String(record.id))) {
+                records.push(record);
+                includedIds.add(String(record.id));
+            }
+        });
+        return { records, relations };
     }
 
     /**
@@ -1168,11 +1774,51 @@ export class KnowledgeView extends HTMLElement {
      *
      * @returns {void}
      */
-    #applyFilters() {
-        this.#readControls();
-        this.#needsViewportFit = true;
-        this.#prepareGraph();
-        this.#render();
+    async #applyFilters() {
+        this.#beginGraphBusy("Filtering graph");
+        await this.#waitForGraphPaint();
+        try {
+            this.#readControls();
+            if (this.#treeScope !== "all" && !this.#selectedScopes.has(this.#treeScope)) {
+                this.#selectedTreePath = "";
+                this.#treeScope = "all";
+                this.#domain = "all";
+                this.#sourceKind = "";
+                this.#sourcePath = "";
+                this.#treeVisualType = "";
+            }
+            this.#needsViewportFit = true;
+            this.#prepareGraph();
+            this.#render();
+        } finally {
+            this.#endGraphBusy();
+        }
+    }
+
+    /** Apply one tree selection without rebuilding the complete Explorer surface. */
+    async #applyTreeSelection() {
+        this.#beginGraphBusy("Focusing graph source");
+        await this.#waitForGraphPaint();
+        try {
+            this.#resetGraphRegion();
+            this.#needsViewportFit = true;
+            this.#prepareGraph();
+            this.#syncDomainTreeSelection();
+            this.#drawCanvas();
+            this.#renderInspector();
+        } finally {
+            this.#endGraphBusy();
+        }
+    }
+
+    /** Update selected tree-row styling while preserving expansion and scroll state. */
+    #syncDomainTreeSelection() {
+        const tree = this.querySelector("[data-role='knowledge-domain-tree']");
+        tree?.querySelectorAll("[data-tree-path]").forEach(button => {
+            const selected = button.getAttribute("data-tree-path") === this.#selectedTreePath;
+            button.classList.toggle("is-active", selected);
+            button.closest("[role='treeitem']")?.setAttribute("aria-selected", String(selected));
+        });
     }
 
     /**
@@ -1185,11 +1831,10 @@ export class KnowledgeView extends HTMLElement {
         this.querySelector("[data-action='query-records']")?.addEventListener("click", () => this.#queryRecords());
         this.querySelector("[data-action='review-deltas']")?.addEventListener("click", () => this.#reviewDeltas());
         this.querySelector("[data-action='fit-graph']")?.addEventListener("click", () => {
-            this.#needsViewportFit = true;
-            this.#drawCanvas();
+            this.#resetVisibleGraphViewport();
         });
-        this.querySelector("[data-action='clear-graph-focus']")?.addEventListener("click", () => {
-            this.#clearGraphFocus();
+        this.querySelector("[data-action='navigate-region-back']")?.addEventListener("click", () => {
+            this.#navigateBackGraphRegion();
         });
         this.querySelector(".filter-menu")?.addEventListener("toggle", event => {
             this.#filtersOpen = event.currentTarget.open;
@@ -1219,7 +1864,9 @@ export class KnowledgeView extends HTMLElement {
                 this.#queryRecords();
             }
         });
-        this.querySelector("[data-role='kg-scope']")?.addEventListener("change", () => this.#showRecords(true));
+        this.querySelectorAll("[data-filter-kind='kg-scope']").forEach(input => {
+            input.addEventListener("change", () => this.#applyFilters());
+        });
         this.querySelectorAll("[data-filter-kind='kg-mode']").forEach(input => {
             input.addEventListener("change", () => this.#applyFilters());
         });
@@ -1232,28 +1879,146 @@ export class KnowledgeView extends HTMLElement {
      * @returns {void}
      */
     #bindInspectorButtons() {
+        this.querySelectorAll("[data-action='open-detail-source']").forEach(button => {
+            button.addEventListener("click", () => {
+                const route = button.getAttribute("data-route") || "";
+                if (route === "pictures") {
+                    this.#state?.setRouteTarget?.("pictures", { pictureId: button.getAttribute("data-picture-id") || "" });
+                    return;
+                }
+                const messageId = button.getAttribute("data-message-id") || "";
+                const message = this.#messages.find(item => String(item.id) === messageId);
+                const session = this.#messageSessions.find(item => item.date === message?.date && item.chatId === message?.chat_id);
+                this.#state?.setRouteTarget?.("messages", { messageId, sessionId: session?.id || "" });
+            });
+        });
+        this.querySelectorAll("[data-action='focus-node']").forEach(button => {
+            button.addEventListener("pointerenter", () => {
+                this.#showHoveredEndpoint(button.getAttribute("data-node-id") || "");
+            });
+            button.addEventListener("pointerleave", () => this.#showHoveredEndpoint(""));
+            button.addEventListener("click", () => this.#focusNode(button.getAttribute("data-node-id") || "", false));
+        });
+        this.querySelectorAll("[data-action='resolve-description-entity']").forEach(button => {
+            button.addEventListener("click", () => this.#focusEntityByLabel(button.getAttribute("data-entity-label") || ""));
+        });
         this.querySelectorAll("[data-action='select-node']").forEach(button => {
             button.addEventListener("click", () => {
-                const hadRegion = this.#regionNodeIds.size > 0;
-                this.#selectedNodeId = button.getAttribute("data-node-id") || "";
-                this.#selectedRelationId = "";
-                this.#expandGraphRegion(this.#selectedNodeId);
-                this.#completeRegionExpansion(hadRegion);
-                this.#drawCanvas();
-                this.#renderInspector();
+                this.#focusNode(button.getAttribute("data-node-id") || "", false);
             });
         });
         this.querySelectorAll("[data-action='select-relation']").forEach(button => {
+            button.addEventListener("pointerenter", () => {
+                this.#showHoveredRelation(button.getAttribute("data-relation-id") || "");
+            });
+            button.addEventListener("pointerleave", () => {
+                this.#showHoveredRelation("");
+            });
             button.addEventListener("click", () => {
-                const hadRegion = this.#regionNodeIds.size > 0;
-                this.#selectedRelationId = button.getAttribute("data-relation-id") || "";
-                this.#selectedNodeId = "";
-                this.#expandGraphRegionFromEdge(this.#selectedRelationId);
-                this.#completeRegionExpansion(hadRegion);
-                this.#drawCanvas();
-                this.#renderInspector();
+                this.#selectRelation(button.getAttribute("data-relation-id") || "");
             });
         });
+        this.#bindRelationEndpointButtons();
+    }
+
+    /** Bind transient and persistent navigation on relation endpoint badges. */
+    #bindRelationEndpointButtons() {
+        this.querySelectorAll("[data-action='navigate-relation-endpoint']").forEach(button => {
+            const nodeId = button.getAttribute("data-node-id") || "";
+            button.addEventListener("pointerenter", () => this.#showHoveredEndpoint(nodeId));
+            button.addEventListener("pointerleave", () => this.#showHoveredEndpoint(""));
+            button.addEventListener("click", () => this.#navigateRelationEndpoint(nodeId));
+        });
+    }
+
+    /** Update the existing relation preview and camera from one transient sidepanel hover. */
+    #showHoveredRelation(relationId) {
+        const relation = this.#edges.find(edge => edge.id === relationId);
+        if (relation) {
+            if (!this.#hoveredRelationId) {
+                this.#relationHoverViewport = { ...this.#viewport };
+            }
+            this.#hoveredRelationId = relation.id;
+            this.#hoveredNodeId = "";
+            this.#animateCameraToRelation(relation, Math.max(this.#viewport.scale, 1.35));
+        } else {
+            this.#hoveredRelationId = "";
+            this.#hoveredNodeId = "";
+            if (this.#relationHoverViewport) {
+                const previousViewport = this.#relationHoverViewport;
+                this.#relationHoverViewport = null;
+                this.#animateViewport(previousViewport);
+            } else {
+                this.#drawCanvas();
+            }
+        }
+        const relationPreviewHost = this.querySelector("[data-role='relation-preview-host']");
+        if (relationPreviewHost) {
+            relationPreviewHost.innerHTML = this.#renderRelationPreview();
+        }
+        this.#bindRelationEndpointButtons();
+    }
+
+    /** Preview one endpoint node while preserving the camera that preceded badge hover. */
+    #showHoveredEndpoint(nodeId) {
+        const node = this.#nodes.find(item => item.id === nodeId);
+        if (node) {
+            if (!this.#hoveredNodeId) {
+                this.#badgeHoverViewport = { ...this.#viewport };
+            }
+            this.#viewportBadgeRankingFrozen = true;
+            clearTimeout(this.#viewportInspectorTimer);
+            this.#hoveredNodeId = node.id;
+            this.#animateCameraToNode(node, Math.max(this.#viewport.scale, 1.35));
+            return;
+        }
+        this.#hoveredNodeId = "";
+        if (this.#badgeHoverViewport) {
+            const previousViewport = this.#badgeHoverViewport;
+            this.#badgeHoverViewport = null;
+            this.#animateViewport(previousViewport, () => this.#releaseViewportBadgeRanking());
+        } else {
+            this.#releaseViewportBadgeRanking();
+            this.#drawCanvas();
+        }
+    }
+
+    /** Resume viewport-driven badge ranking after a transient entity preview fully returns. */
+    #releaseViewportBadgeRanking() {
+        this.#viewportBadgeRankingFrozen = false;
+        this.#syncViewportBadgeCandidates();
+    }
+
+    /** Persist camera navigation to one relation endpoint without replacing relation selection. */
+    #navigateRelationEndpoint(nodeId) {
+        const node = this.#nodes.find(item => item.id === nodeId);
+        if (!node) {
+            return;
+        }
+        this.#badgeHoverViewport = null;
+        this.#viewportBadgeRankingFrozen = false;
+        this.#hoveredNodeId = node.id;
+        this.#animateCameraToNode(node, Math.max(this.#viewport.scale, 1.35));
+    }
+
+    /** Resolve one description badge to the most connected matching graph node. */
+    #focusEntityByLabel(label) {
+        const normalized = String(label || "").trim().toLowerCase();
+        if (!normalized) return false;
+        const degrees = this.#nodeDegrees();
+        const match = this.#nodes
+            .filter(node => String(node.label || "").trim().toLowerCase() === normalized)
+            .sort((left, right) => (degrees.get(right.id) || 0) - (degrees.get(left.id) || 0))[0];
+        if (!match) return false;
+        this.#focusNode(match.id, false);
+        return true;
+    }
+
+    /** Focus a route-targeted entity after the graph has been prepared. */
+    #resolvePendingEntity() {
+        if (!this.#pendingEntityLabel) return;
+        const label = this.#pendingEntityLabel;
+        if (this.#focusEntityByLabel(label)) this.#pendingEntityLabel = "";
     }
 
     /**
@@ -1274,6 +2039,10 @@ export class KnowledgeView extends HTMLElement {
         canvas.addEventListener("pointerup", event => this.#onPointerUp(event, canvas));
         canvas.addEventListener("pointerleave", event => this.#onPointerUp(event, canvas));
         canvas.addEventListener("wheel", event => this.#onWheel(event, canvas), { passive: false });
+        canvas.addEventListener("dblclick", event => {
+            event.preventDefault();
+            this.#resetVisibleGraphViewport();
+        });
         requestAnimationFrame(() => this.#drawCanvas());
     }
 
@@ -1306,6 +2075,7 @@ export class KnowledgeView extends HTMLElement {
         context.scale(this.#viewport.scale, this.#viewport.scale);
         this.#drawEdges(context);
         this.#drawNodes(context);
+        this.#syncViewportBadgeCandidates();
     }
 
     /**
@@ -1315,6 +2085,17 @@ export class KnowledgeView extends HTMLElement {
      * @returns {void}
      */
     #fitViewport(rect) {
+        this.#viewport = this.#fittedViewport(rect);
+        this.#needsViewportFit = false;
+    }
+
+    /**
+     * Calculate the centered fit camera for the complete graph or active subregion.
+     *
+     * @param {DOMRect} rect Canvas bounds.
+     * @returns {{x: number, y: number, scale: number}} Fitted camera.
+     */
+    #fittedViewport(rect) {
         const focus = this.#focusGraph();
         if (focus) {
             this.#layoutFocusedRegion(focus);
@@ -1323,9 +2104,7 @@ export class KnowledgeView extends HTMLElement {
             ? this.#nodes.filter(node => focus.nodeIds.has(node.id))
             : this.#nodes;
         if (!visibleNodes.length) {
-            this.#viewport = { x: 0, y: 0, scale: 1 };
-            this.#needsViewportFit = false;
-            return;
+            return { x: 0, y: 0, scale: 1 };
         }
         const bounds = visibleNodes.reduce((acc, node) => ({
             minX: Math.min(acc.minX, node.x - node.radius - 60),
@@ -1336,13 +2115,12 @@ export class KnowledgeView extends HTMLElement {
         const width = Math.max(1, bounds.maxX - bounds.minX);
         const height = Math.max(1, bounds.maxY - bounds.minY);
         const maximumScale = focus ? 1.8 : 1.15;
-        const scale = Math.min(maximumScale, Math.max(0.18, Math.min((rect.width - 72) / width, (rect.height - 72) / height)));
-        this.#viewport = {
+        const scale = Math.min(maximumScale, Math.max(0.005, Math.min((rect.width - 72) / width, (rect.height - 72) / height)));
+        return {
             x: -((bounds.minX + bounds.maxX) / 2) * scale,
             y: -((bounds.minY + bounds.maxY) / 2) * scale,
             scale
         };
-        this.#needsViewportFit = false;
     }
 
     /** Compute the current canvas viewport in graph coordinates. */
@@ -1375,6 +2153,30 @@ export class KnowledgeView extends HTMLElement {
             && node.x - radius <= frustum.right
             && node.y + radius >= frustum.top
             && node.y - radius <= frustum.bottom;
+    }
+
+    /** Refresh important-entity candidates from the exact nodes intersecting the canvas viewport. */
+    #syncViewportBadgeCandidates() {
+        if (this.#viewportBadgeRankingFrozen) return;
+        const focus = this.#focusGraph();
+        const candidates = focus
+            ? this.#nodes.filter(node => focus.nodeIds.has(node.id))
+            : this.#nodes;
+        const visibleIds = candidates
+            .filter(node => this.#nodeIntersectsRenderFrustum(node))
+            .map(node => node.id);
+        const signature = visibleIds.join("|") || "__empty__";
+        if (signature === this.#viewportBadgeSignature) {
+            return;
+        }
+        this.#viewportNodeIds = new Set(visibleIds);
+        this.#viewportBadgeSignature = signature;
+        clearTimeout(this.#viewportInspectorTimer);
+        this.#viewportInspectorTimer = window.setTimeout(() => {
+            if (!this.#viewportBadgeRankingFrozen && !this.#selectedNodeId && !this.#selectedRelationId) {
+                this.#renderInspector();
+            }
+        }, 140);
     }
 
     /** Apply endpoint, circumscribed-radius, and exact edge culling. */
@@ -1490,6 +2292,7 @@ export class KnowledgeView extends HTMLElement {
      * @returns {void}
      */
     #drawEdges(context) {
+        this.#edgeLabelBounds.clear();
         const styles = getComputedStyle(this);
         const focus = this.#focusGraph();
         const orderedEdges = focus
@@ -1503,7 +2306,8 @@ export class KnowledgeView extends HTMLElement {
             if (!from || !to || !this.#edgeIntersectsRenderFrustum(from, to)) {
                 return;
             }
-            const selected = edge.id === this.#selectedRelationId || Boolean(focus?.edgeIds.has(edge.id));
+            const activeRelationId = this.#hoveredRelationId || this.#selectedRelationId;
+            const selected = edge.id === activeRelationId;
             context.save();
             context.globalAlpha = 0.92;
             context.beginPath();
@@ -1571,6 +2375,12 @@ export class KnowledgeView extends HTMLElement {
         context.textBaseline = "middle";
         const width = context.measureText(label).width + 12;
         const height = 18 / this.#viewport.scale;
+        this.#edgeLabelBounds.set(edge.id, {
+            left: x - width / 2,
+            right: x + width / 2,
+            top: y - height / 2,
+            bottom: y + height / 2
+        });
         context.fillStyle = styles.getPropertyValue("--surface").trim();
         context.strokeStyle = styles.getPropertyValue("--border").trim();
         this.#roundedRect(context, x - width / 2, y - height / 2, width, height, 8 / this.#viewport.scale);
@@ -1588,32 +2398,45 @@ export class KnowledgeView extends HTMLElement {
      * @returns {void}
      */
     #drawNodes(context) {
+        this.#nodeLabelBounds.clear();
         const styles = getComputedStyle(this);
         const focus = this.#focusGraph();
+        const activeRelationId = this.#hoveredRelationId || this.#selectedRelationId;
+        const selectedRelation = this.#edges.find(edge => edge.id === activeRelationId);
         const connectivity = this.#connectivityMetrics(focus);
         const degrees = connectivity.degrees;
         const maxDegree = Math.max(0, ...degrees.values());
         const orderedNodes = focus
             ? this.#nodes.filter(node => focus.nodeIds.has(node.id))
             : this.#nodes;
-        orderedNodes.filter(node => this.#nodeIntersectsRenderFrustum(node)).forEach(node => {
+        const visibleNodes = orderedNodes.filter(node => this.#nodeIntersectsRenderFrustum(node));
+        const rankedNodeIds = new Set(this.#rankImportantNodes(visibleNodes).map(node => node.id));
+        const rankedLabelBounds = [];
+        visibleNodes.forEach(node => {
             const selected = node.id === this.#selectedNodeId;
-            const focused = selected || Boolean(focus?.nodeIds.has(node.id));
-            const radius = selected ? node.radius + 5 : focused ? node.radius + 2 : node.radius;
+            const hovered = node.id === this.#hoveredNodeId;
+            const ranked = rankedNodeIds.has(node.id);
+            const relationEndpoint = selectedRelation?.from === node.id || selectedRelation?.to === node.id;
+            const focused = selected || hovered || relationEndpoint || Boolean(focus?.nodeIds.has(node.id));
+            const radius = selected || hovered ? node.radius + 5 : relationEndpoint ? node.radius + 4 : focused ? node.radius + 2 : node.radius;
             context.save();
             context.globalAlpha = 1;
             context.beginPath();
             context.arc(node.x, node.y, radius, 0, Math.PI * 2);
-            context.fillStyle = selected ? styles.getPropertyValue("--primary").trim() : styles.getPropertyValue("--surface-strong").trim();
+            context.fillStyle = selected || hovered || relationEndpoint
+                ? styles.getPropertyValue("--primary").trim()
+                : styles.getPropertyValue("--surface-strong").trim();
             context.strokeStyle = node.color;
-            context.lineWidth = selected ? 3.4 / this.#viewport.scale : focused ? 2.6 / this.#viewport.scale : 1.8 / this.#viewport.scale;
+            context.lineWidth = selected || hovered || relationEndpoint
+                ? 3.4 / this.#viewport.scale
+                : focused ? 2.6 / this.#viewport.scale : 1.8 / this.#viewport.scale;
             context.setLineDash(node.visualType === "class" ? [7 / this.#viewport.scale, 5 / this.#viewport.scale] : []);
             context.fill();
             context.stroke();
-            if (this.#nodeLabelIsVisible(node, degrees, maxDegree, selected || focused)) {
-                this.#drawNodeLabel(context, node, selected || focused);
+            if (this.#nodeLabelIsVisible(node, degrees, maxDegree, selected || focused, ranked)) {
+                this.#drawNodeLabel(context, node, selected || focused, ranked, rankedLabelBounds);
             }
-            if (selected && focus && this.#nodeCanExpand(node.id)) {
+            if (selected && this.#nodeCanExpand(node.id)) {
                 this.#drawNodeExpansionBadge(context, node);
             }
             context.restore();
@@ -1657,12 +2480,12 @@ export class KnowledgeView extends HTMLElement {
     }
 
     /** Decide whether a label belongs to the zoom-dependent connectivity tier. */
-    #nodeLabelIsVisible(node, degrees, maxDegree, emphasized) {
-        if (emphasized || this.#viewport.scale >= 0.78) {
+    #nodeLabelIsVisible(node, degrees, maxDegree, emphasized, ranked = false) {
+        if (emphasized || ranked || this.#viewport.scale >= 0.78) {
             return true;
         }
         const normalizedRank = maxDegree ? (degrees.get(node.id) || 0) / maxDegree : 0;
-        const zoomProgress = Math.max(0, Math.min(1, (this.#viewport.scale - 0.14) / 0.64));
+        const zoomProgress = Math.max(0, Math.min(1, (this.#viewport.scale - 0.005) / 0.775));
         const easedTolerance = zoomProgress * zoomProgress * (3 - (2 * zoomProgress));
         const minimumRank = 0.56 * (1 - easedTolerance);
         return normalizedRank >= minimumRank;
@@ -1683,15 +2506,13 @@ export class KnowledgeView extends HTMLElement {
         };
     }
 
-    /** Return whether selecting a node can reveal neighbors outside the region. */
+    /** Return whether a node can become the root of a distinct child region. */
     #nodeCanExpand(nodeId) {
-        return this.#edges.some(edge => {
-            if (edge.from !== nodeId && edge.to !== nodeId) {
-                return false;
-            }
-            const neighborId = edge.from === nodeId ? edge.to : edge.from;
-            return !this.#regionNodeIds.has(neighborId);
-        });
+        const child = this.#graphRegionForNode(nodeId);
+        if (!child.edgeIds.size) return false;
+        if (!this.#regionNodeIds.size) return true;
+        return child.nodeIds.size !== this.#regionNodeIds.size
+            || [...child.nodeIds].some(id => !this.#regionNodeIds.has(id));
     }
 
     /** Draw a screen-stable expansion affordance above a selected node. */
@@ -1721,61 +2542,91 @@ export class KnowledgeView extends HTMLElement {
         context.restore();
     }
 
-    /**
-     * Add a node and its immediate neighbors to the persistent region.
-     *
-     * @param {string} nodeId Selected node id.
-     * @returns {void}
-     */
-    #expandGraphRegion(nodeId) {
-        if (!nodeId) {
-            return;
-        }
-        this.#regionNodeIds.add(nodeId);
+    /** Build the child region rooted at one node and its immediate neighbors. */
+    #graphRegionForNode(nodeId) {
+        const nodeIds = new Set(nodeId ? [nodeId] : []);
+        const edgeIds = new Set();
         this.#edges.forEach(edge => {
             if (edge.from !== nodeId && edge.to !== nodeId) {
                 return;
             }
-            this.#regionEdgeIds.add(edge.id);
-            this.#regionNodeIds.add(edge.from);
-            this.#regionNodeIds.add(edge.to);
+            edgeIds.add(edge.id);
+            nodeIds.add(edge.from);
+            nodeIds.add(edge.to);
         });
-        this.#reconcileRegionEdges();
-    }
-
-    /** Rebuild all currently visible relations internal to the persistent region. */
-    #reconcileRegionEdges() {
-        this.#regionEdgeIds.clear();
         this.#edges.forEach(edge => {
-            if (this.#regionNodeIds.has(edge.from) && this.#regionNodeIds.has(edge.to)) {
-                this.#regionEdgeIds.add(edge.id);
-            }
+            if (nodeIds.has(edge.from) && nodeIds.has(edge.to)) edgeIds.add(edge.id);
         });
+        return { nodeIds, edgeIds };
     }
 
-    /**
-     * Add a selected relation and both endpoint neighborhoods to the region.
-     *
-     * @param {string} edgeId Selected edge id.
-     * @returns {void}
-     */
-    #expandGraphRegionFromEdge(edgeId) {
-        const edge = this.#edges.find(item => item.id === edgeId);
-        if (!edge) {
-            return;
-        }
-        this.#regionEdgeIds.add(edge.id);
-        this.#expandGraphRegion(edge.from);
-        this.#expandGraphRegion(edge.to);
+    /** Reconcile a preserved region after the graph records are rebuilt. */
+    #reconcileRegionEdges() {
+        const availableNodeIds = new Set(this.#nodes.map(node => node.id));
+        this.#regionNodeIds = new Set([...this.#regionNodeIds].filter(id => availableNodeIds.has(id)));
+        this.#regionEdgeIds = new Set(this.#edges
+            .filter(edge => this.#regionNodeIds.has(edge.from) && this.#regionNodeIds.has(edge.to))
+            .map(edge => edge.id));
     }
 
-    /** Position additions while fitting only the first region creation. */
-    #completeRegionExpansion(hadRegion) {
+    /** Capture the current level before navigating to a child region. */
+    #captureGraphRegionLevel() {
+        return {
+            nodeIds: new Set(this.#regionNodeIds),
+            edgeIds: new Set(this.#regionEdgeIds),
+            positions: new Map(this.#regionPositions),
+            graphPositions: new Map(this.#nodes.map(node => [node.id, { x: node.x, y: node.y }])),
+            rootNodeId: this.#regionRootNodeId,
+            selectedNodeId: this.#selectedNodeId,
+            selectedRelationId: this.#selectedRelationId,
+            viewport: { ...this.#viewport }
+        };
+    }
+
+    /** Replace the current graph level with a child region rooted at one node. */
+    #navigateGraphRegion(nodeId) {
+        if (!this.#nodeCanExpand(nodeId)) return;
+        const child = this.#graphRegionForNode(nodeId);
+        this.#regionHistory.push(this.#captureGraphRegionLevel());
+        this.#regionNodeIds = child.nodeIds;
+        this.#regionEdgeIds = child.edgeIds;
+        this.#regionPositions = new Map();
+        this.#regionRootNodeId = nodeId;
+        this.#selectedNodeId = nodeId;
+        this.#selectedRelationId = "";
+        this.#focusViewport = null;
         const focus = this.#focusGraph();
-        if (focus) {
-            this.#layoutFocusedRegion(focus);
-        }
-        this.#needsViewportFit = !hadRegion;
+        if (focus) this.#layoutFocusedRegion(focus);
+        this.#needsViewportFit = true;
+        this.#drawCanvas();
+        this.#renderInspector();
+    }
+
+    /** Restore exactly one parent graph level, including its layout and camera. */
+    #navigateBackGraphRegion() {
+        const previous = this.#regionHistory.pop();
+        if (!previous) return;
+        cancelAnimationFrame(this.#cameraAnimationFrame);
+        this.#cameraAnimationFrame = 0;
+        this.#regionNodeIds = new Set(previous.nodeIds);
+        this.#regionEdgeIds = new Set(previous.edgeIds);
+        this.#regionPositions = new Map(previous.positions);
+        this.#regionRootNodeId = previous.rootNodeId;
+        this.#selectedNodeId = previous.selectedNodeId;
+        this.#selectedRelationId = previous.selectedRelationId;
+        previous.graphPositions.forEach((position, nodeId) => {
+            const node = this.#nodes.find(item => item.id === nodeId);
+            if (node) Object.assign(node, position);
+        });
+        this.#viewport = { ...previous.viewport };
+        this.#needsViewportFit = false;
+        this.#focusViewport = null;
+        this.#hoveredNodeId = "";
+        this.#hoveredRelationId = "";
+        this.#relationHoverViewport = null;
+        this.#badgeHoverViewport = null;
+        this.#drawCanvas();
+        this.#renderInspector();
     }
 
     /**
@@ -1784,24 +2635,80 @@ export class KnowledgeView extends HTMLElement {
      * @param {CanvasRenderingContext2D} context Canvas context.
      * @param {object} node Graph node.
      * @param {boolean} selected Whether selected.
+     * @param {boolean} ranked Whether represented by a ranked inspector badge.
+     * @param {object[]} occupiedBounds Ranked-label rectangles already placed this frame.
      * @returns {void}
      */
-    #drawNodeLabel(context, node, selected) {
+    #drawNodeLabel(context, node, selected, ranked = false, occupiedBounds = []) {
         const styles = getComputedStyle(this);
         const label = this.#shortLabel(node.label, selected ? 28 : 18);
-        const fontSize = selected ? 12 : 10;
-        const x = node.x;
-        const y = node.y + node.radius + (14 / this.#viewport.scale);
+        const fontSize = selected ? 12 : ranked ? 11 : 10;
+        const scale = this.#viewport.scale;
         context.save();
-        context.font = `800 ${fontSize / this.#viewport.scale}px Inter, system-ui, sans-serif`;
+        context.font = `800 ${fontSize / scale}px Inter, system-ui, sans-serif`;
         context.textAlign = "center";
         context.textBaseline = "middle";
+        const width = context.measureText(label).width + (14 / scale);
+        const height = (fontSize + 8) / scale;
+        const placement = ranked
+            ? this.#rankedLabelPlacement(node, width, height, occupiedBounds)
+            : { x: node.x, y: node.y + node.radius + (14 / scale) };
+        const x = placement.x;
+        const y = placement.y;
+        if (ranked || selected) {
+            context.fillStyle = styles.getPropertyValue("--surface").trim();
+            context.strokeStyle = node.color;
+            context.lineWidth = 1.5 / scale;
+            this.#roundedRect(context, x - width / 2, y - height / 2, width, height, 8 / scale);
+            context.fill();
+            context.stroke();
+            this.#nodeLabelBounds.set(node.id, {
+                left: x - width / 2,
+                right: x + width / 2,
+                top: y - height / 2,
+                bottom: y + height / 2
+            });
+        }
         context.fillStyle = node.color;
         context.shadowColor = styles.getPropertyValue("--surface").trim();
-        context.shadowBlur = 4 / this.#viewport.scale;
-        context.lineWidth = 3 / this.#viewport.scale;
+        context.shadowBlur = 4 / scale;
+        context.lineWidth = 3 / scale;
         context.fillText(label, x, y);
         context.restore();
+    }
+
+    /** Place one screen-stable ranked label without intersecting earlier ranked labels. */
+    #rankedLabelPlacement(node, width, height, occupiedBounds) {
+        const scale = this.#viewport.scale;
+        const vertical = node.radius + (14 / scale);
+        const horizontal = node.radius + (8 / scale) + width / 2;
+        const candidates = [
+            { x: node.x, y: node.y + vertical },
+            { x: node.x, y: node.y - vertical },
+            { x: node.x + horizontal, y: node.y },
+            { x: node.x - horizontal, y: node.y },
+            { x: node.x, y: node.y + vertical + height + (6 / scale) },
+            { x: node.x, y: node.y - vertical - height - (6 / scale) },
+            { x: node.x + horizontal, y: node.y + height + (6 / scale) },
+            { x: node.x - horizontal, y: node.y - height - (6 / scale) }
+        ];
+        const padding = 4 / scale;
+        const rectangleFor = candidate => ({
+            left: candidate.x - width / 2 - padding,
+            right: candidate.x + width / 2 + padding,
+            top: candidate.y - height / 2 - padding,
+            bottom: candidate.y + height / 2 + padding
+        });
+        const overlaps = rectangle => occupiedBounds.some(other => (
+            rectangle.left < other.right
+            && rectangle.right > other.left
+            && rectangle.top < other.bottom
+            && rectangle.bottom > other.top
+        ));
+        const placement = candidates.find(candidate => !overlaps(rectangleFor(candidate)))
+            || { x: node.x, y: node.y + vertical + (occupiedBounds.length * (height + padding)) };
+        occupiedBounds.push(rectangleFor(placement));
+        return placement;
     }
 
     /**
@@ -1838,45 +2745,50 @@ export class KnowledgeView extends HTMLElement {
      */
     #onPointerDown(event, canvas) {
         const point = this.#canvasPoint(event, canvas);
-        const node = this.#hitTestNode(point.x, point.y);
-        if (node) {
-            const wasSelected = this.#selectedNodeId === node.id;
-            const hadRegion = this.#regionNodeIds.size > 0;
-            this.#selectedNodeId = node.id;
-            this.#selectedRelationId = "";
-            if (wasSelected && this.#nodeCanExpand(node.id)) {
-                this.#expandGraphRegion(node.id);
-                this.#completeRegionExpansion(hadRegion);
-                this.#animateCameraToNode(node, hadRegion ? this.#viewport.scale : Math.max(this.#viewport.scale, 1.35));
-            } else if (wasSelected && hadRegion) {
-                this.#dragNode = {
-                    id: node.id,
-                    offsetX: point.x - node.x,
-                    offsetY: point.y - node.y
-                };
-                canvas.setPointerCapture(event.pointerId);
-                this.#drawCanvas();
-            } else {
-                this.#animateCameraToNode(node, hadRegion ? this.#viewport.scale : Math.max(this.#viewport.scale, 1.35));
-            }
-            this.#renderInspector();
+        const expansionNode = this.#hitTestNodeExpansionBadge(point.x, point.y);
+        if (expansionNode) {
+            event.preventDefault();
+            this.#navigateGraphRegion(expansionNode.id);
             return;
         }
+        const labelNode = this.#hitTestNodeLabel(point.x, point.y);
+        if (labelNode) {
+            event.preventDefault();
+            this.#focusNode(labelNode.id, false);
+            return;
+        }
+        const labelEdge = this.#hitTestEdgeLabel(point.x, point.y);
+        if (labelEdge) {
+            this.#selectRelation(labelEdge.id);
+            return;
+        }
+        const node = this.#hitTestNode(point.x, point.y);
         const edge = this.#hitTestEdge(point.x, point.y);
+        if (edge && (!node || !this.#nodeOwnsPoint(node, point.x, point.y))) {
+            this.#selectRelation(edge.id);
+            return;
+        }
+        if (node) {
+            this.#pointerCandidate = {
+                id: node.id,
+                pointerId: event.pointerId,
+                clientX: event.clientX,
+                clientY: event.clientY,
+                offsetX: point.x - node.x,
+                offsetY: point.y - node.y,
+                moved: false
+            };
+            canvas.setPointerCapture(event.pointerId);
+            return;
+        }
         if (edge) {
-            const hadRegion = this.#regionNodeIds.size > 0;
-            this.#selectedRelationId = edge.id;
-            this.#selectedNodeId = "";
-            this.#expandGraphRegionFromEdge(edge.id);
-            this.#completeRegionExpansion(hadRegion);
-            this.#drawCanvas();
-            this.#renderInspector();
+            this.#selectRelation(edge.id);
             return;
         }
         if (this.#selectedNodeId || this.#selectedRelationId) {
             this.#selectedNodeId = "";
             this.#selectedRelationId = "";
-            this.#drawCanvas();
+            this.#restoreFocusViewport();
             this.#renderInspector();
             return;
         }
@@ -1894,18 +2806,42 @@ export class KnowledgeView extends HTMLElement {
 
     /** Smoothly center one node while optionally changing the camera scale. */
     #animateCameraToNode(node, targetScale) {
-        cancelAnimationFrame(this.#cameraAnimationFrame);
-        this.#needsViewportFit = false;
-        const start = { ...this.#viewport };
-        const target = {
+        this.#animateViewport({
             x: -node.x * targetScale,
             y: -node.y * targetScale,
             scale: targetScale
-        };
+        });
+    }
+
+    /** Smoothly center one relation midpoint while optionally changing camera scale. */
+    #animateCameraToRelation(relation, targetScale) {
+        const source = this.#nodes.find(node => node.id === relation.from);
+        const target = this.#nodes.find(node => node.id === relation.to);
+        if (!source || !target) {
+            return;
+        }
+        this.#animateViewport({
+            x: -((source.x + target.x) / 2) * targetScale,
+            y: -((source.y + target.y) / 2) * targetScale,
+            scale: targetScale
+        });
+    }
+
+    /**
+     * Animate from the current camera to one exact viewport.
+     *
+     * @param {{x: number, y: number, scale: number}} target Destination camera.
+     * @param {(() => void)|null} onComplete Callback after the final rendered frame.
+     * @returns {void}
+     */
+    #animateViewport(target, onComplete = null) {
+        cancelAnimationFrame(this.#cameraAnimationFrame);
+        this.#needsViewportFit = false;
+        const start = { ...this.#viewport };
         const startedAt = performance.now();
         const duration = 420;
         const animate = now => {
-            const progress = Math.min(1, (now - startedAt) / duration);
+            const progress = Math.max(0, Math.min(1, (now - startedAt) / duration));
             const eased = 1 - Math.pow(1 - progress, 3);
             this.#viewport = {
                 x: start.x + (target.x - start.x) * eased,
@@ -1917,9 +2853,64 @@ export class KnowledgeView extends HTMLElement {
                 this.#cameraAnimationFrame = requestAnimationFrame(animate);
             } else {
                 this.#cameraAnimationFrame = 0;
+                onComplete?.();
             }
         };
         this.#cameraAnimationFrame = requestAnimationFrame(animate);
+    }
+
+    /** Focus one node while preserving the camera that preceded the focus zoom. */
+    #focusNode(nodeId, allowExpansion = true) {
+        const node = this.#nodes.find(item => item.id === nodeId);
+        if (!node) {
+            return;
+        }
+        const hadRegion = this.#regionNodeIds.size > 0;
+        if (!this.#selectedNodeId) {
+            this.#focusViewport = this.#badgeHoverViewport
+                ? { ...this.#badgeHoverViewport }
+                : { ...this.#viewport };
+        }
+        this.#badgeHoverViewport = null;
+        this.#viewportBadgeRankingFrozen = false;
+        this.#hoveredNodeId = "";
+        this.#selectedNodeId = node.id;
+        this.#selectedRelationId = "";
+        this.#animateCameraToNode(node, hadRegion ? this.#viewport.scale : Math.max(this.#viewport.scale, 1.35));
+        this.#renderInspector();
+    }
+
+    /** Select and center one relation without mutating the graph region. */
+    #selectRelation(relationId) {
+        const relation = this.#edges.find(edge => edge.id === relationId);
+        if (!relation) {
+            return;
+        }
+        if (!this.#selectedNodeId && !this.#selectedRelationId) {
+            this.#focusViewport = this.#relationHoverViewport
+                ? { ...this.#relationHoverViewport }
+                : { ...this.#viewport };
+        }
+        this.#selectedRelationId = relationId;
+        this.#selectedNodeId = "";
+        this.#hoveredRelationId = "";
+        this.#hoveredNodeId = "";
+        this.#relationHoverViewport = null;
+        this.#badgeHoverViewport = null;
+        this.#viewportBadgeRankingFrozen = false;
+        this.#animateCameraToRelation(relation, Math.max(this.#viewport.scale, 1.35));
+        this.#renderInspector();
+    }
+
+    /** Restore the camera snapshot captured immediately before entity focus. */
+    #restoreFocusViewport() {
+        if (!this.#focusViewport) {
+            this.#drawCanvas();
+            return;
+        }
+        const previousViewport = this.#focusViewport;
+        this.#focusViewport = null;
+        this.#animateViewport(previousViewport);
     }
 
     /**
@@ -1930,6 +2921,20 @@ export class KnowledgeView extends HTMLElement {
      * @returns {void}
      */
     #onPointerMove(event, canvas) {
+        if (this.#pointerCandidate && !this.#dragNode) {
+            const distance = Math.hypot(
+                event.clientX - this.#pointerCandidate.clientX,
+                event.clientY - this.#pointerCandidate.clientY
+            );
+            if (distance >= 4) {
+                this.#pointerCandidate.moved = true;
+                this.#dragNode = {
+                    id: this.#pointerCandidate.id,
+                    offsetX: this.#pointerCandidate.offsetX,
+                    offsetY: this.#pointerCandidate.offsetY
+                };
+            }
+        }
         if (this.#dragNode) {
             const point = this.#canvasPoint(event, canvas);
             const node = this.#nodes.find(item => item.id === this.#dragNode.id);
@@ -1960,6 +2965,11 @@ export class KnowledgeView extends HTMLElement {
      * @returns {void}
      */
     #onPointerUp(event, canvas) {
+        const candidate = this.#pointerCandidate;
+        if (candidate && !candidate.moved) {
+            this.#focusNode(candidate.id, true);
+        }
+        this.#pointerCandidate = null;
         this.#dragNode = null;
         this.#panState = null;
         if (canvas.hasPointerCapture?.(event.pointerId)) {
@@ -1982,7 +2992,7 @@ export class KnowledgeView extends HTMLElement {
         const cursorX = event.clientX - rect.left - rect.width / 2;
         const cursorY = event.clientY - rect.top - rect.height / 2;
         const previousScale = this.#viewport.scale;
-        const nextScale = Math.min(3.4, Math.max(0.14, previousScale * (event.deltaY > 0 ? 0.9 : 1.1)));
+        const nextScale = Math.min(3.4, Math.max(0.005, previousScale * (event.deltaY > 0 ? 0.9 : 1.1)));
         const graphX = (cursorX - this.#viewport.x) / previousScale;
         const graphY = (cursorY - this.#viewport.y) / previousScale;
         this.#viewport.x = cursorX - graphX * nextScale;
@@ -2003,9 +3013,13 @@ export class KnowledgeView extends HTMLElement {
             return;
         }
         inspector.innerHTML = this.#renderDetails();
-        const backButton = this.querySelector("[data-action='clear-graph-focus']");
+        const relationPreviewHost = this.querySelector("[data-role='relation-preview-host']");
+        if (relationPreviewHost) {
+            relationPreviewHost.innerHTML = this.#renderRelationPreview();
+        }
+        const backButton = this.querySelector("[data-action='navigate-region-back']");
         if (backButton) {
-            backButton.hidden = !this.#focusGraph();
+            backButton.hidden = !this.#regionHistory.length;
         }
         this.#bindInspectorButtons();
     }
@@ -2023,13 +3037,38 @@ export class KnowledgeView extends HTMLElement {
         this.#renderInspector();
     }
 
+    /** Reset camera zoom and center while preserving the current graph or subregion. */
+    #resetVisibleGraphViewport() {
+        cancelAnimationFrame(this.#cameraAnimationFrame);
+        this.#cameraAnimationFrame = 0;
+        this.#hoveredNodeId = "";
+        this.#hoveredRelationId = "";
+        this.#relationHoverViewport = null;
+        this.#badgeHoverViewport = null;
+        const canvas = this.querySelector("[data-role='knowledge-canvas']");
+        if (!(canvas instanceof HTMLCanvasElement)) return;
+        this.#viewportBadgeRankingFrozen = true;
+        this.#needsViewportFit = false;
+        const target = this.#fittedViewport(canvas.getBoundingClientRect());
+        this.#animateViewport(target, () => this.#releaseViewportBadgeRanking());
+        this.#renderInspector();
+    }
+
     /** Clear persistent region state without rendering. */
     #resetGraphRegion() {
         this.#selectedNodeId = "";
         this.#selectedRelationId = "";
+        this.#hoveredNodeId = "";
+        this.#hoveredRelationId = "";
         this.#regionNodeIds.clear();
         this.#regionEdgeIds.clear();
         this.#regionPositions.clear();
+        this.#regionHistory = [];
+        this.#regionRootNodeId = "";
+        this.#focusViewport = null;
+        this.#relationHoverViewport = null;
+        this.#badgeHoverViewport = null;
+        this.#viewportBadgeRankingFrozen = false;
     }
 
     /**
@@ -2061,6 +3100,48 @@ export class KnowledgeView extends HTMLElement {
             const dx = node.x - x;
             const dy = node.y - y;
             return Math.sqrt((dx * dx) + (dy * dy)) <= node.radius + (16 / this.#viewport.scale);
+        }) || null;
+    }
+
+    /** Find the selected node whose explicit child-region affordance contains a point. */
+    #hitTestNodeExpansionBadge(x, y) {
+        if (!this.#selectedNodeId || !this.#nodeCanExpand(this.#selectedNodeId)) return null;
+        const node = this.#nodes.find(item => item.id === this.#selectedNodeId);
+        if (!node || (this.#regionNodeIds.size && !this.#regionNodeIds.has(node.id))) return null;
+        const badgeX = node.x + node.radius * 0.72;
+        const badgeY = node.y - node.radius * 0.72;
+        const hitRadius = 13 / this.#viewport.scale;
+        return Math.hypot(x - badgeX, y - badgeY) <= hitRadius ? node : null;
+    }
+
+    /** Resolve ranked node-label rectangles before relation labels and node hit halos. */
+    #hitTestNodeLabel(x, y) {
+        const padding = 5 / Math.max(this.#viewport.scale, 0.005);
+        for (const [nodeId, bounds] of [...this.#nodeLabelBounds.entries()].reverse()) {
+            if (x < bounds.left - padding || x > bounds.right + padding
+                || y < bounds.top - padding || y > bounds.bottom + padding) continue;
+            return this.#nodes.find(node => node.id === nodeId) || null;
+        }
+        return null;
+    }
+
+    /** Return whether a point belongs to the visible node body rather than its generous hit halo. */
+    #nodeOwnsPoint(node, x, y) {
+        return Math.hypot(node.x - x, node.y - y) <= node.radius + (4 / this.#viewport.scale);
+    }
+
+    /** Find a relation whose rendered label rectangle contains graph coordinates. */
+    #hitTestEdgeLabel(x, y) {
+        const focus = this.#focusGraph();
+        const candidates = focus ? this.#edges.filter(edge => focus.edgeIds.has(edge.id)) : this.#edges;
+        const padding = 4 / this.#viewport.scale;
+        return [...candidates].reverse().find(edge => {
+            const bounds = this.#edgeLabelBounds.get(edge.id);
+            return bounds
+                && x >= bounds.left - padding
+                && x <= bounds.right + padding
+                && y >= bounds.top - padding
+                && y <= bounds.bottom + padding;
         }) || null;
     }
 

@@ -58,10 +58,13 @@ from brain.presentation.commands.memory import (
 )
 from brain.presentation.commands.profiles import command_list_profiles, command_read_profile
 from brain.presentation.commands.pictures import (
+    command_delete_picture_guidance,
     command_describe_picture,
+    command_list_picture_guidance,
     command_list_pictures,
     command_picture_status,
     command_scan_pictures,
+    command_set_picture_guidance,
 )
 from brain.presentation.commands.snippets import command_clone_snippet, command_list_snippets
 from brain.presentation.commands.utilities import command_propagate_agent_prompt, command_wiki
@@ -139,4 +142,7 @@ COMMAND_MODULES = [
     command_list_pictures,
     command_describe_picture,
     command_picture_status,
+    command_list_picture_guidance,
+    command_set_picture_guidance,
+    command_delete_picture_guidance,
 ]

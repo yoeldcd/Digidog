@@ -33,6 +33,7 @@ export const SVG_ICONS = {
     filter: `<path d="M4 5h16l-6 7v5l-4 2v-7z"/>`,
     checkSquare: `<path d="M9 11l2 2 4-5"/><rect x="4" y="4" width="16" height="16" rx="3"/>`,
     chevronRight: `<path d="m9 6 6 6-6 6"/>`,
+    chevronLeft: `<path d="m15 18-6-6 6-6"/>`,
     chevronDown: `<path d="m6 9 6 6 6-6"/>`,
     minus: `<path d="M6 12h12"/>`,
     more: `<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>`,

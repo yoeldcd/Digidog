@@ -6,6 +6,8 @@
 import { escapeHtml } from "../utils/html.ts";
 import { icon } from "../utils/icons.ts";
 
+const TREE_WIDTH_STORAGE_KEY = "brain.structure-tree.width";
+
 /**
  * A serializable node rendered by {@link StructureTree}.
  *
@@ -20,6 +22,7 @@ import { icon } from "../utils/icons.ts";
  * @property {number|string} [count] Optional descendant count.
  * @property {string} [detail] Secondary compact detail.
  * @property {string} [timestamp] Timestamp for terminal log rows.
+ * @property {boolean} [folder] Preserve folder affordances when the node has no loaded children.
  * @property {"default"|"log"} [presentation] Node visual treatment.
  * @property {{id: string, label: string, icon?: string, danger?: boolean}[]} [actions] Context actions for this node.
  * @property {StructureTreeNode[]} [children] Descendants.
@@ -45,15 +48,22 @@ export class StructureTree extends HTMLElement {
         title: "",
         toolbarActions: [],
         showSearch: true,
-        searchPlaceholder: "Buscar...",
+        searchPlaceholder: "Search...",
         sortDirection: "asc",
-        emptyText: "No hay elementos todavia."
+        emptyText: "No items yet."
     };
 
     #openActionNodeId = "";
     #searchQuery = "";
     #disableFilter = false;
+    #resizePane = null;
+    #resizeHandle = null;
+    #resizePointerId = null;
+    #resizeOriginX = 0;
+    #resizeOriginWidth = 0;
     #onDocumentPointerDown = event => this.#closeMenusOutside(event);
+    #onResizePointerMove = event => this.#resizeTreeFromPointer(event);
+    #onResizePointerUp = event => this.#finishTreeResize(event);
 
     /**
      * Assign the full tree presentation model.
@@ -69,9 +79,9 @@ export class StructureTree extends HTMLElement {
             title: value?.title || "",
             toolbarActions: Array.isArray(value?.toolbarActions) ? value.toolbarActions : [],
             showSearch: value?.showSearch !== false,
-            searchPlaceholder: value?.searchPlaceholder || "Buscar...",
+            searchPlaceholder: value?.searchPlaceholder || "Search...",
             sortDirection: value?.sortDirection === "desc" ? "desc" : "asc",
-            emptyText: value?.emptyText || "No hay elementos todavia."
+            emptyText: value?.emptyText || "No items yet."
         };
         if (typeof value?.searchQuery === "string") {
             this.#searchQuery = value.searchQuery;
@@ -87,6 +97,7 @@ export class StructureTree extends HTMLElement {
      */
     connectedCallback() {
         this.#render();
+        this.#installResizeHandle();
         document.addEventListener("pointerdown", this.#onDocumentPointerDown);
     }
 
@@ -97,6 +108,92 @@ export class StructureTree extends HTMLElement {
      */
     disconnectedCallback() {
         document.removeEventListener("pointerdown", this.#onDocumentPointerDown);
+        window.removeEventListener("pointermove", this.#onResizePointerMove);
+        window.removeEventListener("pointerup", this.#onResizePointerUp);
+        this.#resizeHandle?.remove();
+        this.#resizeHandle = null;
+        this.#resizePane = null;
+    }
+
+    /** Mount a full-height drag target on the owning structure-tree pane. */
+    #installResizeHandle() {
+        const pane = this.closest(".structure-tree");
+        if (!(pane instanceof HTMLElement) || pane.querySelector(":scope > .structure-tree-resize-handle")) return;
+        this.#resizePane = pane;
+        pane.classList.add("has-resize-handle");
+        try {
+            const storedWidth = Number(localStorage.getItem(TREE_WIDTH_STORAGE_KEY) || 0);
+            if (storedWidth) this.#setTreeWidth(storedWidth);
+        } catch {
+            // Storage can be unavailable in restricted browser contexts; resizing still works in-memory.
+        }
+        const handle = document.createElement("div");
+        handle.className = "structure-tree-resize-handle";
+        handle.setAttribute("role", "separator");
+        handle.setAttribute("aria-label", "Resize tree");
+        handle.setAttribute("aria-orientation", "vertical");
+        handle.tabIndex = 0;
+        handle.addEventListener("pointerdown", event => this.#startTreeResize(event));
+        handle.addEventListener("keydown", event => this.#resizeTreeFromKeyboard(event));
+        pane.append(handle);
+        this.#resizeHandle = handle;
+    }
+
+    /** Begin one right-edge horizontal resize gesture. */
+    #startTreeResize(event) {
+        if (!this.#resizePane || event.button !== 0) return;
+        event.preventDefault();
+        this.#resizePointerId = event.pointerId;
+        this.#resizeOriginX = event.clientX;
+        this.#resizeOriginWidth = this.#resizePane.getBoundingClientRect().width;
+        this.#resizePane.classList.add("is-resizing");
+        this.#resizeHandle?.setPointerCapture?.(event.pointerId);
+        window.addEventListener("pointermove", this.#onResizePointerMove);
+        window.addEventListener("pointerup", this.#onResizePointerUp);
+    }
+
+    /** Update the sidebar while the pointer moves anywhere along the viewport. */
+    #resizeTreeFromPointer(event) {
+        if (event.pointerId !== this.#resizePointerId) return;
+        this.#setTreeWidth(this.#resizeOriginWidth + event.clientX - this.#resizeOriginX);
+    }
+
+    /** Finish and persist one resize gesture. */
+    #finishTreeResize(event) {
+        if (event.pointerId !== this.#resizePointerId) return;
+        this.#resizePointerId = null;
+        this.#resizePane?.classList.remove("is-resizing");
+        window.removeEventListener("pointermove", this.#onResizePointerMove);
+        window.removeEventListener("pointerup", this.#onResizePointerUp);
+        this.#persistTreeWidth();
+    }
+
+    /** Support precise keyboard resizing from the same separator. */
+    #resizeTreeFromKeyboard(event) {
+        if (!this.#resizePane || !["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+        event.preventDefault();
+        const direction = event.key === "ArrowRight" ? 1 : -1;
+        this.#setTreeWidth(this.#resizePane.getBoundingClientRect().width + direction * (event.shiftKey ? 40 : 12));
+        this.#persistTreeWidth();
+    }
+
+    /** Clamp and apply a shared desktop tree width. */
+    #setTreeWidth(width) {
+        if (!this.#resizePane) return;
+        const maximum = Math.min(640, window.innerWidth * 0.48);
+        const nextWidth = Math.max(380, Math.min(maximum, Number(width) || 380));
+        this.#resizePane.style.width = `${Math.round(nextWidth)}px`;
+        this.#resizeHandle?.setAttribute("aria-valuenow", String(Math.round(nextWidth)));
+    }
+
+    /** Persist the most recent shared tree width when browser storage is available. */
+    #persistTreeWidth() {
+        if (!this.#resizePane) return;
+        try {
+            localStorage.setItem(TREE_WIDTH_STORAGE_KEY, String(Math.round(this.#resizePane.getBoundingClientRect().width)));
+        } catch {
+            // Keep the active width even when persistence is unavailable.
+        }
     }
 
     #matchesFilter(node) {
@@ -114,14 +211,7 @@ export class StructureTree extends HTMLElement {
 
     #render() {
         const rootDirection = this.#model.sortDirection === "desc" ? -1 : 1;
-        const sortedRootNodes = [...this.#model.nodes].sort((left, right) => {
-            const leftHas = Array.isArray(left.children) && left.children.length > 0;
-            const rightHas = Array.isArray(right.children) && right.children.length > 0;
-            if (leftHas !== rightHas) {
-                return leftHas ? -1 : 1;
-            }
-            return rootDirection * String(left.sortKey || left.label || "").localeCompare(String(right.sortKey || right.label || ""));
-        });
+        const sortedRootNodes = [...this.#model.nodes].sort((left, right) => this.#compareNodes(left, right, rootDirection));
         const visibleNodes = sortedRootNodes.filter(node => this.#matchesFilter(node));
         this.innerHTML = `
             ${this.#renderToolbar()}
@@ -192,7 +282,7 @@ export class StructureTree extends HTMLElement {
                             data-tree-id="${escapeHtml(node.id || node.path)}" data-tree-path="${escapeHtml(node.path)}" data-tree-branch="false"
                             title="${escapeHtml(node.label)}">
                             <span class="tree-node-icon">${icon(node.icon || defaultLeaf)}</span>
-                            <time>${escapeHtml(node.timestamp || "Sin fecha")}</time>
+                            <time>${escapeHtml(node.timestamp || "No date")}</time>
                             <strong>${escapeHtml(node.label)}</strong>
                             <small>${escapeHtml(node.detail || "")}</small>
                             ${this.#renderNodeActionTrigger(node)}
@@ -204,14 +294,11 @@ export class StructureTree extends HTMLElement {
         }
 
         const childDirection = node.sortDirection === "desc" ? -1 : 1;
-        const sortedChildren = [...children].sort((left, right) => {
-            const leftHas = Array.isArray(left.children) && left.children.length > 0;
-            const rightHas = Array.isArray(right.children) && right.children.length > 0;
-            if (leftHas !== rightHas) {
-                return leftHas ? -1 : 1;
-            }
-            return childDirection * String(left.sortKey || left.label || "").localeCompare(String(right.sortKey || right.label || ""));
-        });
+        const sortedChildren = [...children].sort((left, right) => this.#compareNodes(left, right, childDirection));
+        const isFolder = hasChildren || node.folder === true;
+        const caret = hasChildren
+            ? icon(expanded ? "chevronDown" : "chevronRight")
+            : isFolder ? "+" : "";
 
         return `
             <div class="tree-node-wrap" role="treeitem" aria-level="${depth}" ${hasChildren ? `aria-expanded="${expanded}"` : ""} aria-selected="${active}" style="--depth: ${depth};">
@@ -219,8 +306,8 @@ export class StructureTree extends HTMLElement {
                     <button class="tree-node ${hasChildren ? "" : "tree-node--leaf"} ${sourceClass} ${active ? "is-active" : ""}"${sourceStyle}
                         data-tree-id="${escapeHtml(node.id || node.path)}" data-tree-path="${escapeHtml(node.path)}" data-tree-branch="${hasChildren}"
                         title="${escapeHtml(node.label)}">
-                        ${hasChildren ? `<span class="tree-caret">${icon(expanded ? "chevronDown" : "chevronRight")}</span>` : ""}
-                        ${icon(node.icon || (hasChildren ? defaultBranch : defaultLeaf))}
+                        <span class="tree-caret ${isFolder && !hasChildren ? "is-empty-folder" : ""}">${caret}</span>
+                        ${icon(node.icon || (isFolder ? defaultBranch : defaultLeaf))}
                         <span>${escapeHtml(node.label)}</span>
                         ${node.count !== undefined ? `<small>${escapeHtml(String(node.count))}</small>` : ""}
                         ${this.#renderNodeActionTrigger(node)}
@@ -244,7 +331,7 @@ export class StructureTree extends HTMLElement {
         }
         const nodeId = escapeHtml(node.id || node.path);
         return `
-            <span class="tree-action-trigger" data-tree-actions="${nodeId}" title="Acciones" aria-label="Acciones">
+            <span class="tree-action-trigger" data-tree-actions="${nodeId}" title="Actions" aria-label="Actions">
                 ${icon("more")}
             </span>
         `;
@@ -298,14 +385,7 @@ export class StructureTree extends HTMLElement {
             
             // Render only nodes container to keep focus and cursor position!
             const rootDirection = this.#model.sortDirection === "desc" ? -1 : 1;
-            const sortedRootNodes = [...this.#model.nodes].sort((left, right) => {
-                const leftHas = Array.isArray(left.children) && left.children.length > 0;
-                const rightHas = Array.isArray(right.children) && right.children.length > 0;
-                if (leftHas !== rightHas) {
-                    return leftHas ? -1 : 1;
-                }
-                return rootDirection * String(left.sortKey || left.label || "").localeCompare(String(right.sortKey || right.label || ""));
-            });
+            const sortedRootNodes = [...this.#model.nodes].sort((left, right) => this.#compareNodes(left, right, rootDirection));
             
             const nodesContainer = this.querySelector(".structure-tree-nodes");
             if (nodesContainer) {
@@ -355,6 +435,18 @@ export class StructureTree extends HTMLElement {
             detail: { id, path, branch, expanded, clickedCaret, node }
         }));
         this.#restoreInteractionAnchor(id, scrollTop);
+    }
+
+    /** Respect explicit super-domain order before the default branch-first tree order. */
+    #compareNodes(left, right, direction) {
+        if (left.sortKey !== undefined || right.sortKey !== undefined) {
+            return direction * String(left.sortKey || left.label || "")
+                .localeCompare(String(right.sortKey || right.label || ""));
+        }
+        const leftHas = Array.isArray(left.children) && left.children.length > 0;
+        const rightHas = Array.isArray(right.children) && right.children.length > 0;
+        if (leftHas !== rightHas) return leftHas ? -1 : 1;
+        return direction * String(left.label || "").localeCompare(String(right.label || ""));
     }
 
     /**
