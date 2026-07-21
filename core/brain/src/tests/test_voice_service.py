@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock, call, patch
 
 from brain.infrastructure.voice.daemon import IDLE_TTL_SECONDS, VoiceMemory
+from brain.infrastructure.voice.markdown_narration import normalize_avatar_message_text
 from brain.infrastructure.voice.daemon_client import (
     VOICE_DAEMON_STARTUP_TIMEOUT_SECONDS,
     VoiceDaemonClient,
@@ -200,6 +201,36 @@ def test_voice_processes_acquire_kernel_singleton_leases_before_ui_or_server() -
     assert 'ProcessLease(core_process_lease_name("voice-avatar-window"))' in avatar_source
     assert "BRAIN_VOICE_DAEMON_INSTANCE_ID" in avatar_source
 
+
+def test_avatar_supervisor_binds_child_to_its_daemon_instance() -> None:
+    """A replacement window must reject status from every other daemon lifetime."""
+    from brain.infrastructure.voice.avatar_process import AvatarProcessSupervisor
+
+    entrypoint = Path("avatar-main.py")
+    supervisor = AvatarProcessSupervisor(entrypoint, "daemon-instance-one")
+    process = Mock(pid=321)
+    process.poll.return_value = None
+    with patch("brain.infrastructure.voice.avatar_process.subprocess.Popen", return_value=process) as popen:
+        assert supervisor.ensure_running() == 321
+
+    environment = popen.call_args.kwargs["env"]
+    assert environment["BRAIN_VOICE_DAEMON_INSTANCE_ID"] == "daemon-instance-one"
+
+
+def test_avatar_supervisor_replaces_an_exited_window_once() -> None:
+    """The healthy voice daemon relaunches an exited avatar without duplicates."""
+    from brain.infrastructure.voice.avatar_process import AvatarProcessSupervisor
+
+    first = Mock(pid=111)
+    first.poll.return_value = 1
+    second = Mock(pid=222)
+    second.poll.return_value = None
+    supervisor = AvatarProcessSupervisor(Path("avatar-main.py"), "daemon-one")
+    supervisor._process = first
+    with patch("brain.infrastructure.voice.avatar_process.subprocess.Popen", return_value=second) as popen:
+        assert supervisor.ensure_running() == 222
+        assert supervisor.ensure_running() == 222
+    popen.assert_called_once()
 
 def test_speak_delegates_to_worker_without_synthesizing() -> None:
     """Delegate immediately to the warm daemon client."""
@@ -513,18 +544,58 @@ def test_voice_memory_finds_named_message_for_direct_replay() -> None:
     assert memory.find_message(name="missing.mp3") is None
 
 
-def test_incoming_message_interrupts_historical_replay() -> None:
-    """Live speech must own the audio channel instead of overlapping replay."""
+def test_replay_and_live_speech_share_request_order_without_interruption() -> None:
+    """Retained and live requests must preserve one FIFO ingress order."""
     playback = Mock()
     playback.poll.return_value = None
     memory = VoiceMemory()
+    retained_speak_id = memory.enqueue("Mensaje retenido", "es")
+    retained_request = memory.requests.get_nowait()
+    memory.requests.task_done()
+    retained = memory.store(b"mp3-bytes", speak_id=retained_speak_id or "", text="Mensaje retenido")
     memory.playback = playback
-    memory.replay_active = True
-    memory.enqueue("Mensaje entrante", "es")
-    playback.terminate.assert_called_once_with()
-    assert memory.replay_active is False
-    assert memory.playback is None
 
+    assert memory.enqueue_replay(name=retained["name"]) is True
+    incoming_speak_id = memory.enqueue("Mensaje entrante", "es")
+
+    replay_request = memory.requests.get_nowait()
+    incoming_request = memory.requests.get_nowait()
+    memory.requests.task_done()
+    memory.requests.task_done()
+    assert replay_request["replayName"] == retained["name"]
+    assert incoming_request["id"] == incoming_speak_id
+    assert retained_request["id"] == retained_speak_id
+    playback.terminate.assert_not_called()
+
+
+def test_voice_status_counts_pending_ingress_and_playback_jobs() -> None:
+    """Expose every queued presentation source through one badge depth."""
+    memory = VoiceMemory()
+    memory.requests.put({"id": "pending"})
+    memory.playback_requests.put({"request": {"id": "ready"}})
+
+    assert memory.status()["queueDepth"] == 2
+    memory.requests.get_nowait()
+    memory.requests.task_done()
+    memory.playback_requests.get_nowait()
+    memory.playback_requests.task_done()
+
+
+def test_muted_request_waits_for_estimated_reading_time() -> None:
+    """Muted messages retain FIFO visual duration instead of flashing instantly."""
+    from brain.infrastructure.voice import daemon
+
+    request = {"id": "speak-muted", "text": "Mensaje legible", "displayText": "Mensaje legible"}
+    with (
+        patch.object(daemon, "MEMORY") as memory,
+        patch.object(daemon, "estimated_speech_seconds", return_value=2.5),
+        patch.object(daemon.time, "sleep") as sleep,
+    ):
+        daemon.present_muted_request(request)
+
+    memory.show_muted_message.assert_called_once_with("Mensaje legible", "", "Mensaje legible", "speak-muted")
+    sleep.assert_called_once_with(2.5)
+    memory.set_speak_status.assert_called_once_with("speak-muted", "DONE")
 
 def test_voice_memory_exposes_thinking_without_interrupting_playback_contract() -> None:
     memory = VoiceMemory()
@@ -594,11 +665,27 @@ def test_idle_expiry_waits_for_pending_or_active_playback() -> None:
     assert memory.idle_expired(expired_at) is True
 
 
+def test_partial_and_total_mute_classify_direct_and_narrated_requests() -> None:
+    """Partial mute keeps direct speech audible while total mute suppresses all."""
+    memory = VoiceMemory()
+    direct_request = {"sourceCommand": ""}
+    narrated_request = {"sourceCommand": "show-backlog", "sourcePhase": "output"}
+
+    assert memory.toggle_muted() == "partial"
+    assert memory.is_muted(request=direct_request) is False
+    assert memory.is_muted(request=narrated_request) is True
+    assert memory.toggle_muted() == "total"
+    assert memory.is_muted(request=direct_request) is True
+    assert memory.is_muted(request=narrated_request) is True
+    assert memory.toggle_muted() == "off"
+    assert memory.is_muted(request=direct_request) is False
+
 def test_muted_active_message_expires_at_natural_playback_deadline() -> None:
     memory = VoiceMemory()
     memory.set_state("speaking", "Mensaje largo", "happy", "**Mensaje largo**")
     memory.set_playback_duration(90_000)
-    assert memory.toggle_muted() is True
+    assert memory.toggle_muted() == "partial"
+    assert memory.toggle_muted() == "total"
     snapshot = memory.status()
     assert snapshot["state"] == "muted"
     assert snapshot["visualRemainingSeconds"] > 80
@@ -652,15 +739,17 @@ def test_voice_memory_mute_preserves_visual_message_and_status() -> None:
     memory = VoiceMemory()
     memory.set_state("speaking", "Mensaje visible", "happy")
 
-    assert memory.toggle_muted() is True
+    assert memory.toggle_muted() == "partial"
+    assert memory.toggle_muted() == "total"
     assert memory.status()["muted"] is True
+    assert memory.status()["muteMode"] == "total"
     assert memory.status()["state"] == "muted"
     assert memory.status()["text"] == "Mensaje visible"
 
     memory.show_muted_message("Siguiente mensaje", "focused")
     assert memory.status()["text"] == "Siguiente mensaje"
     assert memory.status()["state"] == "muted_replay"
-    assert memory.toggle_muted() is False
+    assert memory.toggle_muted() == "off"
     assert memory.status()["state"] == "awaiting"
 
 
@@ -740,6 +829,39 @@ def test_muted_requests_skip_synthesis_but_keep_refined_text() -> None:
     import inspect
 
     request_source = inspect.getsource(__import__("brain.infrastructure.voice.daemon", fromlist=["consume_requests"]).consume_requests)
-    assert request_source.index("cohere_signal_presentation") < request_source.index("MEMORY.is_muted()")
-    assert request_source.index("MEMORY.is_muted()") < request_source.index("synthesis = synthesize_or_reuse(request)")
-    assert "MEMORY.show_muted_message" in request_source
+    assert request_source.index("cohere_signal_presentation") < request_source.index("MEMORY.is_muted(request=request)")
+    assert request_source.index("MEMORY.is_muted(request=request)") < request_source.index("synthesis = synthesize_or_reuse(request)")
+    assert "MEMORY.playback_requests.put" in request_source
+    assert "MEMORY.show_muted_message" not in request_source
+
+
+def test_avatar_text_restores_escaped_word_prefix_controls() -> None:
+    """Control sequences embedded before words recover their missing prefix."""
+    source = "t541: \thinking; \application; \build; \verify; \format"
+
+    normalized = normalize_avatar_message_text(source)
+
+    assert normalized == "t541: thinking; application; build; verify; format"
+    assert clean_text_for_speech(source) == normalized
+
+
+def test_avatar_text_preserves_lines_and_removes_other_c0_controls() -> None:
+    """Line structure remains stable while unsafe controls become whitespace."""
+    source = "first\nsecond\x00third\r\nfourth"
+
+
+    assert normalize_avatar_message_text(source) == "first\nsecond third\r\nfourth"
+
+def test_voice_memory_exposes_independent_processing_activity() -> None:
+    """Synthesis activity remains visible without replacing playback state."""
+    memory = VoiceMemory()
+    memory.set_state("speaking", "Mensaje activo", "happy")
+
+    memory.begin_processing("speak-next", "focused")
+
+    assert memory.status()["state"] == "speaking"
+    assert memory.status()["processing"] is True
+    assert memory.status()["processingEmotion"] == "focused"
+    memory.finish_processing("speak-next")
+    assert memory.status()["processing"] is False
+    assert memory.status()["processingEmotion"] == ""

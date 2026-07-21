@@ -42,6 +42,8 @@ npm.cmd run build
 ```powershell
 npm.cmd run build
 npm.cmd run verify
+npm.cmd run audit:jsdoc
+npm.cmd run format:jsdoc
 python .\$agent\scripts\brain.py serve-explorer --port 8127
 ```
 

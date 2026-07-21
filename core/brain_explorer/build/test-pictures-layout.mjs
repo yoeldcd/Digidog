@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const view = await readFile(new URL("../src/presentation/components/pictures-view.ts", import.meta.url), "utf8");
-const shell = await readFile(new URL("../src/presentation/components/app-shell.ts", import.meta.url), "utf8");
+const view = await readFile(new URL("../src/presentation/pictures/layouts/pictures-view.ts", import.meta.url), "utf8");
+const shell = await readFile(new URL("../src/presentation/shell/layouts/app-shell.ts", import.meta.url), "utf8");
+const shellRoutes = await readFile(new URL("../src/presentation/shell/config/shell-routes.ts", import.meta.url), "utf8");
 const styles = await readFile(new URL("../src/styles/views.css", import.meta.url), "utf8");
 const layout = await readFile(new URL("../src/styles/layout.css", import.meta.url), "utf8");
 const selectionMethod = view.match(/#selectPicture\(pictureId: string\)[\s\S]*?(?=\n    #render\(\))/)?.[0] || "";
@@ -57,7 +58,7 @@ assert.match(view, /class="picture-viewer-zoom-fabs"/);
 assert.match(view, /setTimeout\(\(\) => \{[^}]*is-visible[^}]*\}, 3000\)/s);
 assert.match(view, /ArrowLeft/);
 assert.match(view, /ArrowRight/);
-assert.match(shell, /id: "pictures"/);
+assert.match(shellRoutes, /id: "pictures"/);
 assert.match(shell, /value="pictures"/);
 assert.match(styles, /\.picture-carousel/);
 assert.match(styles, /\.picture-carousel\s*\{[^}]*height:\s*100%/s);

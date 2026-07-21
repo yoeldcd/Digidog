@@ -21,6 +21,44 @@ EMOJI_CHARACTER_PATTERN = re.compile(
     r"|[\u200D\uFE0E\uFE0F]"
 )
 
+ESCAPED_PREFIX_CONTROLS = {
+    "\a": "a",
+    "\b": "b",
+    "\t": "t",
+    "\v": "v",
+    "\f": "f",
+}
+
+
+def normalize_avatar_message_text(source: str) -> str:
+    """Repair escaped word prefixes and remove unsafe C0 controls.
+
+    Python and JSON producers can accidentally materialize sequences such as
+    ``\\thinking`` or ``\\application`` as a tab or bell character followed by
+    the remainder of the word. Those controls create visual gaps and invalid
+    SSML. A mnemonic control immediately followed by a letter is restored to
+    its source letter; other controls become a space while line breaks remain
+    intact.
+
+    Args:
+        source: Rich avatar message received from any producer.
+
+    Returns:
+        Text safe for Markdown rendering, narration, and persistence.
+    """
+    normalized: list[str] = []
+    for index, character in enumerate(source):
+        if character in {"\n", "\r"}:
+            normalized.append(character)
+            continue
+        replacement = ESCAPED_PREFIX_CONTROLS.get(character)
+        next_character = source[index + 1] if index + 1 < len(source) else ""
+        if replacement and next_character.isalpha():
+            normalized.append(replacement)
+            continue
+        normalized.append(" " if ord(character) < 32 else character)
+    return "".join(normalized)
+
 
 def markdown_text_for_speech(source: str) -> str:
     """
@@ -36,7 +74,7 @@ def markdown_text_for_speech(source: str) -> str:
     Returns:
         A compact plain-text narration suitable for text-to-speech.
     """
-    text = _normalize_legacy_line_breaks(_unwrap_legacy_dialogue(source))
+    text = _normalize_legacy_line_breaks(_unwrap_legacy_dialogue(normalize_avatar_message_text(source)))
     lines = text.splitlines()
     table_lines = _table_line_indexes(lines)
     spoken_lines: list[str] = []

@@ -9,7 +9,10 @@ from typing import Any
 
 from brain.infrastructure.voice.catalog import VoiceCatalogService
 from brain.infrastructure.voice.daemon_client import VoiceDaemonClient
-from brain.infrastructure.voice.markdown_narration import markdown_text_for_speech
+from brain.infrastructure.voice.markdown_narration import (
+    markdown_text_for_speech,
+    normalize_avatar_message_text,
+)
 
 
 class VoiceService:
@@ -36,13 +39,14 @@ class VoiceService:
             self.repeat_last(emotion=emotion, codex_thread_id=codex_thread_id)
             return
 
-        cleaned_text = clean_text_for_speech(text)
+        display_text = normalize_avatar_message_text(text)
+        cleaned_text = clean_text_for_speech(display_text)
         if not cleaned_text:
             return
 
         self.present(
             text=cleaned_text,
-            display_text=text,
+            display_text=display_text,
             lang=lang,
             emotion=emotion,
             codex_thread_id=codex_thread_id,
@@ -60,9 +64,11 @@ class VoiceService:
         source_phase: str = "",
     ) -> None:
         """Enqueue one visual and spoken projection without exposing an engine."""
+        normalized_text = normalize_avatar_message_text(text)
+        normalized_display_text = normalize_avatar_message_text(display_text or text)
         VoiceDaemonClient().speak(
-            text=text,
-            display_text=display_text or text,
+            text=normalized_text,
+            display_text=normalized_display_text,
             lang=lang,
             emotion=emotion,
             signal_key=signal_key,

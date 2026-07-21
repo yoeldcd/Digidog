@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const viewSource = await readFile(
-    new URL("../src/presentation/components/messages-view.ts", import.meta.url),
+    new URL("../src/presentation/messages/layouts/messages-view.ts", import.meta.url),
     "utf8"
 );
 const styles = await readFile(new URL("../src/styles/views.css", import.meta.url), "utf8");

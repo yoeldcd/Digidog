@@ -269,10 +269,11 @@ def test_qt_avatar_runtime_constructs_without_polling() -> None:
     window.reply_window.set_theme("dark")
     assert window.bubble.property("avatarTheme") == "dark"
     assert window.reply_window.property("avatarTheme") == "dark"
-    window.controls.set_state(playing=True, muted=True)
+    window.controls.set_state(playing=True, mute_mode="total")
     window.controls.set_quotas(25, 60, "14:00", "21 JUL")
     assert window.controls.playing is True
     assert window.controls.muted is True
+    assert window.controls.mute_mode == "total"
     assert window.controls.quotas == (25, 60)
     window.close()
     app.processEvents()
@@ -411,6 +412,143 @@ def test_show_message_reopens_last_visual_without_voice_request() -> None:
     window.close()
 
 
+def test_queue_badge_remains_visible_as_passive_click_through_chrome() -> None:
+    """Queued work survives hover exit without exposing unrelated controls."""
+    app = QApplication.instance() or QApplication([])
+    window = QtAvatarWindow(start_polling=False)
+    controls = window.controls
+    window.show()
+    app.processEvents()
+    controls.set_expanded(False)
+    controls.set_queue_depth(1)
+    assert controls.isVisible()
+    assert controls.testAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+    controls.set_queue_depth(0)
+    assert not controls.isVisible()
+    window.close()
+
+
+def test_processing_dots_remain_visible_without_pointer_hover() -> None:
+    """Thinking and preparation own passive visibility until work completes."""
+    app = QApplication.instance() or QApplication([])
+    window = QtAvatarWindow(start_polling=False)
+    controls = window.controls
+    window.show()
+    app.processEvents()
+    controls.set_expanded(False)
+    controls.set_processing(True)
+    assert controls.isVisible()
+    assert controls.testAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+    controls.set_processing(False)
+    assert not controls.isVisible()
+    window.close()
+
+def test_mute_icon_distinguishes_partial_slash_from_total_cross() -> None:
+    """Mute chrome maps partial to one slash and total to two crossing lines."""
+    import inspect
+
+    from brain.presentation.avatar.qt.controls import QtAvatarControls
+
+    source = inspect.getsource(QtAvatarControls._paint_mute)
+    assert 'if self.mute_mode != "off"' in source
+    assert 'if self.mute_mode == "total"' in source
+    assert source.count("painter.drawLine(") == 2
+
+def test_processing_states_use_animated_dots_without_transient_bubbles() -> None:
+    """Thinking and preparation belong to top chrome rather than message history."""
+    import inspect
+
+    app = QApplication.instance() or QApplication([])
+    window = QtAvatarWindow(start_polling=False)
+    window._set_state("thinking")
+    assert window.controls.processing is True
+    assert window.controls.processing_timer.isActive()
+    window._set_state("awaiting")
+    assert window.controls.processing is False
+    assert not window.controls.processing_timer.isActive()
+    poll_source = inspect.getsource(QtAvatarWindow._poll)
+    assert 'processing_emotion = str(payload.get("processingEmotion", ""))' in poll_source
+    assert 'processing=processing or state in {"thinking", "preparing"}' in poll_source
+    assert 'if state in {"thinking", "preparing"}' in poll_source
+    assert poll_source.index('if state in {"thinking", "preparing"}') < poll_source.index("self._set_text(")
+    window.close()
+
+
+def test_processing_indicator_reuses_explorer_working_palette() -> None:
+    """Qt presents the same six semantic dot colors used by Brain Explorer."""
+    import inspect
+
+    from brain.presentation.avatar.qt.controls import QtAvatarControls
+
+    source = inspect.getsource(QtAvatarControls._paint_processing)
+    for color in ("#3b82f6", "#06b6d4", "#10b981", "#f59e0b", "#ef4444", "#ec4899"):
+        assert color in source
+    assert "pin_bounds.right() + message_bounds.left()" in source
+
+def test_message_icon_fills_white_and_centers_red_buffer_count() -> None:
+    """The queue depth is text inside the bubble, never a detached badge circle."""
+    import inspect
+
+    from brain.presentation.avatar.qt.controls import QtAvatarControls
+
+    source = inspect.getsource(QtAvatarControls._paint_show_message)
+    assert 'painter.setBrush(QColor("#ffffff"))' in source
+    assert 'painter.setPen(QColor("#e32636"))' in source
+    assert "painter.drawText(bubble_bounds, Qt.AlignmentFlag.AlignCenter, buffer_text)" in source
+    assert 'buffer_text = "99+" if self.queue_depth > 99' in source
+    assert "drawEllipse" not in source
+
+def test_action_chrome_paints_icons_without_opaque_square_backgrounds() -> None:
+    """Visual transparency does not alter the square hitbox geometry."""
+    import inspect
+
+    from brain.presentation.avatar.qt.controls import QtAvatarControls, chrome_geometry
+
+    for method in (
+        QtAvatarControls._paint_pin,
+        QtAvatarControls._paint_show_message,
+        QtAvatarControls._paint_resize_grip,
+    ):
+        source = inspect.getsource(method)
+        assert "fillRect(bounds" not in source
+        assert "drawRect(bounds" not in source
+    pin, message, grip = chrome_geometry(300, 400)
+    assert pin.width() == pin.height()
+    assert message.width() == message.height()
+    assert grip.width() == grip.height()
+
+def test_quota_refresh_blinks_until_the_result_is_consumed() -> None:
+    """Manual and automatic quota reads expose the same visible busy state."""
+    app = QApplication.instance() or QApplication([])
+    window = QtAvatarWindow(start_polling=False)
+    with patch.object(window.quota_client, "read", return_value=None):
+        window._refresh_quotas()
+        assert window.controls.quota_refreshing is True
+        assert window.controls.quota_blink_timer.isActive()
+        window.quota_results.get(timeout=1)
+        window.quota_results.put(None)
+        window._consume_quota_result()
+    assert window.controls.quota_refreshing is False
+    assert not window.controls.quota_blink_timer.isActive()
+    window.close()
+
+
+def test_clicking_either_quota_meter_requests_refresh() -> None:
+    """Both circular quota hitboxes retain click-to-refresh behavior."""
+    app = QApplication.instance() or QApplication([])
+    window = QtAvatarWindow(start_polling=False)
+    window.resize(300, 400)
+    window.controls.resize(window.size())
+    window.controls.show()
+    with patch.object(window.controls, "on_quota") as refresh:
+        left, right, _radius = __import__(
+            "brain.presentation.avatar.qt.controls", fromlist=["quota_geometry"]
+        ).quota_geometry(window.width(), window.height())
+        QTest.mouseClick(window.controls, Qt.MouseButton.LeftButton, pos=left.toPoint())
+        QTest.mouseClick(window.controls, Qt.MouseButton.LeftButton, pos=right.toPoint())
+    assert refresh.call_count == 2
+    window.close()
+
 def test_message_control_toggles_visual_without_replay() -> None:
     app = QApplication.instance() or QApplication([])
     window = QtAvatarWindow(start_polling=False)
@@ -425,6 +563,50 @@ def test_message_control_toggles_visual_without_replay() -> None:
     post.assert_not_called()
     window.close()
 
+
+def test_history_playback_targets_the_audio_fixed_in_the_bubble() -> None:
+    """Play requeues the selected retained audio instead of the newest message."""
+    app = QApplication.instance() or QApplication([])
+    window = QtAvatarWindow(start_polling=False)
+    window.message_reveal_latched = True
+    window.current_audio_name = "retained-message.mp3"
+    window.current_display_text = "Mensaje histórico"
+    with patch.object(window, "_post") as post:
+        window._toggle_playback()
+    post.assert_called_once_with("/replay", {"name": "retained-message.mp3"})
+    window.close()
+
+
+def test_history_without_retained_audio_queues_its_fixed_text() -> None:
+    """A fixed message remains playable when its original audio was not retained."""
+    app = QApplication.instance() or QApplication([])
+    window = QtAvatarWindow(start_polling=False)
+    window.message_reveal_latched = True
+    window.current_audio_name = ""
+    window.current_display_text = "Mensaje histórico"
+    window.current_codex_thread_id = "thread-one"
+    with patch.object(window, "_post") as post:
+        window._toggle_playback()
+    endpoint, payload = post.call_args.args
+    assert endpoint == "/speak"
+    assert payload["text"] == "Mensaje histórico"
+    assert payload["sourcePhase"] == "replay"
+    assert payload["codexThreadId"] == "thread-one"
+    window.close()
+
+
+def test_message_history_links_each_speak_to_its_retained_audio() -> None:
+    """History records expose the audio name selected by their speak identifier."""
+    app = QApplication.instance() or QApplication([])
+    window = QtAvatarWindow(start_polling=False)
+    with patch("brain.presentation.avatar.qt.window.urlopen") as urlopen:
+        urlopen.return_value.__enter__.return_value.read.return_value = (
+            b'{"speaks":[{"id":"speak-one","text":"Uno"}],'
+            b'"messages":[{"speakId":"speak-one","name":"one.mp3"}]}'
+        )
+        history = window._message_history()
+    assert history[0]["audioName"] == "one.mp3"
+    window.close()
 
 def test_history_navigation_changes_visual_only_and_preserves_provenance() -> None:
     app = QApplication.instance() or QApplication([])
@@ -667,3 +849,25 @@ def test_qt_pin_priority_is_synchronized_with_bubble() -> None:
     assert bool(window.bubble.windowFlags() & Qt.WindowType.WindowStaysOnTopHint)
     window.close()
     app.processEvents()
+
+
+def test_processing_orbit_is_stable_and_centers_speak_emotion() -> None:
+    """Processing uses a fixed-radius orbit and a canonical center emoji."""
+    import inspect
+
+    app = QApplication.instance() or QApplication([])
+    window = QtAvatarWindow(start_polling=False)
+    controls = window.controls
+    controls.set_processing(True, "focused")
+
+    assert controls.processing_emotion == "focused"
+    source = inspect.getsource(controls._paint_processing)
+    assert "orbit_radius" in source
+    assert "pulse" not in source
+    assert "self._paint_processing_emotion(painter, center)" in source
+    controls.set_processing(True, "happy")
+    assert controls.processing_frame == 0
+    assert controls.processing_emotion == "happy"
+    controls.set_processing(False)
+    assert controls.processing_emotion == ""
+    window.close()

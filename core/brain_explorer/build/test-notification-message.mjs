@@ -5,7 +5,7 @@
 
 import assert from "node:assert/strict";
 
-import { notificationText } from "../src/presentation/utils/notification-message.ts";
+import { notificationText } from "../src/presentation/shared/utils/notification-message.ts";
 
 const memoryNotice = notificationText(
     {

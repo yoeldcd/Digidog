@@ -5,7 +5,7 @@ import {
     descriptionEntityValues,
     parseDescriptionSections,
     renderDescriptionCard
-} from "../src/presentation/components/description-card.ts";
+} from "../src/presentation/shared/components/description-card.ts";
 
 const source = "**Subjects:** Yoi and Angi. **Setting:** A desk with a laptop.\n**Visible Objects:** - Laptop. - Cup.";
 const sections = parseDescriptionSections(source);

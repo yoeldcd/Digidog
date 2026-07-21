@@ -5,16 +5,20 @@
     "moduleResolution": "Bundler",
     "lib": ["ES2023", "DOM"],
     "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "strictPropertyInitialization": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
     "noImplicitOverride": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "noEmit": true,
     "allowImportingTsExtensions": true,
     "skipLibCheck": true
   },
-  "include": [
-    "src/application/contracts/**/*.ts",
-    "src/infrastructure/api/brain-api-client.ts",
-    "src/presentation/utils/notification-message.ts",
-    "src/presentation/state/app-state.ts"
-  ]
+  "include": ["src/**/*.ts"]
 }

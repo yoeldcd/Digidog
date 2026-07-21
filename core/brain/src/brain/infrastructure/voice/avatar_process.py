@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -36,6 +37,7 @@ class AvatarProcessSupervisor:
             [sys.executable, str(self._entrypoint)],
             creationflags=creation_flags,
             close_fds=True,
+            env={**os.environ, "BRAIN_VOICE_DAEMON_INSTANCE_ID": self._instance_id},
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=sys.platform != "win32",

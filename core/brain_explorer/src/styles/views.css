@@ -3965,8 +3965,11 @@ brain-wikis-view .settings-console {
 .visual-reference-footer { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; gap: 10px; padding: 12px 18px; border-top: 1px solid var(--border); background: var(--surface-strong); }
 .image-preview-area { position: relative; display: grid; flex: 1 1 0; width: 100%; height: 100%; min-height: 0; place-items: center; overflow: hidden; border: 2px dashed var(--border); border-radius: var(--radius); background: var(--surface-strong); cursor: pointer; }
 .image-preview-area.has-image { padding: 12px 12px 62px; border-style: solid; cursor: default; }
+.image-preview-area.has-image > .upload-placeholder { display: none; }
+brain-visual-reference-editor { position: relative; display: grid; width: 100%; height: 100%; min-width: 0; min-height: 0; place-items: center; }
+brain-visual-reference-editor[hidden] { display: none; }
 .marking-container { position: relative; display: grid; width: 100%; height: 100%; min-width: 0; min-height: 0; place-items: center; overflow: hidden; cursor: default; }
-.marking-container > img { display: block; width: 100%; height: 100%; min-width: 0; min-height: 0; object-fit: contain; }
+.marking-container > canvas { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; min-width: 0; min-height: 0; cursor: crosshair; touch-action: none; }
 .marking-toolbar-pill { position: absolute; z-index: 2; right: 12px; bottom: 12px; left: 12px; width: min(720px, calc(100% - 24px)); max-height: calc(100% - 24px); margin: 0 auto; overflow: auto; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); box-shadow: var(--shadow); }
 .marking-toolbar-pill[open] { border-radius: 18px; }
 .marking-toolbar-pill > summary { display: flex; min-height: 38px; align-items: center; gap: 8px; padding: 0 14px; cursor: pointer; list-style: none; }
@@ -4070,7 +4073,7 @@ brain-wikis-view .settings-console {
 
     .mark-label-control { grid-column: 1 / -1; }
 
-    .marking-container > img {
+    .marking-container > canvas {
         max-height: calc(100dvh - 280px);
     }
 }
@@ -4084,7 +4087,7 @@ brain-wikis-view .settings-console {
         padding-block: 8px;
     }
 
-    .marking-container > img {
+    .marking-container > canvas {
         max-height: calc(100dvh - 190px);
     }
 }

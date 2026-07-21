@@ -84,6 +84,7 @@ class VoiceRoutesMixin:
                 "state": str(status.get("state", "stopped")),
                 "activeSpeakId": str(status.get("activeSpeakId", "")),
                 "muted": bool(status.get("muted")),
+                "muteMode": str(status.get("muteMode", "off")),
             },
         }
 

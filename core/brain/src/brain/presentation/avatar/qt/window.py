@@ -100,6 +100,7 @@ class QtAvatarWindow(QWidget):
         self._resize_origin: tuple[str, QPoint, QRect] | None = None
         self.current_display_text = ""
         self.current_message_id = ""
+        self.current_audio_name = ""
         self.current_codex_thread_id = ""
         self.dismissed_display_text = ""
         self.dismissed_message_id = ""
@@ -200,9 +201,10 @@ class QtAvatarWindow(QWidget):
     def _sync_hover(self) -> None:
         pointer = QCursor.pos()
         visible = self.frameGeometry().contains(pointer)
-        self.controls.setVisible(visible)
+        self.controls.set_expanded(visible)
         if visible:
             self.controls.sync_pointer(pointer)
+        if self.controls.isVisible():
             self.controls.raise_()
 
     def mousePressEvent(self, event) -> None:  # noqa: N802 - Qt API
@@ -248,8 +250,25 @@ class QtAvatarWindow(QWidget):
         self.show()
 
     def _toggle_playback(self) -> None:
+        """Pause active output or queue the message currently fixed in the bubble."""
         if self.state in {"muted_replay", "preparing", "speaking"}:
             self._post("/pause")
+            return
+        if self.message_reveal_latched and self.current_audio_name:
+            self._post("/replay", {"name": self.current_audio_name})
+            return
+        if self.message_reveal_latched and self.current_display_text:
+            self._post(
+                "/speak",
+                {
+                    "text": self.current_display_text,
+                    "displayText": self.current_display_text,
+                    "lang": "es",
+                    "sourceCommand": "historical-message-audio",
+                    "sourcePhase": "replay",
+                    "codexThreadId": self.current_codex_thread_id,
+                },
+            )
             return
         self._post("/replay")
 
@@ -280,7 +299,15 @@ class QtAvatarWindow(QWidget):
             return self.awaiting_quota_animation or "awaiting", "awaiting"
         return state, "speaking"
 
-    def _set_state(self, state: str, force: bool = False, emotion: str = "") -> None:
+    def _set_state(
+        self,
+        state: str,
+        force: bool = False,
+        emotion: str = "",
+        processing: bool | None = None,
+        processing_emotion: str = "",
+    ) -> None:
+        """Apply avatar animation and processing chrome as one atomic state."""
         changed = state != self.state or emotion != self.emotion
         self.state, self.emotion = state, emotion
         if state in {"preparing", "speaking"}:
@@ -296,7 +323,9 @@ class QtAvatarWindow(QWidget):
             self.movie.frameChanged.connect(self._render_movie_frame)
             self.movie.start()
             self.current_asset = str(path)
-        self.controls.set_state(state in {"muted_replay", "preparing", "speaking"}, self.controls.muted)
+        self.controls.set_state(state in {"muted_replay", "preparing", "speaking"}, self.controls.mute_mode)
+        processing_active = processing if processing is not None else state in {"thinking", "preparing"}
+        self.controls.set_processing(processing_active, processing_emotion)
 
     def _set_text(
         self,
@@ -310,6 +339,7 @@ class QtAvatarWindow(QWidget):
         incoming_message = bool(message_id and message_id != self.current_message_id)
         if incoming_message:
             self.history_browsing = False
+            self.current_audio_name = ""
             self.message_reveal_latched = False
             self.dismissed_display_text = ""
             self.dismissed_message_id = ""
@@ -318,6 +348,7 @@ class QtAvatarWindow(QWidget):
                 return
             self.current_display_text = ""
             self.current_message_id = ""
+            self.current_audio_name = ""
             self.current_codex_thread_id = ""
             self.dismissed_display_text = ""
             self.dismissed_message_id = ""
@@ -394,7 +425,16 @@ class QtAvatarWindow(QWidget):
                 payload = json.loads(response.read())
         except Exception:
             return []
-        return [item for item in payload.get("speaks", []) if item.get("displayText") or item.get("text")]
+        audio_by_speak_id = {
+            str(item.get("speakId", "")): str(item.get("name", ""))
+            for item in payload.get("messages", [])
+            if item.get("speakId") and item.get("name")
+        }
+        return [
+            {**item, "audioName": audio_by_speak_id.get(str(item.get("id", "")), "")}
+            for item in payload.get("speaks", [])
+            if item.get("displayText") or item.get("text")
+        ]
 
     def _navigate_message(self, direction: int) -> None:
         """Browse retained display messages while leaving audio untouched."""
@@ -410,6 +450,7 @@ class QtAvatarWindow(QWidget):
         item = history[target_index]
         self.current_display_text = item.get("displayText") or item.get("text", "")
         self.current_message_id = str(item.get("id", ""))
+        self.current_audio_name = str(item.get("audioName", ""))
         self.current_codex_thread_id = str(item.get("codexThreadId", ""))
         self.message_reveal_latched = True
         self.history_browsing = target_index > 0
@@ -480,14 +521,18 @@ class QtAvatarWindow(QWidget):
             return
         self.bubble.hide()
         if not self.underMouse():
-            self.controls.hide()
+            self.controls.set_expanded(False)
 
     def _refresh_quotas(self) -> None:
         if self.quota_refreshing:
             return
         self.quota_refreshing = True
+        self.controls.set_quota_refreshing(True)
         def worker() -> None:
-            snapshot = self.quota_client.read()
+            try:
+                snapshot = self.quota_client.read()
+            except Exception:
+                snapshot = None
             while not self.quota_results.empty():
                 try:
                     self.quota_results.get_nowait()
@@ -502,6 +547,7 @@ class QtAvatarWindow(QWidget):
         except queue.Empty:
             return
         self.quota_refreshing = False
+        self.controls.set_quota_refreshing(False)
         if snapshot is None:
             return
         self.controls.set_quotas(
@@ -562,8 +608,21 @@ class QtAvatarWindow(QWidget):
         state = payload.get("state", "awaiting")
         emotion = payload.get("emotion", "") or ("happy" if state == "speaking" else "")
         active_message_id = str(payload.get("activeSpeakId", ""))
-        self.controls.set_state(state in {"muted_replay", "preparing", "speaking"}, bool(payload.get("muted")))
-        self._set_state(state, emotion=emotion)
+        self.controls.set_state(
+            state in {"muted_replay", "preparing", "speaking"},
+            str(payload.get("muteMode", "total" if payload.get("muted") else "off")),
+        )
+        self.controls.set_queue_depth(int(payload.get("queueDepth", 0)))
+        processing = bool(payload.get("processing", False))
+        processing_emotion = str(payload.get("processingEmotion", "")) if processing else ""
+        self._set_state(
+            state,
+            emotion=emotion,
+            processing=processing or state in {"thinking", "preparing"},
+            processing_emotion=processing_emotion,
+        )
+        if state in {"thinking", "preparing"}:
+            return
         if self.history_browsing and (not active_message_id or active_message_id == self.history_anchor_message_id):
             return
         if self.history_browsing:

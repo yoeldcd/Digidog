@@ -5,11 +5,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import math
 
-from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, Qt
+from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen, QPolygonF
 from PySide6.QtWidgets import QWidget
-
 
 def playback_geometry(width: int, height: int) -> tuple[QPointF, int]:
     radius = max(21, min(44, round(width * .13)))
@@ -70,24 +70,122 @@ class QtAvatarControls(QWidget):
         self.on_avatar = on_avatar
         self.on_quota = on_quota
         self.on_show_message = on_show_message
+        self.expanded = False
         self.playing = False
+        self.mute_mode = "off"
         self.muted = False
+        self.queue_depth = 0
+        self.processing = False
+        self.processing_frame = 0
+        self.processing_emotion = ""
+        self.processing_timer = QTimer(self)
+        self.processing_timer.setInterval(50)
+        self.processing_timer.timeout.connect(self._advance_processing_animation)
         self.pinned = True
         self.quotas: tuple[int, int] | None = None
         self.quota_resets: tuple[str, str] = ("", "")
+        self.quota_refreshing = False
+        self.quota_blink_visible = True
+        self.quota_blink_timer = QTimer(self)
+        self.quota_blink_timer.setInterval(350)
+        self.quota_blink_timer.timeout.connect(self._toggle_quota_blink)
         self._hover_corner = ""
         self._resize_origin: tuple[str, QPoint, QRect] | None = None
         self._drag_origin: tuple[QPoint, QPoint] | None = None
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setMouseTracking(True)
 
-    def set_state(self, playing: bool, muted: bool) -> None:
-        self.playing, self.muted = playing, muted
+    def set_state(self, playing: bool, mute_mode: str | bool) -> None:
+        """Update playback and three-level mute presentation state.
+
+        Args:
+            playing: Whether sequential playback currently owns the audio channel.
+            mute_mode: Canonical `off`, `partial`, or `total` mode. Boolean input
+                remains accepted for presentation-backend compatibility.
+        """
+        normalized_mode = "total" if mute_mode is True else "off" if mute_mode is False else str(mute_mode)
+        self.playing = playing
+        self.mute_mode = normalized_mode if normalized_mode in {"off", "partial", "total"} else "off"
+        self.muted = self.mute_mode != "off"
         self.update()
+
+    def set_expanded(self, expanded: bool) -> None:
+        """Show full controls on hover or passive status indicators otherwise.
+
+        Args:
+            expanded: Whether pointer hover enables the complete interactive chrome.
+        """
+        self.expanded = expanded
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, not expanded)
+        self._refresh_overlay_visibility()
+
+    def _refresh_overlay_visibility(self) -> None:
+        """Keep passive queue and processing indicators visible outside hover."""
+        self.setVisible(self.expanded or self.processing or self.queue_depth > 0)
+        self.update()
+
+    def set_processing(self, processing: bool, emotion: str = "") -> None:
+        """Toggle the animated synthesis indicator above the avatar.
+
+        Args:
+            processing: Whether thinking or audio preparation is active.
+            emotion: Active speak emotion shown inside the processing orbit.
+        """
+        normalized_emotion = emotion.strip().lower() if processing else ""
+        if processing == self.processing and normalized_emotion == self.processing_emotion:
+            return
+        state_changed = processing != self.processing
+        self.processing = processing
+        self.processing_emotion = normalized_emotion
+        if state_changed:
+            self.processing_frame = 0
+        if processing:
+            self.processing_timer.start()
+        else:
+            self.processing_timer.stop()
+        self._refresh_overlay_visibility()
+
+    def _advance_processing_animation(self) -> None:
+        """Advance one rotation and pulse frame for the processing dots."""
+        self.processing_frame = (self.processing_frame + 1) % 360
+        self.update()
+
+    def set_queue_depth(self, queue_depth: int) -> None:
+        """Update the pending voice-item badge rendered over the message control.
+
+        Args:
+            queue_depth: Number of voice requests waiting for sequential presentation.
+        """
+        normalized_depth = max(0, queue_depth)
+        if normalized_depth == self.queue_depth:
+            return
+        self.queue_depth = normalized_depth
+        self._refresh_overlay_visibility()
 
     def set_quotas(self, five_hour: int, weekly: int, five_reset: str = "", weekly_reset: str = "") -> None:
         self.quotas = (five_hour, weekly)
         self.quota_resets = (five_reset, weekly_reset)
+        self.update()
+
+    def set_quota_refreshing(self, refreshing: bool) -> None:
+        """Blink both quota meters while a manual or scheduled refresh runs.
+
+        Args:
+            refreshing: Whether a quota request is currently in flight.
+        """
+        if refreshing == self.quota_refreshing:
+            return
+        self.quota_refreshing = refreshing
+        self.quota_blink_visible = True
+        if refreshing:
+            self.quota_blink_timer.start()
+        else:
+            self.quota_blink_timer.stop()
+        self.update()
+
+    def _toggle_quota_blink(self) -> None:
+        """Alternate quota visibility to signal an active refresh."""
+        self.quota_blink_visible = not self.quota_blink_visible
         self.update()
 
     @staticmethod
@@ -186,19 +284,81 @@ class QtAvatarControls(QWidget):
         super().leaveEvent(event)
 
     def paintEvent(self, event) -> None:  # noqa: N802 - Qt API
+        """Paint full hover chrome or only persistent passive indicators."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        self._paint_quotas(painter)
-        self._paint_playback(painter)
-        self._paint_mute(painter)
-        self._paint_pin(painter)
-        self._paint_show_message(painter)
-        self._paint_resize_grip(painter)
+        self._paint_processing(painter)
+        if self.expanded:
+            self._paint_quotas(painter)
+            self._paint_playback(painter)
+            self._paint_mute(painter)
+            self._paint_pin(painter)
+            self._paint_show_message(painter)
+            self._paint_resize_grip(painter)
+        elif self.queue_depth:
+            self._paint_show_message(painter)
         painter.end()
+
+    def _paint_processing(self, painter: QPainter) -> None:
+        """Render the six-color Explorer working indicator between top controls."""
+        if not self.processing:
+            return
+        pin_bounds, message_bounds, _grip = chrome_geometry(self.width(), self.height())
+        center = QPointF((pin_bounds.right() + message_bounds.left()) / 2, pin_bounds.center().y())
+        dot_colors = ("#3b82f6", "#06b6d4", "#10b981", "#f59e0b", "#ef4444", "#ec4899")
+        angle_offset = math.radians(self.processing_frame * 4)
+        orbit_radius = max(16.0, min(20.0, self.width() * .052))
+        dot_radius = max(2.0, min(3.0, self.width() * .008))
+        painter.setPen(Qt.PenStyle.NoPen)
+        for index, color in enumerate(dot_colors):
+            angle = angle_offset + math.radians(index * 60)
+            point = QPointF(center.x() + math.cos(angle) * orbit_radius, center.y() + math.sin(angle) * orbit_radius)
+            painter.setBrush(QColor(color))
+            painter.drawEllipse(point, dot_radius, dot_radius)
+        if self.processing_emotion:
+            self._paint_processing_emotion(painter, center)
+
+    def _paint_processing_emotion(self, painter: QPainter, center: QPointF) -> None:
+        """Paint a raster-stable emoji pictogram for the active speak emotion."""
+        emotion = self.processing_emotion
+        painter.save()
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(QColor("#ffffff"), 1.6, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        if emotion in {"focused", "determined", "working", "coding", "debugging"}:
+            painter.drawEllipse(center, 7, 7)
+            painter.drawEllipse(center, 3.5, 3.5)
+            painter.setBrush(QColor("#ffffff"))
+            painter.drawEllipse(center, 1.3, 1.3)
+        elif emotion in {"love", "loved", "tender", "caring", "adoring", "devoted"}:
+            heart = QPainterPath(QPointF(center.x(), center.y() + 6))
+            heart.cubicTo(center.x() - 11, center.y(), center.x() - 6, center.y() - 8, center.x(), center.y() - 3)
+            heart.cubicTo(center.x() + 6, center.y() - 8, center.x() + 11, center.y(), center.x(), center.y() + 6)
+            painter.setBrush(QColor("#ff6fae"))
+            painter.drawPath(heart)
+        elif emotion in {"angry", "alert", "frustrated", "surprised", "shocked"}:
+            triangle = QPolygonF((
+                QPointF(center.x(), center.y() - 8),
+                QPointF(center.x() - 8, center.y() + 7),
+                QPointF(center.x() + 8, center.y() + 7),
+            ))
+            painter.setBrush(QColor("#f59e0b"))
+            painter.drawPolygon(triangle)
+            painter.setPen(QPen(QColor("#1f1420"), 1.8, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            painter.drawLine(QPointF(center.x(), center.y() - 3), QPointF(center.x(), center.y() + 2))
+            painter.drawPoint(QPointF(center.x(), center.y() + 4.5))
+        else:
+            painter.drawEllipse(center, 8, 8)
+            painter.drawPoint(QPointF(center.x() - 3, center.y() - 2))
+            painter.drawPoint(QPointF(center.x() + 3, center.y() - 2))
+            mouth_y = center.y() + (4 if emotion in {"sad", "melancholic", "lonely"} else 1)
+            mouth = QPainterPath(QPointF(center.x() - 4, mouth_y))
+            control_y = mouth_y - 4 if emotion in {"sad", "melancholic", "lonely"} else mouth_y + 4
+            mouth.quadTo(center.x(), control_y, center.x() + 4, mouth_y)
+            painter.drawPath(mouth)
+        painter.restore()
 
     def _paint_pin(self, painter: QPainter) -> None:
         bounds, _message, _grip = chrome_geometry(self.width(), self.height())
-        painter.fillRect(bounds, QColor(16, 24, 32, 220))
         # Simplified contour traced from the original 79x79 control artwork.
         # Keeping its source coordinates preserves the former proportions.
         points = (
@@ -223,29 +383,32 @@ class QtAvatarControls(QWidget):
         painter.restore()
 
     def _paint_show_message(self, painter: QPainter) -> None:
+        """Paint a filled message bubble with its queued-item count inside."""
         _pin, bounds, _grip = chrome_geometry(self.width(), self.height())
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(16, 24, 32, 220))
-        painter.drawRect(bounds)
+        bubble_bounds = QRectF(-11, -9, 22, 15)
         painter.save()
         painter.translate(bounds.center())
         scale = bounds.width() / 42
         painter.scale(scale, scale)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.setPen(QPen(QColor("#f8fbff"), 2.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
-        painter.drawRoundedRect(QRectF(-11, -9, 22, 15), 6, 6)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor("#ffffff"))
+        painter.drawRoundedRect(bubble_bounds, 6, 6)
         tail = QPainterPath()
-        tail.moveTo(3, 6)
+        tail.moveTo(3, 5)
         tail.lineTo(1, 12)
-        tail.lineTo(8, 6)
+        tail.lineTo(8, 5)
+        tail.closeSubpath()
         painter.drawPath(tail)
+        if self.queue_depth:
+            buffer_text = "99+" if self.queue_depth > 99 else str(self.queue_depth)
+            font_size = 7 if self.queue_depth > 99 else 10
+            painter.setPen(QColor("#e32636"))
+            painter.setFont(QFont("Segoe UI", font_size, QFont.Weight.Bold))
+            painter.drawText(bubble_bounds, Qt.AlignmentFlag.AlignCenter, buffer_text)
         painter.restore()
 
     def _paint_resize_grip(self, painter: QPainter) -> None:
         _pin, _message, bounds = chrome_geometry(self.width(), self.height())
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(16, 24, 32, 220))
-        painter.drawRect(bounds)
         inset = max(5, round(bounds.width() * .25))
         painter.setBrush(QColor("#f8fbff"))
         painter.drawPolygon(QPolygonF([
@@ -286,15 +449,23 @@ class QtAvatarControls(QWidget):
             QPointF(center.x() + radius * .18, center.y() + radius * .48),
             QPointF(center.x() - radius * .22, center.y() + radius * .25),
         ]))
-        if self.muted:
-            painter.setPen(QPen(QColor("#ff6f91"), max(2, round(radius * .16))))
-            painter.drawLine(QPointF(center.x() - radius * .55, center.y() - radius * .55), QPointF(center.x() + radius * .55, center.y() + radius * .55))
+        if self.mute_mode != "off":
+            painter.setPen(QPen(QColor("#ff304f"), max(2, round(radius * .16))))
+            painter.drawLine(
+                QPointF(center.x() - radius * .55, center.y() - radius * .55),
+                QPointF(center.x() + radius * .55, center.y() + radius * .55),
+            )
+            if self.mute_mode == "total":
+                painter.drawLine(
+                    QPointF(center.x() + radius * .55, center.y() - radius * .55),
+                    QPointF(center.x() - radius * .55, center.y() + radius * .55),
+                )
         else:
             painter.setPen(QPen(QColor("white"), max(2, round(radius * .12))))
             painter.drawArc(QRectF(center.x() - radius * .05, center.y() - radius * .55, radius * .75, radius * 1.1), -55 * 16, 110 * 16)
 
     def _paint_quotas(self, painter: QPainter) -> None:
-        if self.quotas is None:
+        if self.quotas is None or (self.quota_refreshing and not self.quota_blink_visible):
             return
         left, right, radius = quota_geometry(self.width(), self.height())
         ring_width = max(2, round(radius * .20))

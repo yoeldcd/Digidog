@@ -1,0 +1,26 @@
+Analyze the recognized TypeScript code fragment below. Return semantic fields only; a deterministic local formatter will compose the JSDoc.
+
+Required JSON shape:
+{{
+  "summary": "One concise English sentence describing the fragment's actual responsibility and relevant effect.",
+  "parameters": {{"exactParameterName": "One concise English sentence describing the value's semantic role."}},
+  "returns": "One concise English sentence describing the produced value, or null when returnsRequired is false."
+}}
+
+Rules:
+- Do not emit JSDoc, comment delimiters, @ tags, Markdown, code fences, or additional keys.
+- Describe behavior evidenced by the fragment; do not guess unsupported behavior.
+- Use exact parameter names and provide an entry for every requested parameter.
+- Distinguish data contracts, UI components, lifecycle hooks, state, event handlers, and pure transformations.
+- Do not merely expand the identifier into generic wording.
+
+File: {file}
+Kind: {kind}
+Symbol: {symbol}
+Owner: {owner}
+Signature: {signature}
+Requested parameters: {parameters}
+returnsRequired: {returns}
+
+Recognized fragment:
+{fragment}

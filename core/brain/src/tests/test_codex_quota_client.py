@@ -39,7 +39,10 @@ def test_runtime_cwd_is_owned_by_agent_home_not_workspace() -> None:
     with tempfile.TemporaryDirectory() as root:
         agent_home = Path(root) / "agent-home"
         consumer = Path(root) / "consumer"
-        with patch.dict(os.environ, {"AGENT_HOME": str(agent_home), "WORKSPACE_ROOT": str(consumer)}):
+        with (
+            patch.dict(os.environ, {"WORKSPACE_ROOT": str(consumer)}),
+            patch("brain.infrastructure.codex.quota_client.get_agent_home", return_value=agent_home),
+        ):
             runtime_directory = CodexQuotaClient._runtime_directory()
 
         assert runtime_directory == agent_home / "$agent" / ".tmp" / "codex-app-server"

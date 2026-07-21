@@ -30,6 +30,7 @@ from brain.infrastructure.voice.config import load_voice_config  # noqa: E402
 from brain.infrastructure.voice.avatar_process import AvatarProcessSupervisor  # noqa: E402
 from brain.infrastructure.voice.daemon_client import VOICE_DAEMON_HOST, VOICE_DAEMON_PORT, VOICE_DAEMON_URL  # noqa: E402
 from brain.infrastructure.voice.engines import LocalPlayback, get_engine, play_audio_url  # noqa: E402
+from brain.infrastructure.voice.markdown_narration import normalize_avatar_message_text  # noqa: E402
 from brain.infrastructure.voice.process_lease import (  # noqa: E402
     ProcessLease,
     core_process_lease_name,
@@ -69,6 +70,8 @@ class VoiceMemory:
         self.playback_requests: queue.Queue[dict[str, Any]] = queue.Queue()
         self.persistence_requests: queue.Queue[dict[str, str]] = queue.Queue()
         self.persistence_errors: list[dict[str, str]] = []
+        self.processing_speak_ids: set[str] = set()
+        self.processing_emotions: dict[str, str] = {}
         self.lock = threading.RLock()
         self.last_activity = time.monotonic()
         self.last_request: dict[str, str] | None = None
@@ -79,6 +82,7 @@ class VoiceMemory:
         self.active_text = ""
         self.active_display_text = ""
         self.active_emotion = ""
+        self.mute_mode = "off"
         self.muted = False
         self.playback: subprocess.Popen[bytes] | None = None
         self.replay_active = False
@@ -107,13 +111,11 @@ class VoiceMemory:
         source_phase: str = "",
     ) -> str | None:
         with self.lock:
-            # A newly arriving live message owns the audible channel. Historical
-            # replay must never continue underneath it.
-            if source_command.casefold().strip() != "historical-message-audio" and self.replay_active:
-                self._stop_playback_locked()
+            text = normalize_avatar_message_text(text)
+            display_text = normalize_avatar_message_text(display_text or text)
             request = {
                 "text": text,
-                "displayText": display_text or text,
+                "displayText": display_text,
                 "lang": lang,
                 "emotion": emotion,
                 "signalKey": signal_key,
@@ -138,6 +140,52 @@ class VoiceMemory:
             self.last_activity = time.monotonic()
             self.requests.put(request)
             return speak_id
+
+    def enqueue_replay(self, name: str | None = None) -> bool:
+        """Append one retained message replay to the shared FIFO request queue.
+
+        Args:
+            name: Optional retained audio name. The newest message is selected when omitted.
+
+        Returns:
+            bool: True when a retained message was appended.
+        """
+        with self.lock:
+            message = self.find_message(name=name)
+            if message is None:
+                return False
+            request = {
+                "id": f"replay-{uuid.uuid4().hex[:12]}",
+                "text": str(message.get("text", "")),
+                "displayText": str(message.get("displayText", message.get("text", ""))),
+                "lang": "",
+                "emotion": str(message.get("emotion", "")),
+                "signalKey": "",
+                "preludeSeconds": "0",
+                "consumerPath": str(message.get("consumerPath", "")),
+                "codexThreadId": str(message.get("codexThreadId", "")),
+                "sourceCommand": "historical-message-audio",
+                "sourcePhase": "replay",
+                "replayName": str(message.get("name", "")),
+                "status": "QUEUED",
+                "createdAt": datetime.now().astimezone().isoformat(),
+            }
+            self.last_activity = time.monotonic()
+            self.requests.put(request)
+            return True
+
+    def begin_processing(self, speak_id: str, emotion: str = "") -> None:
+        """Mark one synthesis job as actively processing."""
+        with self.lock:
+            self.processing_speak_ids.add(speak_id)
+            self.processing_emotions[speak_id] = emotion
+            self.last_activity = time.monotonic()
+
+    def finish_processing(self, speak_id: str) -> None:
+        """Clear one synthesis job without affecting concurrent work."""
+        with self.lock:
+            self.processing_speak_ids.discard(speak_id)
+            self.processing_emotions.pop(speak_id, None)
 
     def set_speak_status(self, speak_id: str, status: str, error: str = "") -> None:
         with self.lock:
@@ -224,11 +272,14 @@ class VoiceMemory:
                     "",
                 ),
                 "muted": self.muted,
-                "queueDepth": self.requests.qsize(),
+                "muteMode": self.mute_mode,
+                "queueDepth": self.requests.unfinished_tasks + self.playback_requests.qsize(),
                 "historyCount": len(self.speaks),
                 "synthesisCacheEntries": len(self.audio_by_hash),
                 "persistenceQueueDepth": self.persistence_requests.qsize(),
                 "persistenceErrors": list(self.persistence_errors[-10:]),
+                "processing": bool(self.processing_speak_ids),
+                "processingEmotion": next(iter(self.processing_emotions.values()), ""),
                 "visualRemainingSeconds": max(0, round(self.muted_visual_deadline - time.monotonic(), 2)),
                 "ttlRemainingSeconds": remaining,
             }
@@ -342,11 +393,22 @@ class VoiceMemory:
         self.playback_natural_end_at = 0.0
         self.muted_visual_deadline = 0.0
 
-    def toggle_muted(self) -> bool:
-        """Toggle audible output while preserving the active message for the bubble."""
+    def toggle_muted(self) -> str:
+        """Cycle audible output through `off`, `partial`, and `total` modes.
+
+        Returns:
+            str: The newly active mute mode.
+        """
         with self.lock:
-            self.muted = not self.muted
-            if self.muted:
+            modes = ("off", "partial", "total")
+            self.mute_mode = modes[(modes.index(self.mute_mode) + 1) % len(modes)]
+            self.muted = self.mute_mode != "off"
+            active_speak = next((item for item in self.speaks if item.get("id") == self.active_speak_id), {})
+            active_is_narrated = bool(active_speak.get("sourceCommand"))
+            must_stop_active = self.mute_mode == "total" or (
+                self.mute_mode == "partial" and active_is_narrated
+            )
+            if must_stop_active:
                 now = time.monotonic()
                 self.muted_visual_deadline = self.playback_natural_end_at
                 if self.muted_visual_deadline <= now and self.active_text:
@@ -356,15 +418,14 @@ class VoiceMemory:
                 self.playback = None
                 self.pending_playback = None
                 self.state = "muted" if self.active_text else self.ambient_state
-            elif self.state in {"muted", "muted_replay"}:
+            elif self.mute_mode == "off" and self.state in {"muted", "muted_replay"}:
                 self.state = self.ambient_state
                 self.active_text = ""
                 self.active_display_text = ""
                 self.active_emotion = ""
                 self.active_speak_id = ""
                 self.muted_visual_deadline = 0.0
-            return self.muted
-
+            return self.mute_mode
     def show_muted_message(self, text: str, emotion: str, display_text: str = "", speak_id: str = "") -> None:
         """Expose a completed message visually without synthesizing audio."""
         with self.lock:
@@ -375,10 +436,22 @@ class VoiceMemory:
             self.active_speak_id = speak_id
             self.muted_visual_deadline = time.monotonic() + estimated_speech_seconds(text)
 
-    def is_muted(self) -> bool:
-        """Return the current in-memory audible-output preference."""
+    def is_muted(self, request: dict[str, str] | None = None) -> bool:
+        """Return whether the active mute level suppresses one voice request.
+
+        Args:
+            request: Optional voice request carrying CLI narration provenance.
+
+        Returns:
+            bool: `True` for every request in total mode, or narrated CLI output
+            in partial mode.
+        """
         with self.lock:
-            return self.muted
+            if self.mute_mode == "total":
+                return True
+            if self.mute_mode != "partial" or request is None:
+                return False
+            return bool(request.get("sourceCommand"))
 
     def prepare_playback(self, text: str, emotion: str, display_text: str = "", speak_id: str = "") -> None:
         with self.lock:
@@ -395,7 +468,7 @@ class VoiceMemory:
 
     def _expire_muted_visual(self, now: float) -> None:
         """Clear muted presentation after its natural or estimated deadline."""
-        if not self.muted or not self.muted_visual_deadline or now < self.muted_visual_deadline:
+        if self.mute_mode == "off" or not self.muted_visual_deadline or now < self.muted_visual_deadline:
             return
         self.state = self.ambient_state
         self.active_text = ""
@@ -407,7 +480,7 @@ class VoiceMemory:
     def begin_playback_prelude(self) -> bool:
         """Expose the prepared emotion before audio without claiming playback."""
         with self.lock:
-            if not self.pending_playback or self.muted:
+            if not self.pending_playback or self.mute_mode == "total":
                 return False
             self.state = "preparing"
             (
@@ -421,11 +494,11 @@ class VoiceMemory:
     def has_pending_playback(self) -> bool:
         """Return whether a prepared playback has not been cancelled."""
         with self.lock:
-            return self.pending_playback is not None and not self.muted
+            return self.pending_playback is not None and self.mute_mode != "total"
 
     def mark_playback_started(self) -> None:
         with self.lock:
-            if self.pending_playback and not self.muted:
+            if self.pending_playback and self.mute_mode != "total":
                 self.state = "speaking"
                 (
                     self.active_text,
@@ -681,20 +754,22 @@ def consume_requests() -> None:
     while True:
         request = MEMORY.requests.get()
         try:
+            MEMORY.begin_processing(request["id"], request.get("emotion", ""))
             MEMORY.set_speak_status(request["id"], "WORKING")
+            replay_name = request.get("replayName", "")
+            if replay_name:
+                message = MEMORY.find_message(name=replay_name)
+                if message is None:
+                    continue
+                MEMORY.playback_requests.put({"request": request, "message": message})
+                continue
             if request.get("signalKey"):
                 MEMORY.begin_thinking(request["id"])
             cohere_signal_presentation(request)
             MEMORY.update_speak_text(request["id"], request["text"])
             enqueue_message_persistence(request=request)
-            if MEMORY.is_muted():
-                MEMORY.show_muted_message(
-                    request["text"],
-                    request.get("emotion", ""),
-                    request.get("displayText", ""),
-                    request["id"],
-                )
-                MEMORY.set_speak_status(request["id"], "DONE")
+            if MEMORY.is_muted(request=request):
+                MEMORY.playback_requests.put({"request": request})
                 continue
             synthesis = synthesize_or_reuse(request)
             if isinstance(synthesis, bytes):
@@ -707,6 +782,7 @@ def consume_requests() -> None:
             MEMORY.finish_thinking()
             MEMORY.set_speak_status(request["id"], "ERROR", error=str(exc))
         finally:
+            MEMORY.finish_processing(request["id"])
             MEMORY.requests.task_done()
 
 
@@ -778,6 +854,23 @@ def consume_persistence_requests() -> None:
             MEMORY.persistence_requests.task_done()
 
 
+def present_muted_request(request: dict[str, str]) -> None:
+    """Present one muted queue item for its bounded reading-time estimate.
+
+    Args:
+        request: Canonical voice request retained by the shared playback queue.
+    """
+    MEMORY.show_muted_message(
+        request["text"],
+        request.get("emotion", ""),
+        request.get("displayText", ""),
+        request["id"],
+    )
+    time.sleep(estimated_speech_seconds(request["text"]))
+    MEMORY.set_speak_status(request["id"], "DONE")
+    MEMORY.set_state("awaiting")
+
+
 def consume_playback_requests() -> None:
     """Play prepared RAM audio sequentially while synthesis continues ahead."""
     while True:
@@ -785,14 +878,8 @@ def consume_playback_requests() -> None:
         request = job["request"]
         message = job.get("message")
         try:
-            if MEMORY.is_muted():
-                MEMORY.show_muted_message(
-                    request["text"],
-                    request.get("emotion", ""),
-                    request.get("displayText", ""),
-                    request["id"],
-                )
-                MEMORY.set_speak_status(request["id"], "DONE")
+            if MEMORY.is_muted(request=request):
+                present_muted_request(request=request)
                 continue
             MEMORY.prepare_playback(
                 request["text"],
@@ -818,47 +905,23 @@ def consume_playback_requests() -> None:
         except Exception as exc:
             MEMORY.set_speak_status(request["id"], "ERROR", error=str(exc))
         finally:
-            if not MEMORY.is_muted():
+            if not MEMORY.is_muted(request=request):
                 MEMORY.set_state("awaiting")
             MEMORY.playback = None
             MEMORY.pending_playback = None
             MEMORY.playback_requests.task_done()
 
 
-def replay_message(name: str | None = None) -> None:
-    """Replay the latest or one named RAM-backed message without synthesis."""
-    message = MEMORY.find_message(name=name)
-    if not message:
-        return
-    if MEMORY.is_muted():
-        MEMORY.show_muted_message(
-            message["text"],
-            message.get("emotion", ""),
-            message.get("displayText", ""),
-            message.get("speakId", ""),
-        )
-        return
-    MEMORY.stop_playback()
-    MEMORY.prepare_playback(
-        message["text"],
-        message.get("emotion", ""),
-        message.get("displayText", ""),
-        message.get("speakId", ""),
-    )
-    try:
-        MEMORY.replay_active = True
-        playback = play_audio_url(
-            f"{VOICE_DAEMON_URL}/audio/name/{message['name']}",
-            f"{VOICE_DAEMON_URL}/playback-started",
-            duration_callback_url=f"{VOICE_DAEMON_URL}/playback-duration",
-        )
-        MEMORY.playback = playback
-        playback.wait()
-    finally:
-        MEMORY.playback = None
-        MEMORY.replay_active = False
-        MEMORY.set_state("awaiting")
+def replay_message(name: str | None = None) -> bool:
+    """Append one retained message to the daemon shared FIFO playback queue.
 
+    Args:
+        name: Optional retained audio name. The newest message is selected when omitted.
+
+    Returns:
+        bool: True when the replay request was accepted.
+    """
+    return MEMORY.enqueue_replay(name=name)
 
 class VoiceDaemonHandler(BaseHTTPRequestHandler):
     """Expose the local queue and in-memory audio store."""
@@ -909,16 +972,18 @@ class VoiceDaemonHandler(BaseHTTPRequestHandler):
             self._send_json({"ok": True, "paused": True})
             return
         if self.path == "/mute":
-            self._send_json({"ok": True, "muted": MEMORY.toggle_muted()})
+            mute_mode = MEMORY.toggle_muted()
+            self._send_json({"ok": True, "muted": mute_mode != "off", "muteMode": mute_mode})
             return
         if self.path == "/replay":
             length = min(int(self.headers.get("Content-Length", "0")), 4_000)
             payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
             message_name = str(payload.get("name", "")).strip() or None
-            replayable = MEMORY.find_message(name=message_name) is not None
-            if replayable:
-                threading.Thread(target=replay_message, args=(message_name,), daemon=True, name="voice-replay").start()
-            self._send_json({"ok": replayable, "replaying": replayable}, status=HTTPStatus.ACCEPTED if replayable else HTTPStatus.NOT_FOUND)
+            replayable = replay_message(name=message_name)
+            self._send_json(
+                {"ok": replayable, "replaying": replayable, "queued": replayable},
+                status=HTTPStatus.ACCEPTED if replayable else HTTPStatus.NOT_FOUND,
+            )
             return
         if self.path == "/ambient-state":
             length = min(int(self.headers.get("Content-Length", "0")), 4_000)

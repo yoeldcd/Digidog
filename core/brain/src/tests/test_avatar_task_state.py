@@ -47,13 +47,13 @@ def test_avatar_resolves_working_with_awaiting_fallback() -> None:
 
 
 def test_task_signal_maps_working_and_completion_states() -> None:
-    with patch("brain.infrastructure.voice.signals.VoiceDaemonClient") as client:
+    with patch("brain.infrastructure.voice.signals.VoiceService") as voice_service:
         service = VoiceSignalService()
         service.sync_task_state("set-task-status", Namespace(status="WORKING"))
         service.sync_task_state("task-finished", Namespace())
         service.sync_task_state("complete-work", Namespace())
 
-    assert [call.args[0] for call in client.return_value.set_ambient_state.call_args_list] == [
+    assert [call.args[0] for call in voice_service.return_value.set_ambient_state.call_args_list] == [
         "working",
         "awaiting",
         "awaiting",

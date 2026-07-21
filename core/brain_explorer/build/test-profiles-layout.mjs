@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const view = await readFile(new URL("../src/presentation/components/profiles-view.ts", import.meta.url), "utf8");
+const view = await readFile(new URL("../src/presentation/profiles/layouts/profiles-view.ts", import.meta.url), "utf8");
 const styles = await readFile(new URL("../src/styles/views.css", import.meta.url), "utf8");
 
 assert.match(view, /class="structure-layout profiles-layout"/);

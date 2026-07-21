@@ -3,9 +3,9 @@
  * @see https://x.com/SAY6267
  */
 
-import { BrainApiClient } from "./infrastructure/api/brain-api-client.ts";
-import { AppState } from "./presentation/state/app-state.ts";
-import { BrainExplorerApp } from "./presentation/components/app-shell.ts";
+import { BrainApiClient } from "./infrastructure/shared/http/clients/brain-api-client.ts";
+import { AppState } from "./presentation/shell/state/app-state.ts";
+import { BrainExplorerApp } from "./presentation/shell/layouts/app-shell.ts";
 
 /**
  * Bootstrap the Brain Explorer browser application.
@@ -13,7 +13,7 @@ import { BrainExplorerApp } from "./presentation/components/app-shell.ts";
  * @returns {void}
  */
 function bootstrapBrainExplorer() {
-    const app = document.querySelector(BrainExplorerApp.selector);
+    const app = document.querySelector<BrainExplorerApp>(BrainExplorerApp.selector);
     if (!app) {
         return;
     }

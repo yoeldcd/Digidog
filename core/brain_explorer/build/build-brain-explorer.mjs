@@ -16,6 +16,10 @@ const ENTRY_CSS = resolve(SRC_DIR, "styles", "brain-explorer.css");
 const ENTRY_HTML = resolve(SRC_DIR, "index.html");
 
 const modules = new Map();
+/**
+ * Ordered source-module chain currently being expanded by the static bundler.
+ */
+const activeModuleStack = [];
 let moduleCounter = 0;
 
 await mkdir(DIST_DIR, { recursive: true });
@@ -26,39 +30,50 @@ await writeFile(resolve(DIST_DIR, "brain-explorer.bundle.json"), `${JSON.stringi
 
 async function bundleEntry(path) {
     const moduleId = await bundleModule(path);
-    return `"use strict";\n${[...modules.values()].map(record => record.code).join("\n")}\n${moduleId}();\n`;
+    return `"use strict";\n${[...modules.values()].map(record => record.code).join("\n")}\n${moduleId}();\n`.replace(/[ \t]+$/gm, "");
 }
 
 async function bundleModule(path) {
     const normalizedPath = normalizeModulePath(path);
+    const cycleStart = activeModuleStack.indexOf(normalizedPath);
+    if (cycleStart >= 0) {
+        const cycle = [...activeModuleStack.slice(cycleStart), normalizedPath]
+            .map(modulePath => modulePath.replace(`${SRC_DIR.replace(/\\/g, "/")}/`, "src/"));
+        throw new Error(`Circular runtime dependency detected: ${cycle.join(" -> ")}`);
+    }
     if (modules.has(normalizedPath)) {
         return modules.get(normalizedPath).id;
     }
 
+    activeModuleStack.push(normalizedPath);
     const id = `__brainExplorerModule${moduleCounter++}`;
     modules.set(normalizedPath, { id, code: "" });
-    const source = typescript.transpileModule(await readFile(normalizedPath, "utf8"), {
-        fileName: normalizedPath,
-        compilerOptions: {
-            target: typescript.ScriptTarget.ES2022,
-            module: typescript.ModuleKind.ESNext,
-            allowImportingTsExtensions: true
+    try {
+        const source = typescript.transpileModule(await readFile(normalizedPath, "utf8"), {
+            fileName: normalizedPath,
+            compilerOptions: {
+                target: typescript.ScriptTarget.ES2022,
+                module: typescript.ModuleKind.ESNext,
+                allowImportingTsExtensions: true
+            }
+        }).outputText;
+        const imports = [];
+        const withoutImports = source.replace(/import\s*\{([\s\S]*?)\}\s*from\s*["']([^"']+)["'];?/g, (_match, names, specifier) => {
+            imports.push({ names, path: resolveImport(normalizedPath, specifier) });
+            return "";
+        });
+        const resolvedImports = [];
+        for (const item of imports) {
+            resolvedImports.push({ names: item.names, id: await bundleModule(item.path) });
         }
-    }).outputText;
-    const imports = [];
-    const withoutImports = source.replace(/import\s*\{([\s\S]*?)\}\s*from\s*["']([^"']+)["'];?/g, (_match, names, specifier) => {
-        imports.push({ names, path: resolveImport(normalizedPath, specifier) });
-        return "";
-    });
-    const resolvedImports = await Promise.all(imports.map(async item => ({
-        names: item.names,
-        id: await bundleModule(item.path)
-    })));
-    const { code, exports } = stripExports(withoutImports);
-    const importLines = resolvedImports.map(item => `const { ${destructureNames(item.names)} } = ${item.id}();`).join("\n");
-    const exportLine = exports.length ? `return { ${exports.map(name => `${name}: ${name}`).join(", ")} };` : "return {};";
-    modules.get(normalizedPath).code = `const ${id}=(()=>{let cache;return()=>{if(cache)return cache;\n${importLines}\n${code}\ncache=(()=>{${exportLine}})();return cache;};})();`;
-    return id;
+        const { code, exports } = stripExports(withoutImports);
+        const importLines = resolvedImports.map(item => `const { ${destructureNames(item.names)} } = ${item.id}();`).join("\n");
+        const exportLine = exports.length ? `return { ${exports.map(name => `${name}: ${name}`).join(", ")} };` : "return {};";
+        modules.get(normalizedPath).code = `const ${id}=(()=>{let cache;return()=>{if(cache)return cache;\n${importLines}\n${code}\ncache=(()=>{${exportLine}})();return cache;};})();`;
+        return id;
+    } finally {
+        activeModuleStack.pop();
+    }
 }
 
 function stripTypeDeclarations(source) {
