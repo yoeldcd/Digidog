@@ -6,13 +6,15 @@
 import { escapeHtml, optionTags, renderMarkdown } from "../../shared/utils/html.ts";
 import { icon } from "../../shared/utils/icons.ts";
 import { StructureTree } from "../../shared/components/structure-tree.ts";
+import { renderDomainRenameDialog, requestDomainRename } from "../../shared/components/domain-rename-dialog.ts";
 import { logsRouteTarget } from "../validators/logs-route-target.ts";
 import { visibleLogEntries } from "../formatters/log-entry-parser.ts";
 import { projectLogDateTree } from "../projectors/log-date-tree-projector.ts";
-import { logDateTreeSelection, treeDetailNode } from "../validators/log-date-tree-entry.ts";
+import { projectLogEntryGroups } from "../projectors/log-entry-group-projector.ts";
+import { logDatePeriodSelection } from "../validators/log-date-period-selection.ts";
 import { treeSelectDetail } from "../../shared/view_models/structure-tree-view-model.ts";
 import type { LogEntryPayload } from "../../../application/logs/dtos/responses/logs-response.ts";
-import type { ComponentContext } from "../../shared/view_models/component-context-view-model.ts";
+import type { ComponentContext, TargetFocusableLayout } from "../../shared/view_models/component-context-view-model.ts";
 import type {
     LogDomainRecord,
     LogDomainTreeNode,
@@ -23,12 +25,14 @@ import type {
 } from "../view_models/logs-view-model.ts";
 import type { StructureTreeNode } from "../../shared/view_models/structure-tree-view-model.ts";
 
+const ALL_LOGS_PATH = "__all_logs__";
+
 void StructureTree;
 
 /**
  * LogsView renders log domains as a structural tree plus one focused content pane.
  */
-export class LogsView extends HTMLElement {
+export class LogsView extends HTMLElement implements TargetFocusableLayout {
     /**
      * Provides the unique CSS selector string used to identify the logs view component in the DOM.
      * @returns {string} The string identifier 'brain-logs-view'.
@@ -116,6 +120,11 @@ export class LogsView extends HTMLElement {
      */
     #selectedDatePath = "";
     /**
+     * Human-readable calendar period currently loaded in date mode.
+     * @type {string}
+     */
+    #selectedPeriodLabel = "";
+    /**
      * Tracks the visibility state of the logs filter interface.
      *
      * @type {boolean}
@@ -126,19 +135,13 @@ export class LogsView extends HTMLElement {
      *
      * @type {Set<string>}
      */
-    #expandedNodes = new Set<string>();
+    #expandedNodes = new Set<string>([ALL_LOGS_PATH]);
     /**
      * Stores a reference to a pending navigation target within the logs view, or null if no target is queued.
      *
      * @type {LogsRouteTarget | null}
      */
     #pendingTarget: LogsRouteTarget | null = null;
-    /**
-     * Maintains a private collection of image source URLs associated with the logs.
-     *
-     * @type {string[]}
-     */
-    #logsWithImages: string[] = [];
     /**
      * Stores the numeric identifier of the active polling timer used to trigger log refreshes.
      *
@@ -161,8 +164,36 @@ export class LogsView extends HTMLElement {
     set context(context: ComponentContext) {
         this.#api = context.api;
         this.#state = context.state;
-        this.#pendingTarget = logsRouteTarget(this.#state.consumeRouteTarget("logs")) || this.#pendingTarget;
         this.#loadIndex();
+    }
+
+    /**
+     * Focus a canonical Logs target after loading its index and entries.
+     *
+     * @param target - Immutable route target payload supplied by AppShell.
+     * @returns A promise that resolves after the native tree node is focused.
+     */
+    public async focusTarget(target: Readonly<Record<string, unknown>>): Promise<void> {
+        const parsedTarget = logsRouteTarget({ ...target });
+        if (!parsedTarget) {
+            return;
+        }
+        this.#pendingTarget = parsedTarget;
+        await this.#loadIndex();
+        const focusPath = this.#treeMode === "date" ? this.#selectedDatePath : (this.#selectedDomain || ALL_LOGS_PATH);
+        const treeNode = Array.from(this.querySelectorAll<HTMLElement>("[data-tree-path]"))
+            .find(node => node.getAttribute("data-tree-path") === focusPath);
+        treeNode?.focus();
+
+        const targetEntry = Array.from(this.querySelectorAll<HTMLDetailsElement>("[data-log-entry]"))
+            .find(entry => entry.dataset.logDomain === (target.domain || "")
+                && entry.dataset.logDate === (target.date || target.from || "")
+                && entry.dataset.logTime === (target.time || target.hourFrom || ""));
+        if (targetEntry) {
+            targetEntry.open = true;
+            targetEntry.querySelector<HTMLElement>(".log-entry-summary")?.focus();
+            targetEntry.scrollIntoView({ block: "center" });
+        }
     }
 
     /**
@@ -221,7 +252,7 @@ export class LogsView extends HTMLElement {
                 return;
             }
             this.#indexEntries = nextIndexEntries;
-            if (!this.#logEntries.length || !this.#selectedDomain) {
+            if (!this.#logEntries.length) {
                 this.#state?.setLastResult(indexResult);
                 this.#render();
                 return;
@@ -234,10 +265,8 @@ export class LogsView extends HTMLElement {
                 to: this.#to
             }, { forceRefresh: true, silent: true });
             const nextLogEntries = logsResult.data?.entries || [];
-            const nextImages = logsResult.hasImages || [];
             this.#state?.setLastResult(logsResult);
             this.#logEntries = nextLogEntries;
-            this.#logsWithImages = nextImages;
             this.#render();
         } finally {
             this.#refreshInFlight = false;
@@ -258,12 +287,21 @@ export class LogsView extends HTMLElement {
         const result = await this.#api.logIndex({}, { forceRefresh });
         this.#state?.setLastResult(result);
         this.#indexEntries = result.data?.entries || [];
-        const domains = this.#domains();
-        this.#selectedDomain = this.#selectedDomain || domains[0]?.path || "";
+        if (this.#treeMode === "date" && !this.#expandedNodes.size) {
+            const newestPeriod = this.#dateTreeNodes()[0];
+            if (newestPeriod) this.#expandedNodes.add(newestPeriod.path);
+        } else if (this.#treeMode === "domain") {
+            this.#expandedNodes.add(ALL_LOGS_PATH);
+        }
+        const initialLoad = !this.#selectedDomain && !this.#logEntries.length;
         if (this.#selectedDomain) {
             this.#expandAncestors(this.#selectedDomain);
         }
         if (await this.#applyPendingTarget()) {
+            return;
+        }
+        if (initialLoad) {
+            await this.#loadLogs(forceRefresh, false);
             return;
         }
         this.#render();
@@ -275,7 +313,7 @@ export class LogsView extends HTMLElement {
      * @returns {Promise<boolean>} True when a target was consumed.
      */
     async #applyPendingTarget() {
-        const target = this.#pendingTarget || logsRouteTarget(this.#state?.consumeRouteTarget("logs") ?? null);
+        const target = this.#pendingTarget;
         this.#pendingTarget = null;
         if (!target) {
             return false;
@@ -314,7 +352,6 @@ export class LogsView extends HTMLElement {
             to: this.#to
         }, { forceRefresh });
         this.#state?.setLastResult(result);
-        this.#logsWithImages = result.hasImages || [];
         this.#logEntries = result.data?.entries || [];
         this.#render();
     }
@@ -351,8 +388,8 @@ export class LogsView extends HTMLElement {
                     </aside>
                     <main class="structure-content">
                         <div class="content-head logs-head">
-                            <strong>${escapeHtml(this.#selectedDomain || "Log index")}</strong>
-                            <span>${escapeHtml(this.#logEntries.length ? `${entries.length} entries` : (selectedRecord?.date ? "Indexed entry" : "Select a domain"))}</span>
+                            <strong>${escapeHtml(this.#treeMode === "date" && this.#selectedPeriodLabel ? this.#selectedPeriodLabel : (this.#selectedDomain || "All logs"))}</strong>
+                            <span>${escapeHtml(this.#logEntries.length ? `${entries.length} entries` : (selectedRecord?.date ? "Indexed entry" : "No logs"))}</span>
                             <details class="action-menu filter-menu" ${this.#filtersOpen ? "open" : ""}>
                                 <summary class="compact-action">${icon("filter")}<span>Filters</span></summary>
                                 <div class="action-menu-panel filter-menu-panel">
@@ -374,6 +411,7 @@ export class LogsView extends HTMLElement {
                     </main>
                 </div>
             </section>
+            ${renderDomainRenameDialog("logs-domain-rename-dialog")}
         `;
         this.#bindEvents();
         this.#configureTree();
@@ -389,13 +427,18 @@ export class LogsView extends HTMLElement {
         if (!entries.length) {
             return `<p class="empty-state">No entries match these filters.</p>`;
         }
-        return entries.map(entry => `
-            <details class="log-entry-card">
-                <summary class="log-entry-summary">
-                    <time class="log-date-badge">
-                        <strong>${escapeHtml(entry.date)}</strong>
-                        <span>${escapeHtml(entry.time)}</span>
-                    </time>
+        return projectLogEntryGroups(entries, this.#logSeparatorMode()).map(group => `
+            <details class="subdomain-group log-entry-group" open data-separator="${group.mode}">
+                <summary class="subdomain-group-header">
+                    ${icon("chevronRight")}<strong>${escapeHtml(group.label)}</strong>
+                    <span class="subdomain-task-count">(${group.entries.length} entries)</span>
+                    <span class="subdomain-line-separator"></span>
+                </summary>
+                <div class="subdomain-group-content">
+                ${group.entries.map(entry => `
+            <details class="log-entry-card" data-log-entry data-log-domain="${escapeHtml(entry.domain || this.#selectedDomain || "logs")}" data-log-date="${escapeHtml(entry.date)}" data-log-time="${escapeHtml(entry.time)}">
+                <summary class="log-entry-summary" tabindex="-1">
+                    <span class="log-entry-chevron">${icon("chevronDown")}</span>
                     <span class="log-entry-heading">
                         <strong>${escapeHtml(entry.title)}</strong>
                         <span class="log-entry-tags">
@@ -404,36 +447,30 @@ export class LogsView extends HTMLElement {
                             <span>${escapeHtml(entry.changeType || "registro")}</span>
                         </span>
                     </span>
-                    <span class="log-entry-chevron">${icon("chevronDown")}</span>
+                    <time class="log-date-badge" datetime="${escapeHtml(`${entry.date} ${entry.time}`)}">${escapeHtml(entry.time)}</time>
                 </summary>
                 <div class="log-entry-body">
                     ${entry.why ? `<section><h2>Why</h2><div>${renderMarkdown(entry.why)}</div></section>` : ""}
                     ${entry.description ? `<section><h2>Description</h2><div>${renderMarkdown(entry.description)}</div></section>` : ""}
                     ${entry.impact ? `<section><h2>Impact</h2><div>${renderMarkdown(entry.impact)}</div></section>` : ""}
-                    ${this.#renderPictures(entry.pictures)}
+                </div>
+            </details>
+                `).join("")}
                 </div>
             </details>
         `).join("");
     }
 
     /**
-     * Render image attachments referenced by one log entry.
+     * Select domain grouping for superdomains and date grouping for terminal or ranged queries.
      *
-     * @param {string[]} pictures Safe workspace picture file names.
-     * @returns {string} Attachment gallery HTML.
+     * @returns {"domain" | "date"} Separator dimension matching the active log scope.
      */
-    #renderPictures(pictures: string[] = []): string {
-        if (!pictures.length) {
-            return "";
-        }
-        return `
-            <div class="log-entry-media" aria-label="Attached images">
-                ${pictures.map(name => {
-                    const source = `/api/logs/image?name=${encodeURIComponent(name)}`;
-                    return `<a href="${source}" target="_blank" rel="noopener" title="Open attached image"><img src="${source}" alt="Attached image ${escapeHtml(name)}"></a>`;
-                }).join("")}
-            </div>
-        `;
+    #logSeparatorMode(): "domain" | "date" {
+        if (this.#from || this.#to || this.#treeMode === "date") return "date";
+        if (!this.#selectedDomain) return "domain";
+        const hasSubdomain = this.#indexEntries.some(entry => String(entry.domain || "").startsWith(`${this.#selectedDomain}.`));
+        return hasSubdomain ? "domain" : "date";
     }
 
     /**
@@ -447,8 +484,7 @@ export class LogsView extends HTMLElement {
             selectedDomain: this.#selectedDomain,
             hourFrom: this.#hourFrom,
             hourTo: this.#hourTo,
-            sortOrder: this.#sortOrder,
-            logsWithImages: this.#logsWithImages
+            sortOrder: this.#sortOrder
         });
     }
 
@@ -501,9 +537,9 @@ export class LogsView extends HTMLElement {
         }
         treeElement.model = {
             nodes: this.#treeNodes(),
-            selectedPath: this.#treeMode === "date" ? this.#selectedDatePath : this.#selectedDomain,
+            selectedPath: this.#treeMode === "date" ? this.#selectedDatePath : (this.#selectedDomain || ALL_LOGS_PATH),
             expandedPaths: this.#expandedNodes,
-            toggleOnBranchSelect: true,
+            toggleOnBranchSelect: false,
             title: "Logs",
             toolbarActions: [
                 { id: "tree-domain", label: "Group by domain", icon: "folder", active: this.#treeMode === "domain" },
@@ -559,13 +595,22 @@ export class LogsView extends HTMLElement {
                 presentation: isEntry ? "log" : "default",
                 ...(!isEntry ? { count: this.#countTreeEntries(node) } : {}),
                 children,
-                actions: []
+                actions: isEntry ? [] : [{ id: "rename-domain", label: "Rename domain", icon: "edit" }]
             };
         };
-        return Array.from(this.#buildTree().children.values())
+        const children = Array.from(this.#buildTree().children.values())
             .filter(node => this.#matchesTree(node))
             .sort((left, right) => left.label.localeCompare(right.label))
             .map(toNode);
+        return [{
+            id: ALL_LOGS_PATH,
+            path: ALL_LOGS_PATH,
+            label: "All logs",
+            count: this.#indexEntries.length,
+            presentation: "default",
+            children,
+            actions: []
+        }];
     }
 
     /**
@@ -599,23 +644,32 @@ export class LogsView extends HTMLElement {
     async #onTreeSelected(event: Event): Promise<void> {
         if (!(event instanceof CustomEvent)) return;
         const selection = treeSelectDetail(event.detail);
-        if (!selection || selection.branch) {
+        if (!selection) {
             return;
         }
-        const dateNode = logDateTreeSelection(treeDetailNode(event.detail));
-        if (this.#treeMode === "date" && dateNode) {
+        if (selection.clickedCaret) return;
+        const period = this.#treeMode === "date" ? logDatePeriodSelection(selection.path) : null;
+        if (period) {
             this.#selectedDatePath = selection.path;
-            this.#selectedDomain = dateNode.domain;
-            this.#from = dateNode.date;
-            this.#to = dateNode.date;
-            this.#hourFrom = dateNode.time;
-            this.#hourTo = dateNode.time;
-            await this.#loadLogs(true, false);
+            this.#expandDatePath(selection.path, true);
+            this.#selectedPeriodLabel = period.label;
+            this.#selectedDomain = "";
+            this.#from = period.from;
+            this.#to = period.to;
+            this.#hourFrom = "";
+            this.#hourTo = "";
+            await this.#loadLogs(false, false);
             return;
         }
-        const alreadySelected = selection.path === this.#selectedDomain;
-        this.#selectedDomain = selection.path;
+        const selectedDomain = selection.path === ALL_LOGS_PATH ? "" : selection.path;
+        const alreadySelected = selectedDomain === this.#selectedDomain;
+        this.#selectedDomain = selectedDomain;
+        this.#from = "";
+        this.#to = "";
+        this.#hourFrom = "";
+        this.#hourTo = "";
         this.#expandAncestors(selection.path);
+        if (selection.branch) this.#expandedNodes.add(selection.path);
         const record = this.#recordForPath(selection.path);
         if (record?.date) {
             this.#from = record.date;
@@ -627,7 +681,7 @@ export class LogsView extends HTMLElement {
             this.#render();
             return;
         }
-        await this.#loadLogs(true, !record?.date);
+        await this.#loadLogs(false, !record?.date);
     }
 
     /**
@@ -644,7 +698,17 @@ export class LogsView extends HTMLElement {
                 return;
             }
             this.#treeMode = nextMode;
+            this.#selectedPeriodLabel = "";
             this.#expandedNodes.clear();
+            if (nextMode === "domain") {
+                this.#expandedNodes.add(ALL_LOGS_PATH);
+                this.#expandAncestors(this.#selectedDomain);
+            } else if (this.#selectedDatePath) {
+                this.#expandDatePath(this.#selectedDatePath, true);
+            } else {
+                const newestPeriod = this.#dateTreeNodes()[0];
+                if (newestPeriod) this.#expandedNodes.add(newestPeriod.path);
+            }
             this.#render();
             return;
         }
@@ -659,10 +723,21 @@ export class LogsView extends HTMLElement {
      * @param {CustomEvent} event Tree event.
      * @returns {void}
      */
-    #onTreeAction(event: Event): void {
+    async #onTreeAction(event: Event): Promise<void> {
         if (!(event instanceof CustomEvent)) return;
         const node = event.detail.node;
         if (!node?.path) {
+            return;
+        }
+        if (event.detail.action === "rename-domain" && this.#treeMode === "domain") {
+            const target = await requestDomainRename(this, "logs-domain-rename-dialog", node.path);
+            if (!target || !this.#api) return;
+            const result = await this.#api.renameLogDomain({ source: node.path, target });
+            if (!result.ok) return;
+            this.#expandedNodes = remapExpandedDomains(this.#expandedNodes, node.path, target);
+            this.#selectedDomain = target;
+            await this.#loadIndex(true);
+            await this.#loadLogs(true, true);
             return;
         }
         this.#selectedDomain = node.path;
@@ -797,6 +872,22 @@ export class LogsView extends HTMLElement {
     }
 
     /**
+     * Expand every calendar ancestor represented by a synthetic date-tree path.
+     * @param {string} path Selected `logs-date:YYYY[-MM[-DD]]` path.
+     * @param {boolean} includeSelf Whether the selected branch should reveal its direct children.
+     */
+    #expandDatePath(path: string, includeSelf: boolean): void {
+        const match = String(path).match(/^logs-date:(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?$/);
+        if (!match) return;
+        const year = match[1] ?? "";
+        const month = match[2] ?? "";
+        const day = match[3] ?? "";
+        this.#expandedNodes.add(`logs-date:${year}`);
+        if (month) this.#expandedNodes.add(`logs-date:${year}-${month}`);
+        if (includeSelf && day) this.#expandedNodes.add(`logs-date:${year}-${month}-${day}`);
+    }
+
+    /**
      * Bind DOM events.
      *
      * @returns {void}
@@ -859,6 +950,21 @@ export class LogsView extends HTMLElement {
             await this.#loadLogs(true, !record?.date);
         }));
     }
+}
+
+/**
+ * Preserve expanded tree state after moving one complete domain subtree.
+ *
+ * @param {Set<string>} expanded Existing expanded domain paths.
+ * @param {string} source Previous subtree root.
+ * @param {string} target Replacement subtree root.
+ * @returns {Set<string>} Expanded paths rewritten to the new canonical prefix.
+ */
+function remapExpandedDomains(expanded: Set<string>, source: string, target: string): Set<string> {
+    return new Set(Array.from(expanded, path => {
+        if (path === source) return target;
+        return path.startsWith(`${source}.`) ? `${target}${path.slice(source.length)}` : path;
+    }));
 }
 
 customElements.define(LogsView.selector, LogsView);

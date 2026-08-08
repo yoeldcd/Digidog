@@ -15,6 +15,7 @@ from brain.application.knowledge.models.dtos.graph import RelationDTO
 
 
 class KnowledgeRelationRepositoryMixin:
+    """Persist and query canonical knowledge relations."""
     def upsert_relation(self, relation_dto: RelationDTO) -> int:
         """
         Insert or update a relation.
@@ -24,6 +25,10 @@ class KnowledgeRelationRepositoryMixin:
 
         Returns:
             int: Relation database identifier.
+
+        Raises:
+            ValueError: If required identifiers are absent or referenced entities
+                do not exist in the canonical knowledge repository.
         """
         if relation_dto.source_id is None:
             raise ValueError("Relation source_id is required.")

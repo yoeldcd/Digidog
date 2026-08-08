@@ -13,6 +13,8 @@ node_modules/
 /memory/profiles/*
 !/memory/profiles/developer/
 !/memory/profiles/developer/**
+!/memory/profiles/worker/
+!/memory/profiles/worker/**
 /pictures/
 /$workspaces/
 

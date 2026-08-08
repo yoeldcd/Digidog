@@ -20,7 +20,14 @@ JSON_ARGUMENT = ArgumentSchema(
 
 
 def build_argument_parser(command_modules: list[ModuleType]) -> argparse.ArgumentParser:
-    """Build an `argparse` parser from declarative command schema modules."""
+    """Build an ``argparse`` parser from declarative command schemas.
+
+    Args:
+        command_modules (list[ModuleType]): Modules exposing ``SCHEMA`` objects.
+
+    Returns:
+        argparse.ArgumentParser: Configured top-level command parser.
+    """
     parser = argparse.ArgumentParser(description="Manage memory store domains.", add_help=True)
     parser.add_argument(
         "--no-speak",

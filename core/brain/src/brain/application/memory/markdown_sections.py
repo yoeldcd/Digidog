@@ -4,7 +4,15 @@ from __future__ import annotations
 
 
 def extract_from_markdown(content: str, target_key: str) -> str | None:
-    """Try to extract a section or list item matching target_key from markdown content."""
+    """Extract a Markdown section or named list item.
+
+    Args:
+        content (str): Markdown document to inspect.
+        target_key (str): Case-insensitive heading or item key.
+
+    Returns:
+        str | None: Extracted body, or None when the key is absent.
+    """
     target = target_key.lower().strip()
     lines = content.splitlines()
 
@@ -71,7 +79,16 @@ def extract_from_markdown(content: str, target_key: str) -> str | None:
 
 
 def update_markdown(content: str, target_key: str, new_value: str | None) -> str:
-    """Update or delete a section/key in the markdown content."""
+    """Update, append, or delete a Markdown section or named list item.
+
+    Args:
+        content (str): Markdown document to transform.
+        target_key (str): Case-insensitive heading or item key.
+        new_value (str | None): Replacement body, or None to delete the match.
+
+    Returns:
+        str: Updated Markdown content.
+    """
     target = target_key.lower().strip()
     lines = content.splitlines()
 

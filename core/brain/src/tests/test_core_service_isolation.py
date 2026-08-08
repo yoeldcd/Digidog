@@ -15,9 +15,10 @@ SOURCE_ROOT = Path(__file__).resolve().parents[1]
 if str(SOURCE_ROOT) not in sys.path:
     sys.path.insert(0, str(SOURCE_ROOT))
 
-from brain.infrastructure.voice.config import resolve_voice_daemon_endpoint
-from brain.infrastructure.voice.daemon_client import VoiceDaemonClient
-from brain.infrastructure.voice.process_lease import core_process_lease_name, core_runtime_id
+from brain.infrastructure.avatar.configuration.avatar_config import resolve_voice_daemon_endpoint
+from brain.infrastructure.avatar.configuration.avatar_config_dtos import AvatarConfigDTO
+from brain.infrastructure.voice.daemon.daemon_client import VoiceDaemonClient
+from brain.infrastructure.voice.daemon.process_lease import core_process_lease_name, core_runtime_id
 
 
 class CoreServiceIsolationTests(unittest.TestCase):
@@ -25,7 +26,7 @@ class CoreServiceIsolationTests(unittest.TestCase):
 
     def test_voice_endpoint_is_owned_by_avatar_config(self) -> None:
         self.assertEqual(
-            resolve_voice_daemon_endpoint({"service": {"host": "127.0.0.1", "port": 19133}}),
+            resolve_voice_daemon_endpoint(AvatarConfigDTO.model_validate({"service": {"host": "127.0.0.1", "port": 19133}})),
             ("127.0.0.1", 19133),
         )
 

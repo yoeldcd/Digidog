@@ -29,6 +29,20 @@ def replace_vectorstore_generation(
 
     The prior directory remains available as a rollback generation until the
     new directory is installed and the retired generation can be removed.
+
+    Args:
+        active_path (Path): Path of the vectorstore generation currently in use.
+        builder (GenerationBuilder): Callback that populates a new generation.
+        validator (GenerationValidator): Callback that validates the completed
+            generation before installation.
+
+    Returns:
+        dict[str, Any]: Generation identifier, paths, replacement state, and
+        build and validation statistics.
+
+    Raises:
+        Exception: If building, validation, installation, or retirement fails.
+            The function restores the prior active generation when possible.
     """
     active: Path = active_path.resolve()
     parent: Path = active.parent
@@ -79,7 +93,20 @@ def validate_vectorstore_generation(
     generation_path: Path,
     expected_collections: set[str],
 ) -> dict[str, Any]:
-    """Validate that a closed generation contains exactly the expected collections."""
+    """Validate the collections and required records in a generation.
+
+    Args:
+        generation_path (Path): Closed vectorstore generation to inspect.
+        expected_collections (set[str]): Exact collection names required in the
+            generation.
+
+    Returns:
+        dict[str, Any]: Per-collection counts and the total vector count.
+
+    Raises:
+        RuntimeError: If collection names differ from the expected set or the
+            required memories collection is empty.
+    """
     client = chromadb.PersistentClient(path=str(generation_path))
     try:
         collections = client.list_collections()
@@ -103,7 +130,15 @@ def validate_vectorstore_generation(
 
 
 def _remove_generation(path: Path, parent: Path) -> None:
-    """Remove one verified sibling generation directory."""
+    """Remove one generation after verifying its parent directory.
+
+    Args:
+        path (Path): Generation file or directory to remove.
+        parent (Path): Required direct parent of the generation.
+
+    Raises:
+        RuntimeError: If the generation is not a direct child of ``parent``.
+    """
     resolved_path: Path = path.resolve()
     resolved_parent: Path = parent.resolve()
     if resolved_path.parent != resolved_parent:

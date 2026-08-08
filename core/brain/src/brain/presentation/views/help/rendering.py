@@ -22,6 +22,9 @@ def get_help_text(color: bool = False, domain: str | None = None) -> str:
 
     Returns:
         str: Rendered help text.
+
+    Raises:
+        BrainStoreError: If ``domain`` does not match a registered command domain.
     """
     from brain.presentation.commands.registry import COMMAND_MODULES
 
@@ -65,6 +68,10 @@ def get_short_help_text(topic: str | None = None, color: bool = False) -> str:
 
     Returns:
         str: Rendered short help text.
+
+    Raises:
+        BrainStoreError: If ``topic`` does not match a registered command or
+            command domain.
     """
     from brain.presentation.commands.registry import COMMAND_MODULES
 

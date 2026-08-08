@@ -7,11 +7,19 @@ from __future__ import annotations
 
 import argparse
 
-from brain.infrastructure.voice.daemon_client import VoiceDaemonClient
+from brain.infrastructure.voice.daemon.daemon_client import VoiceDaemonClient
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Start or reuse the daemon and report its live process identifiers."""
+    """Start or reuse the avatar daemon and report its process identifiers.
+
+    Args:
+        args (argparse.Namespace): Parsed command options selecting the avatar
+            service mode and output format.
+
+    Returns:
+        int: Always zero after the daemon client confirms service startup.
+    """
     snapshot = VoiceDaemonClient().start(mode=args.mode)
     window_pids = ", ".join(str(pid) for pid in snapshot.get("windowPids", [])) or "-"
     print(f"Avatar service ready. PID: {snapshot.get('daemonPid', '-')} | Window PIDs: {window_pids}")

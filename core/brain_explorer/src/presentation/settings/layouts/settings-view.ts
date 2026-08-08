@@ -68,9 +68,13 @@ export class SettingsView extends HTMLElement {
         if (!this.#api) {
             return;
         }
-        const result = await this.#api.health({ forceRefresh: true });
-        this.#state?.setLastResult(result);
-        this.#health = result.data ?? null;
+        try {
+            const result = await this.#api.health({ forceRefresh: true });
+            this.#state?.setLastResult(result);
+            this.#health = result.ok ? result.data ?? null : null;
+        } catch {
+            this.#health = null;
+        }
         this.#render();
     }
 
@@ -83,36 +87,55 @@ export class SettingsView extends HTMLElement {
         this.innerHTML = `
             <section class="page-surface settings-console">
                 <main class="settings-layout">
-                    <button class="settings-tile settings-action-tile" data-action="refresh-health">
-                        <span>${escapeHtml("Accion")}</span>
-                        <strong>${icon("refresh")}Refresh runtime</strong>
-                        <small>health local</small>
-                    </button>
-                    ${this.#tile("Server", this.#health?.ok ? "OK" : "Pending", "brain_explorer")}
-                    ${this.#tile("Dist", this.#health?.distDir || "No cargado", "runtime estatico")}
-                    ${this.#tile("Workspace", this.#health?.workspaceRoot || "Not loaded", "active root")}
-                    ${this.#tile("Agent home", this.#health?.agentHome || "Not loaded", "shared memory")}
+                    <header class="settings-header">
+                        <h1>Settings</h1>
+                        <div class="settings-actions">
+                            <button class="settings-refresh-action" data-action="refresh-health">${icon("refresh")}<span>Refresh</span></button>
+                            <button class="settings-secondary-action" data-action="clear-api-cache">${icon("trash")}<span>Clear cache</span></button>
+                        </div>
+                    </header>
+                    <section class="settings-section" aria-labelledby="settings-workspace-title">
+                        <h2 id="settings-workspace-title">Workspace</h2>
+                        <dl class="settings-path-list">
+                            ${this.#pathRow("Project root", this.#health?.workspaceRoot || "Not loaded", "")}
+                            ${this.#pathRow("Agent home", this.#health?.agentHome || "Not loaded", "")}
+                        </dl>
+                    </section>
                 </main>
             </section>
         `;
         this.querySelector("[data-action='refresh-health']")?.addEventListener("click", () => this.#loadHealth());
+        this.querySelector("[data-action='clear-api-cache']")?.addEventListener("click", event => {
+            this.#api?.clearCache();
+            if (event.currentTarget instanceof HTMLButtonElement) {
+                event.currentTarget.title = "Cache cleared";
+                event.currentTarget.blur();
+            }
+        });
+        this.querySelectorAll<HTMLButtonElement>("[data-action='copy-setting']").forEach(button => {
+            button.addEventListener("click", () => {
+                const value = button.dataset.value || "";
+                if (!value) return;
+                void navigator.clipboard.writeText(value);
+                button.title = "Copied";
+            });
+        });
     }
 
     /**
-     * Render one settings tile.
+     * Render a copyable local runtime path.
      *
-     * @param {string} label Tile label.
-     * @param {string} value Tile value.
-     * @param {string} caption Tile caption.
+     * @param {string} label User-facing path name.
+     * @param {string} value Absolute local path.
+     * @param {string} description Operational purpose of the path.
      * @returns {string} HTML.
      */
-    #tile(label: string, value: unknown, caption: string): string {
+    #pathRow(label: string, value: string, description: string): string {
         return `
-            <article class="settings-tile">
-                <span>${escapeHtml(label)}</span>
-                <strong>${escapeHtml(String(value))}</strong>
-                <small>${escapeHtml(caption)}</small>
-            </article>
+            <div class="settings-path-row">
+                <dt><strong>${escapeHtml(label)}</strong>${description ? `<small>${escapeHtml(description)}</small>` : ""}</dt>
+                <dd><code>${escapeHtml(value)}</code><button class="settings-copy-action" data-action="copy-setting" data-value="${escapeHtml(value)}" title="Copy ${escapeHtml(label)}" aria-label="Copy ${escapeHtml(label)}">${icon("copy")}</button></dd>
+            </div>
         `;
     }
 }

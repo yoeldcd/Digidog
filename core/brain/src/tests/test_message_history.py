@@ -9,6 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from brain.application.messages.session_naming import SESSION_NAME_SYSTEM_PROMPT, propose_session_name
 from brain.infrastructure.messages.models import MessageWriteDTO
 from brain.infrastructure.messages.repository import MessageRepository, should_persist_message
 from brain.application.knowledge.sources.discovery import discover_sources
@@ -109,6 +110,57 @@ class MessageRepositoryTests(unittest.TestCase):
         self.assertTrue(should_persist_message("add-log"))
         self.assertTrue(should_persist_message("add-task"))
         self.assertFalse(should_persist_message("query"))
+
+    def test_session_canonical_name_and_autoname_proposal(self) -> None:
+        """Canonical names must persist while proposals remain bounded and reviewable."""
+        self.repository.append(
+            message=MessageWriteDTO(
+                id="speak-name",
+                created_at="2026-07-18T09:00:00+03:00",
+                text="Diseñamos una identidad canónica para nuestras sesiones de trabajo.",
+                chat_id="chat-name",
+            ),
+        )
+
+        canonical_name = self.repository.rename_session("2026-07-18", "chat-name", "Identidad de sesiones")
+        sessions = self.repository.list_session_summaries()
+
+        self.assertEqual(canonical_name, "Identidad de sesiones")
+        self.assertEqual(sessions[0]["label"], "Identidad de sesiones")
+        with self.assertRaises(ValueError):
+            self.repository.rename_session("2026-07-18", "chat-name", "uno dos tres cuatro cinco seis siete ocho nueve diez once")
+
+    def test_messages_use_absolute_timestamp_order(self) -> None:
+        """Timezone offsets must not corrupt descending chronological order."""
+        for identifier, created_at in (
+            ("lexically-later", "2026-07-22T13:23:00+03:00"),
+            ("absolutely-later", "2026-07-22T12:39:00+01:00"),
+        ):
+            self.repository.append(MessageWriteDTO(id=identifier, created_at=created_at, text=identifier, chat_id="offsets"))
+        records = self.repository.list_messages(date="2026-07-22", chat_id_exact="offsets")
+        self.assertEqual([record.id for record in records], ["absolutely-later", "lexically-later"])
+
+    def test_autoname_prompt_requests_intention_not_opening_words(self) -> None:
+        """Autoname must request semantic intent and retain the ten-word review contract."""
+        self.repository.append(
+            MessageWriteDTO(
+                id="semantic-name",
+                created_at="2026-07-18T09:00:00+03:00",
+                text="Queremos diseñar una identidad canónica para las sesiones de trabajo.",
+                chat_id="chat-name",
+            )
+        )
+        records = self.repository.list_messages(limit=1, date="2026-07-18", chat_id_exact="chat-name")
+        captured: dict[str, str] = {}
+
+        def requester(system_prompt: str, user_prompt: str, max_tokens: int) -> dict[str, object]:
+            captured.update(system=system_prompt, user=user_prompt, tokens=str(max_tokens))
+            return {"name": "Diseñar identidad canónica para sesiones de trabajo compartidas"}
+
+        proposal = propose_session_name(records=records, requester=requester)
+        self.assertEqual(proposal, "Diseñar identidad canónica para sesiones de trabajo compartidas")
+        self.assertIn("dominant intention", captured["system"])
+        self.assertIn("not quote its opening words", SESSION_NAME_SYSTEM_PROMPT)
 
     def test_local_dream_discovers_and_reads_message_database(self) -> None:
         """The message database must be a virtual local Dream source."""

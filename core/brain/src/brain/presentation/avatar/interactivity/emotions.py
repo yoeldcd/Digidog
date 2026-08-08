@@ -30,5 +30,12 @@ assert len(EMOTION_EMOJIS) == 100
 
 
 def emotion_emoji(emotion: str) -> str:
-    """Return a representative emoji, defaulting unknown states to happy."""
+    """Resolve a representative emoji, defaulting unknown states to happy.
+
+    Args:
+        emotion (str): Requested avatar emotion name.
+
+    Returns:
+        str: Corresponding emoji glyph.
+    """
     return EMOTION_EMOJIS.get((emotion or "happy").lower(), EMOTION_EMOJIS["happy"])

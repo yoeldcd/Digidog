@@ -13,7 +13,14 @@ from brain.infrastructure.runtime.paths import get_workspace_root
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Print persisted messages using bounded workspace-local filters."""
+    """Render persisted messages using bounded workspace-local filters.
+
+    Args:
+        args (argparse.Namespace): Parsed filter, pagination, and output flags.
+
+    Returns:
+        int: Zero after rendering matching messages.
+    """
     repository = MessageRepository(consumer_path=get_workspace_root(), require_registered=False)
     messages = repository.list_messages(
         query=str(getattr(args, "query", "")),

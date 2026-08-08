@@ -11,7 +11,7 @@
 import type { AvatarMessageRecord } from "../../../application/messages/dtos/responses/messages-response.ts";
 import type { PictureRecord } from "../../../application/pictures/dtos/responses/pictures-response.ts";
 import { renderDescriptionCard } from "../../shared/components/description-card.ts";
-import { escapeHtml } from "../../shared/utils/html.ts";
+import { escapeHtml, renderMarkdown } from "../../shared/utils/html.ts";
 import type { KnowledgeGraphEdge, KnowledgeGraphNode, KnowledgeRankedNode } from "../view_models/knowledge-view-model.ts";
 
 /**
@@ -130,11 +130,11 @@ export class KnowledgeInspectorRenderer {
                     </button>
                 ` : ""}
                 ${message ? `
-                    <blockquote class="knowledge-message-preview">${escapeHtml(String(message.text || ""))}</blockquote>
+                    <div class="knowledge-message-preview">${renderMarkdown(String(message.text || ""))}</div>
                     <button class="secondary-action" data-action="open-detail-source" data-route="messages" data-message-id="${escapeHtml(String(message.id))}">Open in Messages</button>
                 ` : ""}
                 <dl>
-                    <dt>Context</dt><dd>${escapeHtml(selected.context)}</dd>
+                    <dt>Context</dt><dd>${renderMarkdown(selected.context)}</dd>
                     <dt>Domain</dt><dd>${escapeHtml(selected.domain)}</dd>
                     <dt>${pictureTag ? "Provenance" : "Source"}</dt><dd>${pictureTag
                         ? `Derived from image analysis · ${escapeHtml(selected.source)}`
@@ -162,7 +162,7 @@ export class KnowledgeInspectorRenderer {
                     <dt>Name</dt><dd>${escapeHtml(relation.label)}</dd>
                     <dt>Source node</dt><dd>${escapeHtml(relation.fromLabel)}</dd>
                     <dt>Target node</dt><dd>${escapeHtml(relation.toLabel)}</dd>
-                    <dt>Context</dt><dd>${escapeHtml(relation.context)}</dd>
+                    <dt>Context</dt><dd>${renderMarkdown(relation.context)}</dd>
                     <dt>Domain</dt><dd>${escapeHtml(relation.domain)}</dd>
                     <dt>Source</dt><dd>${escapeHtml(relation.source)}</dd>
                     <dt>Confidence</dt><dd>${escapeHtml(String(relation.confidence || "-"))}</dd>

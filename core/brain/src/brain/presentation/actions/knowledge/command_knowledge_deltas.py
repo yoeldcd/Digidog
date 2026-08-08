@@ -11,15 +11,15 @@ import json
 from typing import Any
 
 # Application Modules Imports
-from brain.application.knowledge.pipeline.delta_application_review import (
+from brain.application.knowledge.pipeline.deltas.delta_application_review import (
     aborted_application_payload,
     applied_application_payload,
     json_confirmation_required_payload,
     no_applicable_payload,
     review_delta_application,
 )
-from brain.application.knowledge.pipeline.delta_apply import apply_pending_delta_rows
-from brain.application.knowledge.pipeline.delta_revalidation import revalidate_pending_delta_rows
+from brain.application.knowledge.pipeline.deltas.delta_apply import apply_pending_delta_rows
+from brain.application.knowledge.pipeline.deltas.delta_revalidation import revalidate_pending_delta_rows
 from brain.infrastructure.database.knowledge.repository import KnowledgeRepository
 from brain.presentation.inputs.knowledge.delta_selection import prompt_delta_selection
 from brain.presentation.terminal import render_placeholders

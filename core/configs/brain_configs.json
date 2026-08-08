@@ -98,5 +98,6 @@
       ".gif",
       ".bmp"
     ]
-  }
+  },
+  "transient_dir": ""
 }

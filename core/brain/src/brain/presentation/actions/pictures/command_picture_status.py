@@ -11,7 +11,15 @@ from brain.infrastructure.pictures.scanner import scan_pictures
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Print counts by domain and description state."""
+    """Report picture-registry health, counts, configuration, and scan state.
+
+    Args:
+        args (argparse.Namespace): Parsed command options controlling output
+            format.
+
+    Returns:
+        int: Zero when the registry scan has no errors; otherwise one.
+    """
     scan = scan_pictures()
     repository = PictureRepository()
     records = repository.list()

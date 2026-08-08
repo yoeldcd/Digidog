@@ -9,6 +9,10 @@ from brain.infrastructure.runtime.paths import get_brain_configs_path
 
 
 def load_pictures_config() -> PicturesConfigDTO:
-    """Load and validate the unified `pictures` configuration section."""
+    """Load and validate the unified picture configuration section.
+
+    Returns:
+        PicturesConfigDTO: Validated picture discovery and description configuration.
+    """
     raw_data = json.loads(get_brain_configs_path().read_text(encoding="utf-8"))
     return BrainConfigsDTO.model_validate(raw_data).pictures

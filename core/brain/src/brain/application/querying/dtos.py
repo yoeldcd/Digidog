@@ -291,23 +291,114 @@ class QuerySelectedEntityDTO(BaseModel):
     """Selector implementation: deterministic or llm."""
 
 
+class MemorySearchDTO(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    key: str = ""
+    category: str = ""
+    path: str = ""
+    text: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class MessageSearchDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str = ""
+    created_at: str = ""
+    text: str = ""
+    emotion: str = ""
+    chat_id: str = ""
+    language: str = "es"
+    source_type: str = "speak"
+    source_command: str = ""
+    source_phase: str = ""
+    date: str = ""
+    time: str = ""
+
+
+class PictureSearchDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str = ""
+    relative_path: str = ""
+    domain: str = ""
+    filename: str = ""
+    extension: str = ""
+    mime_type: str = ""
+    size_bytes: int = 0
+    mtime_ns: int = 0
+    content_hash: str = ""
+    width: int = 0
+    height: int = 0
+    description: str = ""
+    description_source: str = ""
+    described_at: str = ""
+    vector_fingerprint: str = ""
+    active: bool = False
+    created_at: str = ""
+    updated_at: str = ""
+    scope: str = "local"
+
+
+class DiarySearchDTO(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    title: str = ""
+    date: str = ""
+    time: str = ""
+    content: str = ""
+    read_command: str = ""
+
+
+class LogSearchDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: int = 0
+    text: str = ""
+    path: str = ""
+    domain: str = ""
+    title: str = ""
+    type: str = ""
+    timestamp: str = ""
+    read_command: str = ""
+    similarity: float = 0.0
+    recency_factor: float = 0.0
+    score: float = 0.0
+
+
+class KnowledgeSearchDTO(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    entities: list[QueryEntityDTO] = Field(default_factory=list)
+    relations: list[QueryRelationDTO] = Field(default_factory=list)
+
+
+SourceSearchResult = MemorySearchDTO | MessageSearchDTO | PictureSearchDTO | DiarySearchDTO | LogSearchDTO | KnowledgeSearchDTO
+
+class QueryPageDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    response: str = ""
+    items: list[GlobalQueryResultDTO] = Field(default_factory=list)
+    page: int = 1
+    pageSize: int = 25
+    totalItems: int = 0
+    totalPages: int = 0
+    hasPrevious: bool = False
+    hasNext: bool = False
+    countsBySource: dict[str, int] = Field(default_factory=dict)
 class GlobalQueryResultDTO(BaseModel):
     """
     Normalized result returned by the global `query` command.
 
     Attributes:
-        source: Query backend that produced the result.
-        mechanism: Search mechanism that produced the result.
-        kind: Backend-specific result type.
-        rank: Numeric ordering hint from the backend.
-        title: Human-readable result title.
-        text: Short excerpt mirrored from `content.excerpt`.
-        data: Original backend payload.
-        warning: Optional non-blocking warning text.
-        content: Normalized result content block.
-        source_ref: Structured source reference for the result.
-        entities: Entities involved in the result.
-        relations: Relations involved in the result.
+        source (str): Query backend that produced the result.
+        mechanism (str): Search mechanism that produced the result.
+        kind (str): Backend-specific result type.
+        rank (float): Numeric ordering hint from the backend.
+        title (str): Human-readable result title.
+        text (str): Short excerpt mirrored from `content.excerpt`.
+        data (dict[str, Any]): Original backend payload.
+        warning (str): Optional non-blocking warning text.
+        content (QueryContentDTO): Normalized result content block.
+        source_ref (QuerySourceRefDTO): Structured source reference for the result.
+        entities (list[QueryEntityDTO]): Entities involved in the result.
+        relations (list[QueryRelationDTO]): Relations involved in the result.
+        match (QueryMatchDTO): Deep-query matching explanation and adjusted score.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -333,6 +424,9 @@ class GlobalQueryResultDTO(BaseModel):
     data: dict[str, Any] = Field(default_factory=dict)
     """Original backend payload."""
 
+    # Source-specific verbose contracts are represented directly in `data`.
+    """The single verbose source payload is stored in `data`."""
+
     warning: str = Field(default="")
     """Optional non-blocking warning text."""
 
@@ -352,15 +446,71 @@ class GlobalQueryResultDTO(BaseModel):
     """Deep-query match explanation."""
 
 
+
+def normalize_source_result(dto: SourceSearchResult, mechanism: str = "", rank: float = 0.0) -> GlobalQueryResultDTO:
+    """Build a GlobalQueryResultDTO from any source-specific search DTO."""
+    if isinstance(dto, MemorySearchDTO):
+        return GlobalQueryResultDTO(
+            source="memory", mechanism=mechanism, kind="memory", rank=rank,
+            title=dto.key or dto.path, text=dto.text,
+            data=dto.model_dump(mode="json"),
+            content=QueryContentDTO(title=dto.key or dto.path, excerpt=dto.text[:600], body=dto.text),
+            source_ref=QuerySourceRefDTO(scope="local", source_type="memory", domain=dto.category, path=dto.path, title=dto.key or dto.path),
+        )
+    if isinstance(dto, MessageSearchDTO):
+        return GlobalQueryResultDTO(
+            source="messages", mechanism=mechanism, kind="message", rank=rank,
+            title=dto.source_command or f"Avatar message at {dto.created_at}", text=dto.text,
+            data=dto.model_dump(mode="json"),
+            content=QueryContentDTO(title=dto.source_command or "", excerpt=dto.text[:600], body=dto.text, location=dto.created_at),
+            source_ref=QuerySourceRefDTO(scope="local", source_type="messages", domain="messages", path=f"$agent/database/messages.db#message:{dto.id}", title=dto.source_command or ""),
+        )
+    if isinstance(dto, PictureSearchDTO):
+        excerpt = dto.description or f"Image file {dto.filename}"
+        return GlobalQueryResultDTO(
+            source="pictures", mechanism=mechanism, kind="picture", rank=rank,
+            title=dto.filename, text=excerpt,
+            data=dto.model_dump(mode="json"),
+            content=QueryContentDTO(title=dto.filename, excerpt=excerpt, body=dto.description, location=dto.relative_path),
+            source_ref=QuerySourceRefDTO(scope=dto.scope, source_type="pictures", domain=dto.domain, path=f"pictures/{dto.relative_path}", title=dto.filename),
+        )
+    if isinstance(dto, DiarySearchDTO):
+        return GlobalQueryResultDTO(
+            source="memory", mechanism=mechanism, kind="diary", rank=rank,
+            title=dto.title, text=dto.content,
+            data=dto.model_dump(mode="json"),
+            content=QueryContentDTO(title=dto.title, excerpt=dto.content[:600], body=dto.content),
+            source_ref=QuerySourceRefDTO(scope="local", source_type="diary", domain="diary", read_command=dto.read_command, title=dto.title),
+        )
+    if isinstance(dto, LogSearchDTO):
+        return GlobalQueryResultDTO(
+            source="logs", mechanism=mechanism, kind="log", rank=rank,
+            title=dto.title, text=dto.text,
+            data=dto.model_dump(mode="json"),
+            content=QueryContentDTO(title=dto.title, excerpt=dto.text[:600], body=dto.text),
+            source_ref=QuerySourceRefDTO(scope="local", source_type="logs", domain=dto.domain, read_command=dto.read_command, path=dto.path, title=dto.title),
+        )
+    if isinstance(dto, KnowledgeSearchDTO):
+        return GlobalQueryResultDTO(
+            source="knowledge", mechanism=mechanism, kind="knowledge", rank=rank,
+            title="", text="",
+            data=dto.model_dump(mode="json"),
+            entities=list(dto.entities),
+            relations=list(dto.relations),
+        )
+    return GlobalQueryResultDTO(source="unknown", mechanism=mechanism, kind="unknown", rank=rank, title="", text="", data={})
+
 class QuerySubqueryDTO(BaseModel):
     """
     Planned query segment used by deep query mode.
 
     Attributes:
-        index: Stable 1-based subquery index.
-        text: Subquery text sent to the selected retrieval backends.
-        reason: Short reason for why the segment was produced.
-        results: Normalized matches returned for this subquery.
+        index (int): Stable 1-based subquery index.
+        text (str): Subquery text sent to the selected retrieval backends.
+        reason (str): Short reason for why the segment was produced.
+        keywords (list[str]): Significant retrieval keywords for the segment.
+        date_constraints (list[QueryDateConstraintDTO]): Temporal constraints inherited by the segment.
+        results (list[GlobalQueryResultDTO]): Normalized matches returned for this subquery.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -389,11 +539,13 @@ class QueryDeepResponseDTO(BaseModel):
     Deep answer synthesized from segmented knowledgebase retrieval.
 
     Attributes:
-        query: Original user query.
-        answer: Deterministic contextual answer grounded in retrieved results.
-        subqueries: Segments used to gather evidence.
-        results: Deduplicated evidence results used by the answer.
-        warnings: Non-blocking warning texts observed during retrieval.
+        query (str): Original user query.
+        answer (str): Deterministic contextual answer grounded in retrieved results.
+        context (QueryContextDTO): Structured keywords and temporal query context.
+        subqueries (list[QuerySubqueryDTO]): Segments used to gather evidence.
+        selected_entities (list[QuerySelectedEntityDTO]): Entities selected as query anchors.
+        results (list[GlobalQueryResultDTO]): Deduplicated evidence results used by the answer.
+        warnings (list[str]): Non-blocking warning texts observed during retrieval.
     """
 
     model_config = ConfigDict(extra="forbid")

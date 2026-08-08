@@ -17,5 +17,6 @@ SCHEMA = CommandSchema(
         ArgumentSchema(flags=["--title", "-t"], help="Replacement task title.", type="str", default=None),
         ArgumentSchema(flags=["--description", "-d"], help="Replacement task description.", type="str", default=None),
         ArgumentSchema(flags=["--priority", "-p"], help="Replacement priority (HIGH, MEDIUM, LOW).", type="str", default=None),
+        ArgumentSchema(flags=["--domain"], help="Replacement dot-notated task domain.", type="str", default=None),
     ],
 )

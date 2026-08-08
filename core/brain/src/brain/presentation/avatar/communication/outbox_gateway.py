@@ -12,12 +12,32 @@ from brain.presentation.avatar.communication.message_store import AvatarMessageS
 
 
 class NativeOutboxGateway:
-    """Accept a reply only after durable local persistence succeeds."""
+    """Accept a reply only after durable local persistence succeeds.
+
+    Attributes:
+        _message_store (AvatarMessageStore): Durable store used for native delivery.
+    """
 
     def __init__(self, message_store: AvatarMessageStore) -> None:
+        """Initialize the gateway with one durable message store.
+
+        Args:
+            message_store (AvatarMessageStore): Store used for native delivery.
+
+        Returns:
+            None: The gateway is ready to persist reply requests.
+        """
         self._message_store = message_store
 
     def send(self, request_dto: ReplyRequestDTO) -> ReplyResultDTO:
+        """Persist a reply and report whether native delivery can proceed.
+
+        Args:
+            request_dto (ReplyRequestDTO): Validated avatar reply request.
+
+        Returns:
+            ReplyResultDTO: Accepted persistence result or error detail.
+        """
         try:
             self._message_store.enqueue(request_dto)
         except (OSError, ValueError, sqlite3.Error) as exc:

@@ -33,6 +33,11 @@ export interface KnowledgeSourceTreeProjectionInput {
      */
     readonly selectedScopes: ReadonlySet<Exclude<KnowledgeScope, "all">>;
     /**
+     * Optional canonical node path projected as the sole visible tree root.
+     * @type {string | undefined}
+     */
+    readonly rootPath?: string;
+    /**
      * Canonical global-memory dotted paths returned by the memory index.
      * @type {readonly string[]}
      */
@@ -86,10 +91,36 @@ export class KnowledgeSourceTreeProjector {
      * @returns {KnowledgeTreeNode[]} Root nodes ordered as global then local scope.
      */
     project(input: KnowledgeSourceTreeProjectionInput): KnowledgeTreeNode[] {
-        return [
+        const roots = [
             this.#scopeRoot("global", "Global knowledge", input.memoryPaths, input),
             this.#scopeRoot("local", "Local knowledge", [], input),
         ].filter(root => input.selectedScopes.has(root.scope === "global" ? "global" : "local"));
+        const rootPath = String(input.rootPath || "");
+        if (!rootPath) return roots;
+        const filteredRoot = this.#findNode(roots, rootPath);
+        if (!filteredRoot) return roots;
+        return [{
+            ...filteredRoot,
+            ...(filteredRoot.actions
+                ? { actions: filteredRoot.actions.filter(action => action.id !== "filter-source") }
+                : {}),
+        }];
+    }
+
+    /**
+     * Find one projected source node by its canonical tree path.
+     *
+     * @param {readonly KnowledgeTreeNode[]} nodes Candidate hierarchy.
+     * @param {string} path Canonical node path.
+     * @returns {KnowledgeTreeNode | null} Matching node, or null when the path is stale.
+     */
+    #findNode(nodes: readonly KnowledgeTreeNode[], path: string): KnowledgeTreeNode | null {
+        for (const node of nodes) {
+            if (node.path === path) return node;
+            const descendant = this.#findNode(node.children || [], path);
+            if (descendant) return descendant;
+        }
+        return null;
     }
 
     /**
@@ -227,7 +258,13 @@ export class KnowledgeSourceTreeProjector {
             icon: categoryIcon,
             count: input.graphCountLabel("all", scope, key),
             children: this.#treeNodes([...root.children.values()], input),
-            actions: [{ id: "filter-source", label: "FILTER", icon: "filter" }],
+            actions: key === "pictures"
+                ? [{ id: "filter-source", label: "FILTER", icon: "filter" }]
+                : [
+                    { id: "consolidate-source", label: "CONSOLIDATE", icon: "graph" },
+                    { id: "recompose-source", label: "RECOMPOSE", icon: "refresh" },
+                    { id: "filter-source", label: "FILTER", icon: "filter" },
+                ],
             scope,
             domain: "all",
             sourceKind: key,
@@ -363,8 +400,12 @@ export class KnowledgeSourceTreeProjector {
     ): KnowledgeTreeNode[] {
         return nodes.map(node => {
             const children = this.#treeNodes([...node.children.values()], input);
-            const actions: StructureTreeAction[] = [
+            const knowledgeActions: StructureTreeAction[] = node.sourceKind === "pictures" ? [] : [
                 { id: "consolidate-source", label: "CONSOLIDATE", icon: "graph" },
+                { id: "recompose-source", label: "RECOMPOSE", icon: "refresh" },
+            ];
+            const actions: StructureTreeAction[] = [
+                ...knowledgeActions,
                 { id: "filter-source", label: "FILTER", icon: "filter" },
                 ...(node.openRoute ? [{ id: "open-source", label: "OPEN", icon: "chevronRight" } satisfies StructureTreeAction] : []),
             ];

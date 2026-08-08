@@ -29,6 +29,11 @@ export interface WikisResponse {
      */
     ok: boolean;
     /**
+     * Active workspace that owns every returned wiki.
+     * @type {string}
+     */
+    workspaceRoot: string;
+    /**
      * Registered projects and their current wiki availability.
      * @type {WikiRecord[]}
      */

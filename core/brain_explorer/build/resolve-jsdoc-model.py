@@ -1,3 +1,5 @@
+"""Resolve the configured text-model connection for the JSDoc build step."""
+
 from __future__ import annotations
 
 import json
@@ -14,6 +16,14 @@ from brain.application.querying.llm import load_text_model_config  # noqa: E402
 
 
 def main() -> int:
+    """Emit the resolved model configuration as JSON for the JavaScript builder.
+
+    Returns:
+        int: Zero after writing the model connection payload to standard output.
+
+    Raises:
+        RuntimeError: If the configured API key cannot be resolved.
+    """
     config = load_text_model_config(max_tokens=900)
     api_key = resolve_secret(config.api_key)
     if not api_key or api_key.startswith("$"):

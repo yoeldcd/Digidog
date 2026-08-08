@@ -106,7 +106,12 @@ prefix_rule(
 
 @dataclass(frozen=True)
 class GitInspectionResult:
-    """Git repository inspection result."""
+    """Git repository inspection result.
+
+    Attributes:
+        has_git_repository (bool): Whether the workspace belongs to a Git repository.
+        has_changes (bool): Whether tracked or untracked workspace changes exist.
+    """
 
     has_git_repository: bool
     has_changes: bool
@@ -114,7 +119,14 @@ class GitInspectionResult:
 
 @dataclass(frozen=True)
 class WorkspaceStructureResult:
-    """Created workspace metadata paths."""
+    """Created workspace metadata paths.
+
+    Attributes:
+        scripts_dir (Path): Workspace Brain scripts directory.
+        logs_dir (Path): Workspace compatibility logs directory.
+        data_dir (Path): Workspace persistent data directory.
+        messages_database (Path): Local avatar-message database path.
+    """
 
     scripts_dir: Path
     logs_dir: Path
@@ -124,7 +136,12 @@ class WorkspaceStructureResult:
 
 @dataclass(frozen=True)
 class BrainEntrypointResult:
-    """Created workspace brain entrypoint metadata."""
+    """Created workspace Brain entrypoint metadata.
+
+    Attributes:
+        destination (Path): Created consumer entrypoint path.
+        workspace_root_text (str): Canonical workspace root embedded in the entrypoint.
+    """
 
     destination: Path
     workspace_root_text: str
@@ -316,6 +333,9 @@ def ensure_workspace_codex_config(workspace: Path, agent_name: str, agent_dir: P
 
     Returns:
         bool: True when the configuration file was created.
+
+    Raises:
+        ValueError: An existing configuration contains unsupported local overrides.
     """
     config_file: Path = workspace / ".codex" / "config.toml"
     if config_file.exists():
@@ -336,7 +356,14 @@ def ensure_workspace_codex_config(workspace: Path, agent_name: str, agent_dir: P
 
 
 def ensure_workspace_codex_rules(workspace: Path) -> bool:
-    """Create the narrow Brain CLI allow rule when the WoSP lacks one."""
+    """Create the narrow Brain CLI allow rule when the workspace lacks one.
+
+    Args:
+        workspace (Path): Workspace root that owns the local Codex rules.
+
+    Returns:
+        bool: True when the rule file was created or extended.
+    """
     rules_file = workspace / ".codex" / "rules" / "default.rules"
     if rules_file.exists():
         return False
@@ -393,6 +420,9 @@ def resolve_core_template_path() -> Path:
 
     Returns:
         Path: Existing `core_cli.py` template path.
+
+    Raises:
+        FileNotFoundError: No canonical core template exists in supported locations.
     """
     template_path: Path = get_core_cli_path()
     if template_path.is_file():

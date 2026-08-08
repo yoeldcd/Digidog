@@ -99,6 +99,9 @@ def synthesize_with_llm(
 
     Returns:
         str: Model answer.
+
+    Raises:
+        RuntimeError: The configured model request fails or returns no answer.
     """
     evidence_payload: list[dict[str, Any]] = [
         evidence_payload_for_result(result=result, index=index)
@@ -218,12 +221,26 @@ def evidence_payload_for_result(result: GlobalQueryResultDTO, index: int) -> dic
 
 
 def summarize_result_entities(result: GlobalQueryResultDTO) -> str:
-    """Return a compact entity summary for one result."""
+    """Return a compact entity summary for one result.
+
+    Args:
+        result (GlobalQueryResultDTO): Query result containing entity projections.
+
+    Returns:
+        str: Semicolon-separated summary of up to four entities.
+    """
     return "; ".join(str(entity) for entity in result.entities[:4])
 
 
 def summarize_result_relations(result: GlobalQueryResultDTO) -> str:
-    """Return a compact relation summary for one result."""
+    """Return a compact relation summary for one result.
+
+    Args:
+        result (GlobalQueryResultDTO): Query result containing relation projections.
+
+    Returns:
+        str: Semicolon-separated summary of up to three relations.
+    """
     return "; ".join(str(relation) for relation in result.relations[:3])
 
 

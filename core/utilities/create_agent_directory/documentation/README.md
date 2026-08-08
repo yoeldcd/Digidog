@@ -1,9 +1,12 @@
+<!-- Author: Yoel David <yoeldcd@gmail.com> | X: https://x.com/SAY6267 -->
+
 # Create Agent Directory
 
 `create_agent_directory.py` is a standalone factory for a new agent ownership
 boundary. It creates `@<agent-name>/`, clones the versioned Brain core, writes
-generic configuration, creates empty stores, renders a generic `AGENT.md`, and
-adds an initial co-located consumer.
+generic configuration, creates empty stores, renders a generic `core/AGENTS.md`, and
+adds an initial co-located consumer. Every seed also receives a rendered root
+Digidog `README.md` and the canonical GNU AGPL v3 `LICENSE`.
 
 It is intentionally not callable through Brain. A running Brain operates one
 existing agent; creating another agent must remain an explicit external action.
@@ -43,13 +46,14 @@ py core/utilities/create_agent_directory/create_agent_directory.py update-agent 
   --json
 ```
 
-`update-agent` takes its source exclusively from the `core/` containing the
-invoked utility. It synchronizes only `brain/` and `brain_explorer/` in the
-target clone. Files with identical content are not rewritten; changed and new
-files are replaced atomically, and destination files absent from the source are
-removed. The operation never reads from or writes to target `configs/`,
-`database/`, `assets/`, `utilities/`, `AGENT.md`, or agent-authored domains.
-
+The update-agent command takes its source exclusively from the agent root that
+owns the invoked core. It synchronizes brain, brain_explorer, versioned public
+screens, and the live memory/profiles/developer and memory/profiles/worker
+roots into the target agent. It also refreshes the root README and canonical
+LICENSE. Identical files are not rewritten; stale files are removed only inside
+those explicitly owned roots. Target configs, databases, private assets,
+utilities, core/AGENTS.md, diary, relationships, and every other memory domain
+remain outside the synchronization boundary.
 Transient trees (`node_modules`, Python/tool caches, nested `.git`, and
 generated `documentation/wiki`) are excluded on both sides. They are neither
 copied nor removed. Synchronizing a core onto itself is rejected.
@@ -58,8 +62,10 @@ copied nor removed. Synchronizing a core onto itself is rejected.
 
 ```text
 @agent-name/
-|-- AGENT.md
+|-- LICENSE
+|-- README.md
 |-- core/
+|   |-- AGENTS.md
 |   |-- requirements.txt
 |   |-- brain/
 |   |-- brain_explorer/
@@ -88,6 +94,18 @@ copied nor removed. Synchronizing a core onto itself is rejected.
 The initial `$agent/scripts/brain.py` points relatively to the new sibling
 `core/` and makes the agent root immediately usable as its first WoSP.
 
+The root `README.md` is copied verbatim from `core/README.md`, the project's
+only README source. The root `LICENSE` contains
+the unmodified GNU Affero General Public License v3 text, identified as
+`AGPL-3.0-only`. This strong copyleft license includes the remote-network source
+offer condition appropriate to Brain Explorer and avatar services. Their paths
+are returned as `readme_path` and `license_path` in creation JSON output. Both
+files are canonical and overwriteable: a later `update-agent` atomically
+refreshes changed content and reports them through `updated_files`. The factory
+validates that this one README contains the Digidog contract and complete public
+screen inventory before creating a clone. Its root-publication paths use
+`core/assets/`, so the verbatim root copy resolves images and links.
+
 ## Seed policy
 
 The factory copies versioned runtime code and documentation. It never copies:
@@ -98,8 +116,13 @@ The factory copies versioned runtime code and documentation. It never copies:
 - personal portraits, memory, snippets, skills, or pictures;
 - `node_modules`, Python caches, test caches, or generated wiki trees.
 
-`brain_configs.json` receives runtime defaults and the new absolute
-`agent_dir`. `brain_mirrors.json` contains only the new co-located consumer.
+`brain_configs.json` receives runtime defaults, `agent_name`, `user_name`, and
+the absolute `agent_dir`. Its `pictures` section is a generic schema mockup:
+empty `tags` and `characters` guidance, common image extensions, and a disabled
+OpenAI-compatible image-model placeholder that references `$VISION_API_KEY`.
+It never copies live recognition guidance, identities, provider credentials, or
+model choices. Global Codex configuration is not part of the Brain contract.
+`brain_mirrors.json` contains only the new co-located consumer.
 `brain_avatar_config.json` uses generic local voice defaults and a stable
 per-agent loopback port derived from the new agent path. All fixed store
 directories exist but contain no records.
@@ -109,21 +132,55 @@ Versioned presentation files named `avatar_<state>.gif` and their local
 required runtime UI assets, not avatar-storage records. Other portraits or
 arbitrary personal files remain excluded.
 
+Versioned `core/assets/screens/` images, including Explorer layouts and the
+native avatar view, are copied during creation and updated
+with `core/brain`, `core/brain_explorer`, and the root README. This narrow asset
+scope keeps every documented Explorer layout renderable without synchronizing
+private avatar images or agent-authored pictures.
+
+`update-agent` treats `brain` and `brain_explorer` as the required legacy core
+boundary. New versioned roots such as `assets/screens` may be absent from an
+older agent; the updater creates them before synchronization instead of
+rejecting the migration.
+
 Every clone also receives `core/requirements.txt`, the canonical Python
 installation entrypoint. It delegates to `brain/requirements.txt`, keeping the
 runtime dependency versions owned by the Brain subsystem while supporting
 `py -m pip install -r core/requirements.txt` from the agent root.
 
-`memory/profiles/` and `memory/diary/` are initialized as empty special-memory
-domains. `$user/` and `.tmp/` are also created as empty agent-level domains so
-the generated instruction and Brain contracts are immediately satisfiable.
-
-The template [`AGENT.md`](../AGENT.md) deliberately contains no family,
+The source agent's live memory/profiles/developer and memory/profiles/worker
+directories are installed before the receiving Brain bootstrap and synchronized
+before update-agent runs init. They remain live operational memory rather than
+factory templates. All other memory, including diary, relationships, and
+agent-defined domains, stays owned by the receiving agent and is never copied
+or removed by this utility. The user and temporary roots are initialized as
+empty agent-level domains.
+The sole generic template [`AGENTS.md`](../templates/AGENTS.md) deliberately contains no family,
 romantic, physical, or existing identity association. It receives only the new
 agent and user names. Apart from those identity and relationship removals, it
 preserves the canonical environment initialization, response workflows, task
 planning methodology, execution guidelines, backlog/memory contracts,
 exception handling, and completion report structure.
+
+The source core's `AGENTS.md` is explicitly excluded from clone copying. The
+factory renders the generic template with the new identity directly into
+`<new-agent>/core/AGENTS.md`; it does not create a root instruction mirror.
+The cloned propagator owns subsequent localization into consumer roots and
+generic mirrors.
+
+## Consumer lifecycle
+
+Creating an agent directory publishes the complete seed and then invokes
+`create-brain` through the clone's own `core/core_cli.py`, with the new agent
+root as its first consumer workspace. This ensures the consumer structure,
+launcher, databases, policies, and project registration follow the canonical
+Brain bootstrap instead of a factory-local approximation. A failed bootstrap
+rolls back only the newly published agent directory.
+
+Updating an agent synchronizes its governed code and publication files, then
+invokes `init --json` through the existing `$agent/scripts/brain.py` consumer.
+An update therefore leaves runtime stores and indexes initialized against the
+new code, and fails explicitly when the consumer launcher is absent.
 
 ## First run
 
@@ -132,5 +189,6 @@ py '<new-agent>/$agent/scripts/brain.py' wakeup --json
 py '<new-agent>/$agent/scripts/brain.py' serve-explorer --json
 ```
 
-The first Brain operation may initialize empty SQLite and vector stores. That
-runtime initialization happens after creation, not inside the factory.
+Creation already runs the consumer's `create-brain` bootstrap, and every
+`update-agent` runs its `init` lifecycle. A first interactive `wakeup` therefore
+starts from the initialized stores and indexes produced by those operations.

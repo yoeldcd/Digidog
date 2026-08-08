@@ -10,6 +10,7 @@ from typing import Any
 
 
 class KnowledgeQueryRepositoryMixin:
+    """Provide full-text knowledge retrieval operations."""
     def search(self, text: str, limit: int = 10) -> list[dict[str, Any]]:
         """
         Search entities and evidence through SQLite FTS5.

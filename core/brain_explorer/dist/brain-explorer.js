@@ -1,12 +1,14 @@
 "use strict";
 const __brainExplorerModule0=(()=>{let cache;return()=>{if(cache)return cache;
 const { BrainApiClient } = __brainExplorerModule1();
-const { AppState } = __brainExplorerModule2();
-const { BrainExplorerApp } = __brainExplorerModule3();
+const { parseStartupRouteTarget } = __brainExplorerModule2();
+const { AppState } = __brainExplorerModule4();
+const { BrainExplorerApp } = __brainExplorerModule5();
 /**
  * @author Yoel David <yoeldcd@gmail.com>
  * @see https://x.com/SAY6267
  */
+
 
 
 
@@ -22,9 +24,14 @@ function bootstrapBrainExplorer() {
     }
     const api = new BrainApiClient();
     const activePath = localStorage.getItem("active_project_path");
+    const state = new AppState(activePath || "");
+    const startupTarget = parseStartupRouteTarget(window.location.search);
+    if (startupTarget) {
+        state.setRouteTarget(startupTarget.route, startupTarget.target);
+    }
     app.context = {
         api,
-        state: new AppState(activePath || "")
+        state,
     };
 }
 bootstrapBrainExplorer();
@@ -68,6 +75,10 @@ class BrainApiClient extends EventTarget {
      */
     setWorkspaceRootOverride(path) {
         this.#workspaceRootOverride = path;
+        this.clearCache();
+    }
+    /** Clear retained GET responses so the next view request is authoritative. */
+    clearCache() {
         this.#cache.clear();
         this.#inFlight.clear();
     }
@@ -217,6 +228,18 @@ class BrainApiClient extends EventTarget {
         return normalizeDirectResponse(response, isWikisResponse);
     }
     /**
+     * Forward a client-side resource failure through the shell notification contract.
+     *
+     * @param {string} command User-facing operation that failed.
+     * @param {string} error Human-readable failure reason.
+     * @returns {ApiResponse} The recorded failure envelope.
+     */
+    reportClientFailure(command, error) {
+        const payload = { ok: false, code: 0, command: [command], stdout: "", stderr: error, durationMs: 0, error };
+        this.dispatchEvent(new CustomEvent("request-end", { detail: { command, method: "GET", payload } }));
+        return payload;
+    }
+    /**
      * Read persisted paid-voice messages and their transcript sessions.
      *
      * @param {QueryParams} params Optional server-side session, date, or pagination query values.
@@ -226,6 +249,18 @@ class BrainApiClient extends EventTarget {
     getVoiceMessages(params = {}, options = {}) {
         const query = toQueryString(params);
         return this.request(`/api/voice/messages${query ? `?${query}` : ""}`, options);
+    }
+    /**
+     * Propose or persist a canonical message-session name.
+     * @param {Record<string, unknown>} payload Session identity and rename action payload.
+     * @returns {Promise<ApiResponse>} The naming API response.
+     */
+    updateVoiceSessionName(payload) {
+        return this.request("/api/voice/session/name", {
+            method: "POST",
+            body: JSON.stringify(payload),
+            forceRefresh: true
+        });
     }
     /**
      * Poll the daemon-confirmed avatar playback identity.
@@ -239,10 +274,10 @@ class BrainApiClient extends EventTarget {
     /**
      * Replay one retained daemon message without regenerating speech.
      *
-     * @param {string} name Server-issued retained audio filename.
+     * @param {string} name Optional server-issued retained audio filename; empty selects the latest.
      * @returns {Promise<ApiResponse<unknown>>} Operation envelope confirming whether replay was accepted.
      */
-    replayVoiceMessage(name) {
+    replayVoiceMessage(name = "") {
         return this.request("/api/voice/replay", {
             method: "POST",
             body: JSON.stringify({ name }),
@@ -406,6 +441,19 @@ class BrainApiClient extends EventTarget {
         return this.request(`/api/knowledge/deltas?${query}`, options);
     }
     /**
+     * Generate knowledge proposals for one source-tree container.
+     *
+     * @param {object} payload Consolidate/recompose action, physical scope, domain, and source paths.
+     * @returns {Promise<object>} Dream result with pending proposals and optional targeted prune summary.
+     */
+    knowledgeDream(payload) {
+        return this.request("/api/knowledge/dream", {
+            method: "POST",
+            body: JSON.stringify(payload),
+            forceRefresh: true
+        });
+    }
+    /**
      * Execute global brain query.
      *
      * @param {object} params Query parameters.
@@ -460,6 +508,25 @@ class BrainApiClient extends EventTarget {
         return `/api/pictures/file?id=${encodeURIComponent(pictureId)}`;
     }
     /**
+     * Import one browser-selected image into a canonical picture domain.
+     *
+     * @param {string} domain Target dotted picture domain; an empty value means the library root.
+     * @param {File} file Browser-owned source image.
+     * @returns {Promise<ApiResponse<PicturesPayload>>} The registered imported picture and refreshed scan data.
+     */
+    importPicture(domain, file) {
+        return this.request(`/api/pictures/import?domain=${encodeURIComponent(domain)}`, {
+            method: "POST",
+            headers: {
+                "Content-Type": file.type || "application/octet-stream",
+                "X-Picture-Filename": encodeURIComponent(file.name)
+            },
+            body: file,
+            forceRefresh: true,
+            commandLabel: `Import picture: ${file.name}`
+        });
+    }
+    /**
      * Read profile list.
      *
      * @param {ApiRequestOptions} options Cache and fetch policy applied to the profile-list request.
@@ -506,6 +573,15 @@ class BrainApiClient extends EventTarget {
         return this.request(`/api/logs/index?${query}`, options);
     }
     /**
+     * Rename a log-domain subtree.
+     *
+     * @param {DomainRenameRequest} payload Source, destination, and scope contract.
+     * @returns {Promise<ApiResponse>} CLI mutation result.
+     */
+    renameLogDomain(payload) {
+        return this.request("/api/logs/domain", { method: "POST", body: JSON.stringify(payload) });
+    }
+    /**
      * Read the workspace backlog tree.
      *
      * @param {object} params Query parameters.
@@ -527,6 +603,43 @@ class BrainApiClient extends EventTarget {
             method: "POST",
             body: JSON.stringify(payload)
         });
+    }
+    /**
+     * Enrich one backlog task through the profile-aware multimodal backend.
+     *
+     * @param {string} taskId Persistent task identifier.
+     * @returns {Promise<ApiResponse<BacklogEnrichmentPayload>>} Updated task and enrichment metadata.
+     */
+    enrichBacklogTask(taskId) {
+        const payload = { action: "enrich", taskId };
+        return this.request("/api/backlog/task", {
+            method: "POST",
+            body: JSON.stringify(payload)
+        });
+    }
+    /**
+     * Enrich current task-form values without persisting them.
+     *
+     * @param {BacklogDraftEnrichmentRequest} draft Current typed form state and optional image.
+     * @param {AbortSignal | undefined} signal Optional cancellation signal owned by the task editor.
+     * @returns {Promise<ApiResponse<BacklogDraftEnrichmentPayload>>} Enriched Markdown and model metadata.
+     */
+    enrichBacklogDraft(draft, signal) {
+        const payload = { action: "enrich-draft", ...draft };
+        return this.request("/api/backlog/task", {
+            method: "POST",
+            body: JSON.stringify(payload),
+            ...(signal ? { signal } : {})
+        });
+    }
+    /**
+     * Rename a backlog-domain subtree.
+     *
+     * @param {DomainRenameRequest} payload Source, destination, and scope contract.
+     * @returns {Promise<ApiResponse>} CLI mutation result.
+     */
+    renameBacklogDomain(payload) {
+        return this.request("/api/backlog/domain", { method: "POST", body: JSON.stringify(payload) });
     }
 }
 /**
@@ -570,8 +683,6 @@ function normalizeDirectResponse(response, isDirectData) {
 function isHealthStatus(value) {
     return isRecord(value)
         && typeof value.ok === "boolean"
-        && typeof value.name === "string"
-        && typeof value.distDir === "string"
         && typeof value.workspaceRoot === "string"
         && typeof value.agentHome === "string";
 }
@@ -611,6 +722,66 @@ function toQueryString(params) {
 
 cache=(()=>{return { BrainApiClient: BrainApiClient };})();return cache;};})();
 const __brainExplorerModule2=(()=>{let cache;return()=>{if(cache)return cache;
+const { isRouteId } = __brainExplorerModule3();
+/**
+ * Validate route targets encoded in the Explorer startup URL.
+ *
+ * @module application/shell/validators/startup-route-target
+ */
+
+/**
+ * Parse a startup query string into a safe Explorer route target.
+ *
+ * Only a canonical ``tN`` task identifier is forwarded to Backlog. Unknown
+ * sections and malformed targets are ignored instead of mutating shell state.
+ *
+ * @param {string} search Raw ``window.location.search`` value.
+ * @returns {StartupRouteTarget | null} Validated startup target, or null when absent or invalid.
+ */
+function parseStartupRouteTarget(search) {
+    const parameters = new URLSearchParams(search);
+    const section = parameters.get("section");
+    if (!isRouteId(section))
+        return null;
+    const target = {};
+    const taskId = parameters.get("task")?.trim() ?? "";
+    if (section === "backlog" && /^t\d+$/i.test(taskId)) {
+        target.taskId = taskId.toLowerCase();
+    }
+    return { route: section, target };
+}
+
+cache=(()=>{return { parseStartupRouteTarget: parseStartupRouteTarget };})();return cache;};})();
+const __brainExplorerModule3=(()=>{let cache;return()=>{if(cache)return cache;
+
+/**
+ * Runtime narrowing for route identifiers crossing outer-layer boundaries.
+ *
+ * @module application/shell/validators/route-id
+ */
+/**
+ * Complete closed route vocabulary accepted by Explorer navigation state.
+ */
+const ROUTE_IDS = [
+    "dashboard", "memory", "knowledge", "pictures", "query", "profiles",
+    "logs", "backlog", "messages", "wikis", "settings",
+];
+/**
+ * Narrow an untrusted DOM or API string to the application route contract.
+ *
+ * This validator deliberately lives in Application rather than the shell route
+ * registry so feature layouts can validate navigation without importing the
+ * Presentation composition root and creating a circular module dependency.
+ *
+ * @param {string | null} value Untrusted route identifier read at an outer-layer boundary.
+ * @returns {boolean} `true` only when `value` belongs to the complete route vocabulary.
+ */
+function isRouteId(value) {
+    return value !== null && ROUTE_IDS.some(route => route === value);
+}
+
+cache=(()=>{return { isRouteId: isRouteId };})();return cache;};})();
+const __brainExplorerModule4=(()=>{let cache;return()=>{if(cache)return cache;
 
 /**
  * @author Yoel David <yoeldcd@gmail.com>
@@ -1078,13 +1249,13 @@ class AppState extends EventTarget {
 }
 
 cache=(()=>{return { projectRouteStorageKey: projectRouteStorageKey, restoreProjectRoute: restoreProjectRoute, AppState: AppState };})();return cache;};})();
-const __brainExplorerModule3=(()=>{let cache;return()=>{if(cache)return cache;
-const { codeBlock, escapeHtml } = __brainExplorerModule4();
-const { icon } = __brainExplorerModule5();
-const { notificationText } = __brainExplorerModule6();
-const { DEFAULT_SHELL_ROUTE, isShellRouteId, SHELL_ROUTES } = __brainExplorerModule7();
-const { handleShellSearchShortcut } = __brainExplorerModule51();
-const { renderShellNavigation } = __brainExplorerModule52();
+const __brainExplorerModule5=(()=>{let cache;return()=>{if(cache)return cache;
+const { codeBlock, escapeHtml } = __brainExplorerModule6();
+const { icon } = __brainExplorerModule7();
+const { notificationText } = __brainExplorerModule8();
+const { DEFAULT_SHELL_ROUTE, isShellRouteId, SHELL_ROUTES } = __brainExplorerModule9();
+const { handleShellSearchShortcut } = __brainExplorerModule63();
+const { renderShellNavigation } = __brainExplorerModule64();
 /**
  * @author Yoel David <yoeldcd@gmail.com>
  * @see https://x.com/SAY6267
@@ -1121,6 +1292,7 @@ class BrainExplorerApp extends HTMLElement {
      * @type {RouteId}
      */
     #activeRouteId = "dashboard";
+    #preservedQueryView = null;
     /**
      * Prevents duplicate subscriptions to `AppState` lifecycle events.
      * @type {boolean}
@@ -1142,24 +1314,34 @@ class BrainExplorerApp extends HTMLElement {
      */
     #openCallIds = new Set();
     /**
-     * Most recently created voice playback element, or null when idle.
-     * @type {HTMLAudioElement | null}
-     */
-    #latestVoiceAudio = null;
-    /**
      * Dismissal timers indexed by notification identity.
      * @type {Map<string, NotificationTimerViewModel>}
      */
     #notificationTimers = new Map();
+    /**
+     * Debounces reactive filtering of the currently mounted layout.
+     * @type {number | null}
+     */
+    #reactiveSearchTimer = null;
     /**
      * Stable listener delegating the global search shortcut to its feature controller.
      * @type {(event: KeyboardEvent) => void}
      */
     #handleGlobalKeyDown = (event) => handleShellSearchShortcut(this, event);
     /**
-     * Assign runtime dependencies.
+     * Original global error hook restored when the shell detaches.
+     * @type {OnErrorEventHandler | null}
+     */
+    #previousWindowOnError = null;
+    /**
+     * Prevents duplicate global error subscriptions across remounts.
+     * @type {boolean}
+     */
+    #globalErrorHandlingBound = false;
+    /**
+     * Assign runtime dependencies and initialize shell state and bindings.
      *
-     * @param {object} context Component context.
+     * @param {ComponentContext} context Component context containing API adapter and presentation state store.
      * @returns {void}
      */
     set context(context) {
@@ -1170,7 +1352,7 @@ class BrainExplorerApp extends HTMLElement {
         this.#renderShell();
     }
     /**
-     * Render shell when attached.
+     * Render shell and attach global window event listeners when mounted to the DOM.
      *
      * @returns {void}
      */
@@ -1179,16 +1361,96 @@ class BrainExplorerApp extends HTMLElement {
             this.#renderShell();
         }
         window.addEventListener("keydown", this.#handleGlobalKeyDown);
+        this.#bindGlobalErrorHandling();
     }
     /**
-     * Remove keyboard shortcut listener when detached.
+     * Remove global window event listeners and active timers when unmounted from the DOM.
      *
      * @returns {void}
      */
     disconnectedCallback() {
         window.removeEventListener("keydown", this.#handleGlobalKeyDown);
+        this.#unbindGlobalErrorHandling();
         this.#notificationTimers.forEach(record => window.clearTimeout(record.timer));
         this.#notificationTimers.clear();
+        if (this.#reactiveSearchTimer !== null) {
+            window.clearTimeout(this.#reactiveSearchTimer);
+        }
+    }
+    /**
+     * Reports a captured global browser or resource failure through the official notification channel.
+     *
+     * @param {ErrorEvent | Event} event Captured browser error event or element resource loading failure event.
+     * @returns {void}
+     */
+    #handleGlobalError = (event) => {
+        if (event instanceof ErrorEvent) {
+            const fileName = event.filename ? event.filename.split("/").pop() || "" : "";
+            const source = fileName ? `${fileName}:${event.lineno || 0}` : "Script runtime";
+            const message = event.error?.message || event.message || "Unhandled script error.";
+            this.#pushNotification({ tone: "error", title: "Runtime error", message: `${source} - ${message}` });
+            return;
+        }
+        const target = event.target;
+        if (target instanceof HTMLElement) {
+            const tag = target.tagName.toLowerCase();
+            const src = target.src
+                || target.href
+                || "";
+            const resourceName = src ? src.split("/").pop() || src : tag;
+            const message = src ? `Failed to load <${tag}>: ${resourceName}` : `Failed to load <${tag}> element.`;
+            this.#pushNotification({ tone: "error", title: "Resource error", message });
+            return;
+        }
+        const message = event.detail || "Unexpected browser event error.";
+        this.#pushNotification({ tone: "error", title: "Browser error", message: String(message) });
+    };
+    /**
+     * Reports unhandled async promise rejections through the official notification channel.
+     *
+     * @param {PromiseRejectionEvent} event Unhandled promise rejection event containing the rejection reason.
+     * @returns {void}
+     */
+    #handleUnhandledRejection = (event) => {
+        const reason = event.reason;
+        const message = reason instanceof Error ? reason.message : String(reason || "Unhandled promise rejection.");
+        const title = reason instanceof Error && reason.name && reason.name !== "Error" ? reason.name : "Async error";
+        this.#pushNotification({ tone: "error", title, message });
+    };
+    /**
+     * Bind window error listeners and capture runtime/resource errors into the notification stack.
+     *
+     * @returns {void}
+     */
+    #bindGlobalErrorHandling() {
+        if (this.#globalErrorHandlingBound)
+            return;
+        this.#previousWindowOnError = window.onerror;
+        window.onerror = (message, source, lineno, _column, error) => {
+            const fileName = source ? String(source).split("/").pop() || "" : "";
+            const location = fileName ? `${fileName}:${lineno || 0}` : "Runtime";
+            const detail = error?.message || String(message || "Unexpected browser error.");
+            this.#pushNotification({ tone: "error", title: "Runtime error", message: `${location} - ${detail}` });
+            return this.#previousWindowOnError?.(message, source, lineno, _column, error) ?? false;
+        };
+        window.addEventListener("error", this.#handleGlobalError, true);
+        window.addEventListener("unhandledrejection", this.#handleUnhandledRejection);
+        this.#globalErrorHandlingBound = true;
+    }
+    /**
+     * Restore the global browser error hooks owned by this shell instance.
+     *
+     * @returns {void}
+     */
+    #unbindGlobalErrorHandling() {
+        if (!this.#globalErrorHandlingBound)
+            return;
+        window.removeEventListener("error", this.#handleGlobalError, true);
+        window.removeEventListener("unhandledrejection", this.#handleUnhandledRejection);
+        this.#globalErrorHandlingBound = false;
+        if (window.onerror)
+            window.onerror = this.#previousWindowOnError;
+        this.#previousWindowOnError = null;
     }
     /**
      * Render persistent shell markup once per context assignment.
@@ -1204,9 +1466,9 @@ class BrainExplorerApp extends HTMLElement {
             <div class="app-shell ${this.#state.sidebarOpen ? "is-sidebar-open" : "is-sidebar-collapsed"}">
                 <header class="top-bar">
                     <div class="brand-lockup" style="display: flex; align-items: center; gap: 6px;">
-                        <span class="brain-mark">${icon("pulse")}</span>
+                        <img class="brain-mark" src="./brain-explorer-favicon.png" alt="DigiDog">
                         <span style="font-size: 16px; font-weight: 600; color: var(--text-normal); display: inline-flex; align-items: center;">
-                            Brain ~&nbsp;
+                            Digidog ~&nbsp;
                             <details class="action-menu project-selector-menu" style="position: relative; display: inline-block;">
                                 <summary style="cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: 4px; padding-right: 14px; background-image: url(&quot;data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23888888' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>&quot;); background-repeat: no-repeat; background-position: right center; background-size: 10px; outline: none; user-select: none;" data-role="project-selector-summary">
                                     Loading...
@@ -1223,17 +1485,20 @@ class BrainExplorerApp extends HTMLElement {
                             <kbd>Ctrl + Alt + S</kbd>
                         </div>
                         <details class="action-menu search-options-menu">
-                            <summary title="Search sources and modes" aria-label="Search sources and modes">${icon("sliders")}</summary>
+                            <summary title="Search sources and methods" aria-label="Search sources and methods">${icon("sliders")}</summary>
                             <div class="action-menu-panel search-options-panel">
-                                <fieldset>
+                                <fieldset data-search-group="search-source">
                                     <legend>Sources</legend>
+                                    <label class="search-options-master"><input type="checkbox" data-search-select-all="search-source" aria-label="Select or deselect all sources" checked>All sources</label>
                                     <label><input type="checkbox" name="search-source" value="memory" checked>Memory</label>
                                     <label><input type="checkbox" name="search-source" value="knowledge" checked>Knowledge</label>
                                     <label><input type="checkbox" name="search-source" value="messages" checked>Messages</label>
                                     <label><input type="checkbox" name="search-source" value="pictures" checked>Pictures</label>
+                                    <label><input type="checkbox" name="search-source" value="backlog" checked>Backlog</label>
                                 </fieldset>
-                                <fieldset>
-                                    <legend>Modes</legend>
+                                <fieldset data-search-group="search-mechanism">
+                                    <legend>Methods</legend>
+                                    <label class="search-options-master"><input type="checkbox" data-search-select-all="search-mechanism" aria-label="Select or deselect all methods" checked>All methods</label>
                                     <label><input type="checkbox" name="search-mechanism" value="graph" checked>Graph</label>
                                     <label><input type="checkbox" name="search-mechanism" value="vector" checked>Vector</label>
                                     <label><input type="checkbox" name="search-mechanism" value="text" checked>Text</label>
@@ -1250,7 +1515,7 @@ class BrainExplorerApp extends HTMLElement {
                 <aside class="side-nav">
                     <button class="sidebar-collapse" data-action="toggle-sidebar"></button>
                     <nav data-role="side-nav-list" aria-label="Main navigation">
-                        ${renderShellNavigation(this.#state.route)}
+                        ${renderShellNavigation(this.#state.route, this.#preservedQueryView !== null)}
                     </nav>
                 </aside>
 
@@ -1273,6 +1538,10 @@ class BrainExplorerApp extends HTMLElement {
         this.#bindShellEvents();
         this.#syncTheme();
         this.#syncSidebar();
+        const persistedWorkspace = localStorage.getItem("active_project_path")?.trim() || null;
+        if (persistedWorkspace) {
+            this.#api.setWorkspaceRootOverride(persistedWorkspace);
+        }
         this.#mountRoute();
         this.#syncFooter();
         this.#renderDiagnosticsPanel();
@@ -1468,23 +1737,56 @@ class BrainExplorerApp extends HTMLElement {
             return;
         }
         shell.addEventListener("click", event => this.#handleShellClick(event));
+        const syncTooltipAnchor = (event) => {
+            const target = event.target instanceof Element
+                ? event.target.closest(".side-nav-item, .sidebar-collapse")
+                : null;
+            if (target)
+                this.#syncTooltipAnchor(target);
+        };
+        shell.addEventListener("pointerover", syncTooltipAnchor);
+        shell.addEventListener("focusin", syncTooltipAnchor);
         shell.addEventListener("submit", event => {
             if (event.target instanceof Element && event.target.matches("[data-role='cli-prompter']")) {
                 event.preventDefault();
                 this.#runCliPrompt();
             }
         });
-        this.querySelector("[data-role='global-shell-search']")?.addEventListener("keydown", event => {
-            if (event instanceof KeyboardEvent && event.key === "Enter") {
-                const value = event.target instanceof HTMLInputElement ? event.target.value.trim() : "";
-                if (value) {
-                    this.querySelector(".search-options-menu")?.removeAttribute("open");
-                    state.setPendingQuery(value, this.#selectedSearchOptions());
-                    return;
-                }
-                state.setRoute("query");
-            }
+        const searchInput = this.querySelector("[data-role='global-shell-search']");
+        searchInput?.addEventListener("input", event => {
+            const value = event.currentTarget instanceof HTMLInputElement ? event.currentTarget.value : "";
+            this.#scheduleReactiveSearch(value);
         });
+        searchInput?.addEventListener("keydown", event => {
+            if (!(event instanceof KeyboardEvent) || event.key !== "Enter")
+                return;
+            const value = event.currentTarget instanceof HTMLInputElement ? event.currentTarget.value.trim() : "";
+            const options = this.#selectedSearchOptions();
+            if (!options.sources.length || !options.mechanisms.length) {
+                this.#pushNotification({ tone: "error", title: "Search filters required", message: "Please select at least one source and method." });
+                return;
+            }
+            if (!value) {
+                state.setRoute("query");
+                return;
+            }
+            if (this.#reactiveSearchTimer !== null)
+                window.clearTimeout(this.#reactiveSearchTimer);
+            this.querySelector(".search-options-menu")?.removeAttribute("open");
+            state.setPendingQuery(value, options);
+        });
+        this.querySelector(".search-options-panel")?.addEventListener("change", event => this.#handleSearchOptionChange(event));
+        this.#syncSearchGroupMasters();
+    }
+    /**
+     * Anchor a collapsed-rail tooltip to the live centre of its invoking control.
+     *
+     * @param {HTMLElement} target Navigation control that owns the tooltip.
+     * @returns {void} Nothing.
+     */
+    #syncTooltipAnchor(target) {
+        const bounds = target.getBoundingClientRect();
+        target.style.setProperty("--tooltip-top", `${Math.round(bounds.top + bounds.height / 2)}px`);
     }
     /**
      * Collect non-exclusive search source and mechanism selections.
@@ -1494,6 +1796,54 @@ class BrainExplorerApp extends HTMLElement {
         const selected = (name) => Array.from(this.querySelectorAll(`input[name='${name}']:checked`))
             .map(input => input.value);
         return { sources: selected("search-source"), mechanisms: selected("search-mechanism") };
+    }
+    /** Toggle one option group or synchronize its accessible master checkbox. */
+    #handleSearchOptionChange(event) {
+        const input = event.target instanceof HTMLInputElement ? event.target : null;
+        if (!input)
+            return;
+        const groupName = input.dataset.searchSelectAll;
+        if (groupName) {
+            this.querySelectorAll(`input[name='${groupName}']`).forEach(child => {
+                child.checked = input.checked;
+            });
+        }
+        this.#syncSearchGroupMasters();
+    }
+    /** Reflect checked, unchecked, and partial child state in both master controls. */
+    #syncSearchGroupMasters() {
+        this.querySelectorAll("[data-search-select-all]").forEach(master => {
+            const name = master.dataset.searchSelectAll || "";
+            const children = Array.from(this.querySelectorAll(`input[name='${name}']`));
+            const checkedCount = children.filter(child => child.checked).length;
+            master.checked = children.length > 0 && checkedCount === children.length;
+            master.indeterminate = checkedCount > 0 && checkedCount < children.length;
+        });
+    }
+    /** Debounce local filtering and keep one-character input from narrowing a layout. */
+    #scheduleReactiveSearch(value) {
+        if (this.#reactiveSearchTimer !== null)
+            window.clearTimeout(this.#reactiveSearchTimer);
+        const normalized = value.trim();
+        this.#reactiveSearchTimer = window.setTimeout(() => {
+            this.#reactiveSearchTimer = null;
+            this.#applyReactiveSearch(normalized.length >= 2 ? normalized : "");
+        }, 200);
+    }
+    /** Forward the reactive phrase to the mounted route's existing local filter control. */
+    #applyReactiveSearch(query) {
+        const routeView = this.querySelector("[data-route-host] > *");
+        if (this.#activeRouteId === "query") {
+            routeView?.applyReactiveContentFilter?.(query);
+            return;
+        }
+        const routeSource = {
+            memory: "memory", knowledge: "knowledge", messages: "messages", pictures: "pictures", backlog: "backlog"
+        };
+        const source = routeSource[this.#activeRouteId];
+        if (!source || !this.#selectedSearchOptions().sources.includes(source))
+            return;
+        routeView?.applyReactiveContentFilter?.(query);
     }
     /**
      * Handle shell-level click actions.
@@ -1544,6 +1894,9 @@ class BrainExplorerApp extends HTMLElement {
         if (action === "toggle-sidebar") {
             state.toggleSidebar();
         }
+        if (action === "return-to-results") {
+            state.setRoute("query");
+        }
         if (action === "run-cli-command") {
             this.#runCliPrompt();
         }
@@ -1552,11 +1905,9 @@ class BrainExplorerApp extends HTMLElement {
      * Replay the latest persisted voice without requesting new synthesis.
      */
     #playLatestVoice() {
-        this.#latestVoiceAudio?.pause();
-        this.#latestVoiceAudio = new Audio(`/api/voice/latest?fresh=${Date.now()}`);
-        void this.#latestVoiceAudio.play().catch(() => {
-            this.#latestVoiceAudio = null;
-        });
+        if (!this.#api)
+            return;
+        void this.#api.replayVoiceMessage().catch(() => undefined);
     }
     /**
      * Keep native details dropdowns mutually dismissible across route components.
@@ -1588,11 +1939,23 @@ class BrainExplorerApp extends HTMLElement {
         const route = SHELL_ROUTES.find(item => item.id === state.route) ?? DEFAULT_SHELL_ROUTE;
         const host = this.querySelector("[data-route-host]");
         const refreshPendingQuery = route.id === "query" && Boolean(state.pendingQuery);
-        if (!host) {
+        if (!host)
+            return;
+        const mountedElement = host.firstElementChild;
+        if (this.#activeRouteId === "query" && mountedElement?.querySelector(".query-results")) {
+            this.#preservedQueryView = mountedElement;
+        }
+        const activeRouteIsMounted = mountedElement !== null && this.#activeRouteId === route.id;
+        if (activeRouteIsMounted && !refreshPendingQuery) {
+            this.#focusMountedRouteTarget(route.id, mountedElement, state);
+            this.#syncActiveNav();
             return;
         }
-        const activeRouteIsMounted = host.childElementCount > 0 && this.#activeRouteId === route.id;
-        if (activeRouteIsMounted && !refreshPendingQuery) {
+        if (route.id === "query" && this.#preservedQueryView && !refreshPendingQuery) {
+            host.setAttribute("aria-label", route.label);
+            host.replaceChildren(this.#preservedQueryView);
+            this.#activeRouteId = route.id;
+            this.#focusMountedRouteTarget(route.id, this.#preservedQueryView, state);
             this.#syncActiveNav();
             return;
         }
@@ -1602,7 +1965,22 @@ class BrainExplorerApp extends HTMLElement {
         host.setAttribute("aria-label", route.label);
         host.replaceChildren(element);
         this.#activeRouteId = route.id;
+        this.#focusMountedRouteTarget(route.id, element, state);
         this.#syncActiveNav();
+    }
+    /** Consume and delegate one pending target only for contract-aware layouts. */
+    #focusMountedRouteTarget(route, element, state) {
+        if (!element || !("focusTarget" in element) || typeof element.focusTarget !== "function") {
+            return;
+        }
+        const target = state.consumeRouteTarget(route);
+        if (!target) {
+            return;
+        }
+        const focusResult = element.focusTarget(target);
+        if (focusResult instanceof Promise) {
+            void focusResult.catch(() => undefined);
+        }
     }
     /**
      * Update navigation active styles without rebuilding the route.
@@ -1616,6 +1994,9 @@ class BrainExplorerApp extends HTMLElement {
         this.querySelectorAll("[data-route]").forEach(button => {
             button.classList.toggle("is-active", button.getAttribute("data-route") === state.route);
         });
+        const returnButton = this.querySelector("[data-action=\"return-to-results\"]");
+        if (returnButton)
+            returnButton.hidden = this.#preservedQueryView === null || state.route === "query";
     }
     /**
      * Update theme button and document theme.
@@ -1896,7 +2277,7 @@ class BrainExplorerApp extends HTMLElement {
 customElements.define(BrainExplorerApp.selector, BrainExplorerApp);
 
 cache=(()=>{return { BrainExplorerApp: BrainExplorerApp };})();return cache;};})();
-const __brainExplorerModule4=(()=>{let cache;return()=>{if(cache)return cache;
+const __brainExplorerModule6=(()=>{let cache;return()=>{if(cache)return cache;
 
 /**
  * @author Yoel David <yoeldcd@gmail.com>
@@ -1952,105 +2333,208 @@ function codeBlock(value, language = "text") {
     return `<pre class="code-block language-${safeLanguage}"><code class="language-${safeLanguage}">${highlightCode(text, safeLanguage)}</code></pre>`;
 }
 /**
- * Render a conservative subset of Markdown for memory preview.
+ * Render safe enriched Markdown plus Brain's narrative-closure syntax.
  *
  * @param {string} markdown Markdown source.
  * @returns {string} Rendered HTML.
  */
 function renderMarkdown(markdown) {
     const trimmed = String(markdown || "").trim();
-    if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
-        return codeBlock(trimmed, "json");
+    if (isJsonDocument(trimmed)) {
+        return `<div class="rich-markdown">${codeBlock(trimmed, "json")}</div>`;
     }
     if (trimmed.startsWith("#!") || trimmed.startsWith("import sys") || trimmed.startsWith("def main():")) {
         const lang = trimmed.includes("python") || trimmed.includes("py") || trimmed.startsWith("import sys") || trimmed.startsWith("def main():") ? "python" : "bash";
-        return codeBlock(trimmed, lang);
+        return `<div class="rich-markdown">${codeBlock(trimmed, lang)}</div>`;
     }
     const firstLines = trimmed.split(/\n/).slice(0, 10);
     const logMatchCount = firstLines.filter(line => line.match(/^\[(INFO|ERROR|WARNING|SUCCESS|WARN|FAIL|FATAL|OK)\]/i) ||
         line.match(/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}/)).length;
     if (logMatchCount >= 2 || (firstLines.length > 0 && logMatchCount === firstLines.length)) {
-        return codeBlock(trimmed, "log");
+        return `<div class="rich-markdown">${codeBlock(trimmed, "log")}</div>`;
     }
-    const lines = String(markdown || "").split(/\r?\n/);
+    const lines = normalizeInlineLists(String(markdown || "")).split(/\r?\n/);
+    return `<div class="rich-markdown">${renderMarkdownBlocks(lines)}</div>`;
+}
+/**
+ * Determine whether a complete source string is valid JSON.
+ * @param {string} value Candidate document.
+ * @returns {boolean} True only for parsed JSON objects or arrays.
+ */
+function isJsonDocument(value) {
+    if (!(value.startsWith("{") || value.startsWith("[")))
+        return false;
+    try {
+        const parsed = JSON.parse(value);
+        return typeof parsed === "object" && parsed !== null;
+    }
+    catch {
+        return false;
+    }
+}
+/**
+ * Recover ordered or unordered lists whose line breaks were flattened in storage.
+ * @param {string} source Original Markdown source.
+ * @returns {string} Source with unambiguous inline list markers restored to lines.
+ */
+function normalizeInlineLists(source) {
+    return source.split(/\r?\n/).map(line => {
+        if (/^\s*1\.\s+/.test(line) && (line.match(/\s+\d+\.\s+/g)?.length ?? 0) > 0) {
+            return line.replace(/\s+(?=\d+\.\s+)/g, "\n");
+        }
+        if (/^\s*[-*+]\s+/.test(line) && (line.match(/\s+[-*+]\s+/g)?.length ?? 0) > 0) {
+            return line.replace(/\s+(?=[-*+]\s+)/g, "\n");
+        }
+        return line;
+    }).join("\n");
+}
+/**
+ * Parse block-level Markdown constructs without permitting raw HTML.
+ * @param {string[]} lines Normalized source lines.
+ * @returns {string} Safe block HTML.
+ */
+function renderMarkdownBlocks(lines) {
     const html = [];
-    let paragraph = [];
-    let list = [];
-    let codeLines = [];
-    let codeLanguage = "markdown";
-    const flushParagraph = () => {
+    let index = 0;
+    while (index < lines.length) {
+        const line = lines[index] ?? "";
+        if (!line.trim()) {
+            index += 1;
+            continue;
+        }
+        const fence = line.match(/^\s*```([a-z0-9_-]+)?\s*$/i);
+        if (fence) {
+            const codeLines = [];
+            index += 1;
+            while (index < lines.length && !/^\s*```\s*$/.test(lines[index] ?? "")) {
+                codeLines.push(lines[index] ?? "");
+                index += 1;
+            }
+            if (index < lines.length)
+                index += 1;
+            html.push(codeBlock(codeLines.join("\n"), fence[1] ?? "markdown"));
+            continue;
+        }
+        const heading = line.match(/^\s*(#{1,6})\s+(.+?)\s*#*\s*$/);
+        if (heading) {
+            const level = heading[1]?.length ?? 1;
+            html.push(`<h${level}>${inlineMarkdown(heading[2] ?? "")}</h${level}>`);
+            index += 1;
+            continue;
+        }
+        if (/^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line)) {
+            html.push("<hr>");
+            index += 1;
+            continue;
+        }
+        if (isTableHeader(lines, index)) {
+            const headerCells = tableCells(line);
+            const bodyRows = [];
+            index += 2;
+            while (index < lines.length && (lines[index] ?? "").includes("|")) {
+                bodyRows.push(tableCells(lines[index] ?? ""));
+                index += 1;
+            }
+            html.push(renderTable(headerCells, bodyRows));
+            continue;
+        }
+        if (/^\s*>\s?/.test(line)) {
+            const quoteLines = [];
+            while (index < lines.length && /^\s*>\s?/.test(lines[index] ?? "")) {
+                quoteLines.push((lines[index] ?? "").replace(/^\s*>\s?/, ""));
+                index += 1;
+            }
+            html.push(`<blockquote>${renderMarkdownBlocks(quoteLines)}</blockquote>`);
+            continue;
+        }
+        const listMatch = listItem(line);
+        if (listMatch) {
+            const items = [];
+            const ordered = listMatch.ordered;
+            const start = listMatch.start;
+            while (index < lines.length) {
+                const item = listItem(lines[index] ?? "");
+                if (!item || item.ordered !== ordered)
+                    break;
+                const task = item.content.match(/^\[([ xX])\]\s+(.+)$/);
+                items.push(task
+                    ? `<li class="task-list-item"><input type="checkbox" disabled ${task[1]?.toLowerCase() === "x" ? "checked" : ""}>${inlineMarkdown(task[2] ?? "")}</li>`
+                    : `<li>${inlineMarkdown(item.content)}</li>`);
+                index += 1;
+            }
+            const tag = ordered ? "ol" : "ul";
+            const startAttribute = ordered && start !== 1 ? ` start="${start}"` : "";
+            html.push(`<${tag}${startAttribute}>${items.join("")}</${tag}>`);
+            continue;
+        }
+        const paragraph = [];
+        while (index < lines.length && (lines[index] ?? "").trim() && !startsMarkdownBlock(lines, index)) {
+            paragraph.push((lines[index] ?? "").trim());
+            index += 1;
+        }
         if (!paragraph.length) {
-            return;
+            paragraph.push(line.trim());
+            index += 1;
         }
         html.push(`<p>${inlineMarkdown(paragraph.join(" "))}</p>`);
-        paragraph = [];
-    };
-    const flushList = () => {
-        if (!list.length) {
-            return;
-        }
-        html.push(`<ul>${list.map(item => `<li>${inlineMarkdown(item)}</li>`).join("")}</ul>`);
-        list = [];
-    };
-    const flushCode = () => {
-        if (!codeLines.length) {
-            return;
-        }
-        html.push(codeBlock(codeLines.join("\n"), codeLanguage));
-        codeLines = [];
-        codeLanguage = "markdown";
-    };
-    let inCode = false;
-    for (const line of lines) {
-        const fence = line.match(/^```([a-z0-9_-]+)?\s*$/i);
-        if (fence) {
-            if (inCode) {
-                flushCode();
-                inCode = false;
-            }
-            else {
-                flushParagraph();
-                flushList();
-                inCode = true;
-                codeLanguage = fence[1] ?? "markdown";
-            }
-            continue;
-        }
-        if (inCode) {
-            codeLines.push(line);
-            continue;
-        }
-        if (!line.trim()) {
-            flushParagraph();
-            flushList();
-            continue;
-        }
-        const heading = line.match(/^(#{1,4})\s+(.+)$/);
-        if (heading) {
-            flushParagraph();
-            flushList();
-            html.push(`<h${heading[1]?.length ?? 1}>${inlineMarkdown(heading[2] ?? "")}</h${heading[1]?.length ?? 1}>`);
-            continue;
-        }
-        const bullet = line.match(/^\s*[-*]\s+(.+)$/);
-        if (bullet) {
-            flushParagraph();
-            list.push(bullet[1] ?? "");
-            continue;
-        }
-        const quote = line.match(/^>\s+(.+)$/);
-        if (quote) {
-            flushParagraph();
-            flushList();
-            html.push(`<blockquote>${inlineMarkdown(quote[1] ?? "")}</blockquote>`);
-            continue;
-        }
-        paragraph.push(line.trim());
     }
-    flushParagraph();
-    flushList();
-    flushCode();
     return html.join("");
+}
+/**
+ * Determine whether a source position begins a non-paragraph block.
+ * @param {string[]} lines Complete Markdown source lines.
+ * @param {number} index Candidate line position.
+ * @returns {boolean} Whether a block construct begins at the position.
+ */
+function startsMarkdownBlock(lines, index) {
+    const line = lines[index] ?? "";
+    return /^\s*```/.test(line)
+        || /^\s*#{1,6}\s+/.test(line)
+        || /^\s*>\s?/.test(line)
+        || /^\s*(?:[-*+]\s+|\d+[.)]\s+)/.test(line)
+        || /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line)
+        || isTableHeader(lines, index);
+}
+/**
+ * Parse one ordered or unordered list marker.
+ * @param {string} line Candidate Markdown line.
+ * @returns {MarkdownListItem | null} Parsed item or null.
+ */
+function listItem(line) {
+    const match = line.match(/^\s*(?:(\d+)[.)]|[-*+])\s+(.+)$/);
+    if (!match)
+        return null;
+    return { ordered: Boolean(match[1]), start: Number(match[1] ?? 1), content: match[2] ?? "" };
+}
+/**
+ * Determine whether two source lines form a GitHub-style table header.
+ * @param {string[]} lines Complete Markdown source lines.
+ * @param {number} index Candidate header position.
+ * @returns {boolean} Whether the lines begin a table.
+ */
+function isTableHeader(lines, index) {
+    const header = lines[index] ?? "";
+    const delimiter = lines[index + 1] ?? "";
+    return header.includes("|") && /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(delimiter);
+}
+/**
+ * Split one pipe-delimited table row into trimmed cells.
+ * @param {string} line Pipe-delimited Markdown row.
+ * @returns {string[]} Trimmed table cells.
+ */
+function tableCells(line) {
+    return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map(cell => cell.trim());
+}
+/**
+ * Render one safe responsive Markdown table.
+ * @param {string[]} headers Header cell sources.
+ * @param {string[][]} rows Body row sources.
+ * @returns {string} Safe responsive table HTML.
+ */
+function renderTable(headers, rows) {
+    const head = headers.map(cell => `<th>${inlineMarkdown(cell)}</th>`).join("");
+    const body = rows.map(row => `<tr>${row.map(cell => `<td>${inlineMarkdown(cell)}</td>`).join("")}</tr>`).join("");
+    return `<div class="rich-table-scroll"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 /**
  * Convert a path-like value into a compact display label.
@@ -2058,6 +2542,81 @@ function renderMarkdown(markdown) {
  * @param {string} value Full path-like value.
  * @returns {string} Last path segment or the original value.
  */
+/**
+ * Highlight visible text fragments without replacing their owning interactive elements.
+ *
+ * @param {ParentNode} root Mounted layout root.
+ * @param {string} query Current reactive query.
+ * @param {string} itemSelector Selector resolving searchable visible items.
+ */
+function highlightRenderedContent(root, query, itemSelector) {
+    const parents = new Set();
+    root.querySelectorAll("mark[data-reactive-search-match]").forEach(mark => {
+        const parent = mark.parentNode;
+        if (parent)
+            parents.add(parent);
+        mark.replaceWith(document.createTextNode(mark.textContent || ""));
+    });
+    parents.forEach(parent => parent.normalize());
+    const needle = query.trim().toLocaleLowerCase();
+    if (!needle)
+        return;
+    root.querySelectorAll(itemSelector).forEach(item => {
+        const walker = document.createTreeWalker(item, NodeFilter.SHOW_TEXT);
+        const textNodes = [];
+        let current = walker.nextNode();
+        while (current) {
+            const parent = current.parentElement;
+            if (current instanceof Text && parent && !parent.closest("script, style, textarea, input, mark, [data-reactive-highlight-ignore]")) {
+                textNodes.push(current);
+            }
+            current = walker.nextNode();
+        }
+        textNodes.forEach(textNode => {
+            const source = textNode.data;
+            const normalized = source.toLocaleLowerCase();
+            let cursor = 0;
+            let matchIndex = normalized.indexOf(needle);
+            if (matchIndex < 0)
+                return;
+            const fragment = document.createDocumentFragment();
+            while (matchIndex >= 0) {
+                fragment.append(source.slice(cursor, matchIndex));
+                const mark = document.createElement("mark");
+                mark.dataset.reactiveSearchMatch = "";
+                mark.className = "reactive-search-match";
+                mark.textContent = source.slice(matchIndex, matchIndex + needle.length);
+                fragment.append(mark);
+                cursor = matchIndex + needle.length;
+                matchIndex = normalized.indexOf(needle, cursor);
+            }
+            fragment.append(source.slice(cursor));
+            textNode.replaceWith(fragment);
+        });
+    });
+}
+function filterRenderedContent(root, query, itemSelector, containerSelector) {
+    const needle = query.trim().toLocaleLowerCase();
+    const items = Array.from(root.querySelectorAll(itemSelector));
+    let visible = 0;
+    items.forEach(item => {
+        const content = `${item.textContent || ""} ${item.dataset.reactiveContent || ""}`.toLocaleLowerCase();
+        const matches = !needle || content.includes(needle);
+        item.hidden = !matches;
+        if (matches)
+            visible += 1;
+    });
+    highlightRenderedContent(root, query, `${itemSelector}:not([hidden])`);
+    root.querySelector("[data-role='reactive-content-empty']")?.remove();
+    const container = root.querySelector(containerSelector);
+    if (needle && items.length && !visible && container) {
+        const empty = document.createElement("p");
+        empty.className = "empty-state";
+        empty.dataset.role = "reactive-content-empty";
+        empty.textContent = "No items match your filter.";
+        container.append(empty);
+    }
+}
 function compactLabel(value) {
     const text = String(value || "");
     const parts = text.split(".");
@@ -2116,20 +2675,125 @@ function highlightCode(value, language) {
     return escaped;
 }
 /**
- * Render the supported inline Markdown subset without permitting raw HTML.
+ * Render safe inline Markdown and Brain narrative closures.
  *
  * @param {string} value Plain source text from a paragraph, list item, or heading.
  * @returns {string} Escaped HTML with code, strong, and emphasis spans.
  */
 function inlineMarkdown(value) {
-    return escapeHtml(value)
-        .replace(/`([^`]+)`/g, `<code>$1</code>`)
+    const protectedTokens = [];
+    const protect = (html) => {
+        const token = `\u0000${protectedTokens.length}\u0000`;
+        protectedTokens.push(html);
+        return token;
+    };
+    let source = String(value || "")
+        .replace(/`([^`]+)`/g, (_match, code) => protect(renderStandaloneClosure(code) || `<code>${escapeHtml(code)}</code>`))
+        .replace(/!\s*\[([^\]]*)\]\(\s*(?:<([^>\n]+)>|([^\s)]+))(?:\s+["']([^"']*)["'])?\s*\)/g, (_match, alt, enclosedTarget, bareTarget, title) => {
+        const safeTarget = safeMarkdownImageUrl(enclosedTarget || bareTarget || "");
+        if (!safeTarget)
+            return _match;
+        const titleAttribute = title ? ` title="${escapeHtml(title)}"` : "";
+        return protect(`<img src="${escapeHtml(safeTarget)}" alt="${escapeHtml(alt)}"${titleAttribute} loading="lazy">`);
+    })
+        .replace(/\[([^\]]+)\]\(([^\s)]+)(?:\s+["']([^"']*)["'])?\)/g, (_match, label, target, title) => {
+        const safeTarget = safeMarkdownUrl(target);
+        if (!safeTarget)
+            return _match;
+        const titleAttribute = title ? ` title="${escapeHtml(title)}"` : "";
+        return protect(`<a href="${escapeHtml(safeTarget)}"${titleAttribute} target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`);
+    })
+        .replace(/<(https?:\/\/[^\s>]+)>/g, (_match, target) => protect(`<a href="${escapeHtml(target)}" target="_blank" rel="noopener noreferrer">${escapeHtml(target)}</a>`));
+    source = escapeHtml(source)
+        .replace(/\[([^\]\n]+)\]/g, (_match, content) => narrativeClosureMarkup("square", "[", content, "]"))
+        .replace(/\(([^)\n]+)\)/g, (_match, content) => narrativeClosureMarkup("round", "(", content, ")"))
+        .replace(/\{([^}\n]+)\}/g, (_match, content) => narrativeClosureMarkup("curly", "{", content, "}"))
+        .replace(/~~([^~]+)~~/g, `<del>$1</del>`)
         .replace(/\*\*([^*]+)\*\*/g, `<strong>$1</strong>`)
-        .replace(/\*([^*]+)\*/g, `<em>$1</em>`);
+        .replace(/__([^_]+)__/g, `<strong>$1</strong>`)
+        .replace(/\*([^*]+)\*/g, `<em>$1</em>`)
+        .replace(/_([^_]+)_/g, `<em>$1</em>`);
+    return source.replace(/\u0000(\d+)\u0000/g, (_match, index) => protectedTokens[Number(index)] ?? "");
+}
+/**
+ * Render one code-span as narrative syntax when its complete value is a closure.
+ * @param {string} value Complete code-span source.
+ * @returns {string} Narrative markup or an empty string.
+ */
+function renderStandaloneClosure(value) {
+    const match = String(value || "").match(/^(?:\[([^\]\n]+)\]|\(([^)\n]+)\)|\{([^}\n]+)\})$/);
+    if (!match)
+        return "";
+    if (match[1] !== undefined)
+        return narrativeClosureMarkup("square", "[", escapeHtml(match[1]), "]");
+    if (match[2] !== undefined)
+        return narrativeClosureMarkup("round", "(", escapeHtml(match[2]), ")");
+    return narrativeClosureMarkup("curly", "{", escapeHtml(match[3] ?? ""), "}");
+}
+/**
+ * Compose visible delimiters and emphasized closure content without permitting HTML.
+ * @param {"square" | "round" | "curly"} kind Closure presentation kind.
+ * @param {string} open Opening delimiter.
+ * @param {string} content Escaped inner content.
+ * @param {string} close Closing delimiter.
+ * @returns {string} Safe closure markup.
+ */
+function narrativeClosureMarkup(kind, open, content, close) {
+    return `<span class="narrative-closure narrative-${kind}"><span class="narrative-delimiter">${open}</span><span class="narrative-content">${content}</span><span class="narrative-delimiter">${close}</span></span>`;
+}
+/**
+ * Accept only navigation-safe Markdown URL schemes.
+ * @param {string} value Raw link or image target.
+ * @returns {string} Safe target, or an empty string when rejected.
+ */
+function safeMarkdownUrl(value) {
+    const target = String(value || "").trim();
+    return /^(?:https?:\/\/|mailto:|\/|#)/i.test(target) ? target : "";
+}
+/**
+ * Resolve a Markdown image target to a browser-safe URL.
+ *
+ * @param {string} value Raw Markdown image target.
+ * @returns {string} Browser-safe image URL, or an empty string when rejected.
+ */
+function safeMarkdownImageUrl(value) {
+    const target = String(value || "").trim();
+    const isWorkspaceRelativePath = /^(?:\.\/)?\$agent\//i.test(target);
+    const isFileUrl = /^file:\/\/\//i.test(target);
+    const isWindowsAbsolutePath = /^[a-zA-Z]:[\\/]/.test(target);
+    if (isWorkspaceRelativePath || isFileUrl || isWindowsAbsolutePath) {
+        return workspaceScopedUrl(`/api/workspace/image?path=${encodeURIComponent(target)}`);
+    }
+    const isBase64Image = /^data:image\/(?:gif|jpe?g|png|webp);base64,[a-z0-9+/=]+$/i.test(target);
+    if (isBase64Image) {
+        return target;
+    }
+    const isBlobImage = /^blob:[^\s]+$/i.test(target);
+    if (isBlobImage) {
+        return target;
+    }
+    const isDirectImageUrl = /^(?:https?:\/\/|\/|#)/i.test(target);
+    return isDirectImageUrl ? target : "";
+}
+/**
+ * Add the selected consumer workspace to a browser-loaded resource URL.
+ *
+ * Native image requests cannot carry the API client's `X-Workspace-Root` header,
+ * so the validated workspace is transported as a query parameter instead.
+ *
+ * @param {string} path Same-origin resource path.
+ * @returns {string} Workspace-scoped resource URL.
+ */
+function workspaceScopedUrl(path) {
+    const workspaceRoot = globalThis.localStorage?.getItem("active_project_path")?.trim();
+    if (!workspaceRoot)
+        return path;
+    const separator = path.includes("?") ? "&" : "?";
+    return `${path}${separator}workspaceRoot=${encodeURIComponent(workspaceRoot)}`;
 }
 
-cache=(()=>{return { escapeHtml: escapeHtml, prettyJson: prettyJson, codeBlock: codeBlock, renderMarkdown: renderMarkdown, compactLabel: compactLabel, optionTags: optionTags };})();return cache;};})();
-const __brainExplorerModule5=(()=>{let cache;return()=>{if(cache)return cache;
+cache=(()=>{return { escapeHtml: escapeHtml, prettyJson: prettyJson, codeBlock: codeBlock, renderMarkdown: renderMarkdown, highlightRenderedContent: highlightRenderedContent, filterRenderedContent: filterRenderedContent, compactLabel: compactLabel, optionTags: optionTags, workspaceScopedUrl: workspaceScopedUrl };})();return cache;};})();
+const __brainExplorerModule7=(()=>{let cache;return()=>{if(cache)return cache;
 
 /**
  * @author Yoel David <yoeldcd@gmail.com>
@@ -2144,9 +2808,10 @@ const SVG_ICONS = {
     sliders: `<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>`,
     users: `<path d="M16 20v-2a4 4 0 0 0-8 0v2"/><circle cx="12" cy="8" r="4"/><path d="M22 20v-2a4 4 0 0 0-3-3.8"/><path d="M2 20v-2a4 4 0 0 1 3-3.8"/>`,
     document: `<path d="M7 3h7l4 4v14H7z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h6"/>`,
-    settings: `<circle cx="12" cy="12" r="3"/><path d="M19.4 15a8 8 0 0 0 .1-6l2-1.5-2-3.4-2.4 1a8 8 0 0 0-5.2-3L11.5 0h-4l-.4 2.2a8 8 0 0 0-5.2 3l-2.4-1-2 3.4 2 1.5a8 8 0 0 0 .1 6l-2 1.5 2 3.4 2.4-1a8 8 0 0 0 5.2 3l.4 2.1h4l.4-2.1a8 8 0 0 0 5.2-3l2.4 1 2-3.4z" transform="scale(.5) translate(12 12)"/>`,
+    settings: `<circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/><circle cx="12" cy="12" r="7"/>`,
     plus: `<path d="M12 5v14M5 12h14"/>`,
     documentPlus: `<path d="M7 3h7l4 4v14H7z"/><path d="M14 3v5h5"/><path d="M12 12v6M9 15h6"/>`,
+    enrich: `<path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/><path d="M5 14l.7 1.8 1.8.7-1.8.7L5 19l-.7-1.8-1.8-.7 1.8-.7z"/>`,
     folderPlus: `<path d="M3 6h7l2 2h9v11H3z"/><path d="M12 12v5M9.5 14.5h5"/>`,
     copy: `<rect x="8" y="8" width="11" height="11" rx="2"/><rect x="5" y="5" width="11" height="11" rx="2"/>`,
     trash: `<path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 14h10l1-14"/><path d="M10 11v6M14 11v6"/>`,
@@ -2189,7 +2854,7 @@ function icon(name) {
 }
 
 cache=(()=>{return { icon: icon, SVG_ICONS: SVG_ICONS };})();return cache;};})();
-const __brainExplorerModule6=(()=>{let cache;return()=>{if(cache)return cache;
+const __brainExplorerModule8=(()=>{let cache;return()=>{if(cache)return cache;
 
 /**
  * @author Yoel David <yoeldcd@gmail.com>
@@ -2347,18 +3012,18 @@ function quoted(value) {
 }
 
 cache=(()=>{return { notificationText: notificationText };})();return cache;};})();
-const __brainExplorerModule7=(()=>{let cache;return()=>{if(cache)return cache;
-const { BacklogView } = __brainExplorerModule8();
-const { DashboardView } = __brainExplorerModule19();
-const { KnowledgeView } = __brainExplorerModule21();
-const { LogsView } = __brainExplorerModule34();
-const { MemoryView } = __brainExplorerModule40();
-const { MessagesView } = __brainExplorerModule44();
-const { PicturesView } = __brainExplorerModule45();
-const { ProfilesView } = __brainExplorerModule47();
-const { QueryView } = __brainExplorerModule48();
-const { SettingsView } = __brainExplorerModule49();
-const { WikisView } = __brainExplorerModule50();
+const __brainExplorerModule9=(()=>{let cache;return()=>{if(cache)return cache;
+const { BacklogView } = __brainExplorerModule10();
+const { DashboardView } = __brainExplorerModule23();
+const { KnowledgeView } = __brainExplorerModule24();
+const { LogsView } = __brainExplorerModule37();
+const { MemoryView } = __brainExplorerModule44();
+const { MessagesView } = __brainExplorerModule48();
+const { PicturesView } = __brainExplorerModule49();
+const { ProfilesView } = __brainExplorerModule51();
+const { QueryView } = __brainExplorerModule52();
+const { SettingsView } = __brainExplorerModule61();
+const { WikisView } = __brainExplorerModule62();
 /**
  * Defines the immutable navigation registry used by the Brain Explorer shell.
  *
@@ -2421,15 +3086,17 @@ function isShellRouteId(value) {
 }
 
 cache=(()=>{return { isShellRouteId: isShellRouteId, DEFAULT_SHELL_ROUTE: DEFAULT_SHELL_ROUTE, SHELL_ROUTES: SHELL_ROUTES };})();return cache;};})();
-const __brainExplorerModule8=(()=>{let cache;return()=>{if(cache)return cache;
-const { escapeHtml } = __brainExplorerModule4();
-const { icon } = __brainExplorerModule5();
-const { StructureTree } = __brainExplorerModule9();
-const { BacklogPipController } = __brainExplorerModule10();
-const { BacklogVisualReferenceController } = __brainExplorerModule14();
-const { BACKLOG_PRIORITY_FILTER_OPTIONS, BACKLOG_STATUS_FILTER_OPTIONS } = __brainExplorerModule16();
-const { BacklogTaskProjector } = __brainExplorerModule17();
-const { renderBacklogDialogs, renderBacklogTaskList } = __brainExplorerModule18();
+const __brainExplorerModule10=(()=>{let cache;return()=>{if(cache)return cache;
+const { escapeHtml, highlightRenderedContent, renderMarkdown, workspaceScopedUrl } = __brainExplorerModule6();
+const { icon } = __brainExplorerModule7();
+const { StructureTree } = __brainExplorerModule11();
+const { renderDomainRenameDialog, requestDomainRename } = __brainExplorerModule12();
+const { BacklogPipController } = __brainExplorerModule13();
+const { BacklogVisualReferenceController } = __brainExplorerModule17();
+const { BACKLOG_PRIORITY_FILTER_OPTIONS, BACKLOG_STATUS_FILTER_OPTIONS } = __brainExplorerModule19();
+const { BacklogTaskProjector } = __brainExplorerModule20();
+const { renderBacklogDialogs, renderBacklogTaskList } = __brainExplorerModule21();
+const { parseBacklogNavigationTarget } = __brainExplorerModule22();
 /**
  * @author Yoel David <yoeldcd@gmail.com>
  * @see https://x.com/SAY6267
@@ -2442,7 +3109,40 @@ const { renderBacklogDialogs, renderBacklogTaskList } = __brainExplorerModule18(
 
 
 
+
+
 void StructureTree;
+const BACKLOG_ROOT_PATH = "__backlog_all__";
+/**
+ * Project a persisted backlog image path back to its editable placeholder.
+ *
+ * @param {string} description Persisted task Markdown.
+ * @param {string} taskId Owning task identifier.
+ * @returns {string} Markdown suitable for the task editor.
+ */
+function editableBacklogDescription(description, taskId) {
+    const escapedTaskId = taskId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const referencePattern = new RegExp(`(?:\\.\\/)?\\$agent[\\\\/]pictures[\\\\/]backlog-pic-${escapedTaskId}\\.(?:png|jpe?g|gif|webp)`, "gi");
+    return description.replace(referencePattern, "{ref_image}");
+}
+/**
+ * Project a task description into read-only Markdown with an inline reference image.
+ *
+ * @param {string} description Persisted task Markdown.
+ * @param {string} taskId Owning task identifier.
+ * @param {boolean} hasImage Whether the image inventory contains the task asset.
+ * @returns {string} Viewer-ready Markdown.
+ */
+function viewableBacklogDescription(description, taskId, hasImage) {
+    const editable = editableBacklogDescription(description, taskId);
+    if (!hasImage)
+        return editable;
+    const source = workspaceScopedUrl(`/api/backlog/image?taskId=${encodeURIComponent(taskId.replace(/^#/, ""))}`);
+    const imageMarkdown = `![Task visual reference](${source})`;
+    return editable.includes("{ref_image}")
+        ? editable.replaceAll("{ref_image}", imageMarkdown)
+        : `${imageMarkdown}\n\n${editable}`;
+}
 /**
  * BacklogView renders workspace tasks as a domain tree and focused task board.
  */
@@ -2490,6 +3190,8 @@ class BacklogView extends HTMLElement {
      * @type {string}
      */
     #filter = "";
+    /** Global-shell query applied only to task cards in the content pane. */
+    #contentFilter = "";
     /**
      * Maintains a unique collection of selected task status values used to filter the backlog view.
      *
@@ -2545,6 +3247,16 @@ class BacklogView extends HTMLElement {
      */
     #refreshInFlight = false;
     /**
+     * Task identifier awaiting one post-render focus operation.
+     * @type {string}
+     */
+    #navigationTaskId = "";
+    /**
+     * Active draft-enrichment request, or null while the editor is idle.
+     * @type {AbortController | null}
+     */
+    #draftEnrichmentController = null;
+    /**
      * Assign runtime dependencies.
      *
      * @param {object} context Component context.
@@ -2553,7 +3265,27 @@ class BacklogView extends HTMLElement {
     set context(context) {
         this.#api = context.api;
         this.#state = context.state;
-        this.#loadBacklog();
+        void this.#loadBacklog();
+    }
+    /**
+     * Focus a canonical Backlog task target after task data is available.
+     *
+     * @param {Readonly<Record<string, unknown>>} target Canonical route target containing taskId.
+     * @returns {Promise<void>} Resolves after the task row is revealed and focused.
+     */
+    async focusTarget(target) {
+        const navigationTarget = parseBacklogNavigationTarget({ ...target });
+        if (!navigationTarget) {
+            return;
+        }
+        this.#navigationTaskId = navigationTarget.taskId;
+        if (this.#tasks.length === 0) {
+            await this.#loadBacklog();
+            return;
+        }
+        this.#applyNavigationTarget();
+        this.#render();
+        this.#focusNavigationTarget();
     }
     /**
      * Render initial DOM.
@@ -2571,6 +3303,8 @@ class BacklogView extends HTMLElement {
      */
     disconnectedCallback() {
         this.#stopSilentRefresh();
+        this.#draftEnrichmentController?.abort();
+        this.#draftEnrichmentController = null;
         this.#pipController.close();
     }
     /**
@@ -2647,11 +3381,55 @@ class BacklogView extends HTMLElement {
         this.#backlogSignature = JSON.stringify(this.#tasks);
         this.#tasksWithImages = result.hasImages || [];
         this.#pipController.syncTasks(this.#tasks);
+        this.#applyNavigationTarget();
         this.#selectedDomain = this.#selectedDomain || "";
         if (this.#selectedDomain) {
             this.#taskProjector().ancestorPaths(this.#selectedDomain).forEach(path => this.#expandedNodes.add(path));
         }
         this.#render();
+        this.#focusNavigationTarget();
+    }
+    /**
+     * Select the owning domain and expand its hierarchy for a requested task.
+     *
+     * The Backlog endpoint already includes completed tasks, so a completed
+     * navigation target is resolved from the same authoritative collection.
+     *
+     * @returns {void} Nothing; this method mutates only view-local navigation state.
+     */
+    #applyNavigationTarget() {
+        if (!this.#navigationTaskId)
+            return;
+        const task = this.#tasks.find(candidate => candidate.id.toLowerCase() === this.#navigationTaskId);
+        if (!task) {
+            this.#navigationTaskId = "";
+            return;
+        }
+        this.#filter = "";
+        this.#statusFilter.clear();
+        this.#priorityFilter.clear();
+        this.#selectedDomain = task.domain;
+        this.#taskProjector().ancestorPaths(task.domain).forEach(path => this.#expandedNodes.add(path));
+        this.#expandedNodes.add(task.domain);
+    }
+    /**
+     * Focus and reveal the requested task after its row has been rendered.
+     *
+     * @returns {void} Nothing; the pending target is consumed after one successful focus.
+     */
+    #focusNavigationTarget() {
+        if (!this.#navigationTaskId)
+            return;
+        const targetId = this.#navigationTaskId;
+        const row = Array.from(this.querySelectorAll("[data-task-row-id]"))
+            .find(candidate => candidate.dataset.taskRowId?.toLowerCase() === targetId);
+        if (!row)
+            return;
+        row.classList.add("is-navigation-target");
+        row.setAttribute("aria-current", "true");
+        row.focus({ preventScroll: true });
+        row.scrollIntoView({ behavior: "smooth", block: "center" });
+        this.#navigationTaskId = "";
     }
     /**
      * Set one task state through the CLI facade.
@@ -2670,6 +3448,116 @@ class BacklogView extends HTMLElement {
             return;
         }
         await this.#loadBacklog(true);
+    }
+    /**
+     * Enrich one task specification while preserving view-local navigation state.
+     *
+     * @param {string} taskId Persistent task identifier.
+     * @returns {Promise<void>} Resolves after the row has been refreshed.
+     */
+    async #enrichTask(taskId) {
+        if (!this.#api || !taskId)
+            return;
+        const button = Array.from(this.querySelectorAll("[data-action='enrich-task']"))
+            .find(candidate => candidate.dataset.taskId === taskId);
+        button?.setAttribute("aria-busy", "true");
+        if (button)
+            button.disabled = true;
+        this.#state?.setActiveCommand(`enrich-task ${taskId}`);
+        try {
+            const result = await this.#api.enrichBacklogTask(taskId);
+            this.#state?.setLastResult(result);
+            if (result.ok)
+                await this.#loadBacklog(true);
+        }
+        finally {
+            button?.removeAttribute("aria-busy");
+            if (button)
+                button.disabled = false;
+        }
+    }
+    /**
+     * Replace the current form description with a non-persistent model proposal.
+     *
+     * @returns {Promise<void>} Resolves after the proposal is rendered or the error is reported.
+     */
+    async #enrichTaskDraft() {
+        if (this.#draftEnrichmentController) {
+            this.#draftEnrichmentController.abort();
+            return;
+        }
+        const api = this.#api;
+        const taskIdInput = this.querySelector("[data-role='modal-task-id']");
+        const domainInput = this.querySelector("[data-role='modal-domain']");
+        const titleInput = this.querySelector("[data-role='modal-title-input']");
+        const descriptionInput = this.querySelector("[data-role='modal-description']");
+        const priorityInput = this.querySelector("[data-role='modal-priority']");
+        const button = this.querySelector("[data-action='enrich-task-draft']");
+        if (!api || !taskIdInput || !domainInput || !titleInput || !descriptionInput || !priorityInput || !button)
+            return;
+        const title = titleInput.value.trim();
+        const description = descriptionInput.value.trim();
+        if (!title || !description) {
+            descriptionInput.setCustomValidity("Write a task description before enriching it.");
+            descriptionInput.reportValidity();
+            descriptionInput.setCustomValidity("");
+            return;
+        }
+        const controller = new AbortController();
+        this.#draftEnrichmentController = controller;
+        this.#setDraftEnrichmentActive(true);
+        this.#state?.setActiveCommand(`enrich-task-draft ${taskIdInput.value || "new"}`);
+        try {
+            const priority = priorityInput.value === "MEDIUM" || priorityInput.value === "LOW" ? priorityInput.value : "HIGH";
+            const image = await this.#visualReferenceController.exportPng();
+            const taskId = taskIdInput.value.trim();
+            const result = await api.enrichBacklogDraft({
+                ...(taskId ? { taskId } : {}),
+                domain: domainInput.value.trim() || this.#selectedDomain || "Backlog",
+                title,
+                description,
+                priority,
+                image
+            }, controller.signal);
+            this.#state?.setLastResult(result);
+            if (result.ok && result.data?.description)
+                descriptionInput.value = result.data.description;
+        }
+        catch (error) {
+            if (!(error instanceof DOMException && error.name === "AbortError"))
+                throw error;
+        }
+        finally {
+            if (this.#draftEnrichmentController === controller)
+                this.#draftEnrichmentController = null;
+            this.#setDraftEnrichmentActive(false);
+        }
+    }
+    /**
+     * Toggle the task editor between editable and cancellable enrichment states.
+     * @param {boolean} active Whether enrichment currently owns and locks the draft.
+     * @returns {void} Nothing; the editor DOM is updated synchronously.
+     */
+    #setDraftEnrichmentActive(active) {
+        const button = this.querySelector("[data-action='enrich-task-draft']");
+        const overlay = this.querySelector("[data-role='task-enrichment-overlay']");
+        const controls = this.querySelectorAll("[data-role='modal-title-input'], [data-role='modal-priority'], [data-role='modal-description']");
+        controls.forEach(control => {
+            control.disabled = active;
+            control.setAttribute("aria-disabled", String(active));
+        });
+        this.querySelectorAll("[data-action='open-visual-reference'], [data-action='close-modal'], [data-role='modal-submit-btn']").forEach(control => {
+            control.disabled = active;
+            control.setAttribute("aria-disabled", String(active));
+        });
+        if (button) {
+            button.setAttribute("aria-busy", String(active));
+            button.classList.toggle("is-pause", active);
+            button.innerHTML = active ? `${icon("pause")}<span>Pause</span>` : `${icon("enrich")}<span>Enrich</span>`;
+            button.title = active ? "Cancel task enrichment" : "Enrich this draft with profiles and visual context";
+        }
+        if (overlay)
+            overlay.hidden = !active;
     }
     /**
      * Delete one task.
@@ -2746,6 +3634,7 @@ class BacklogView extends HTMLElement {
                 </div>
             </section>
             ${renderBacklogDialogs()}
+            ${renderDomainRenameDialog("backlog-domain-rename-dialog")}
         `;
         this.#bindEvents();
         this.#configureTree();
@@ -2813,8 +3702,8 @@ class BacklogView extends HTMLElement {
         }
         treeElement.model = {
             nodes: this.#treeNodes(),
-            selectedPath: this.#selectedDomain,
-            expandedPaths: this.#expandedNodes,
+            selectedPath: this.#selectedDomain || BACKLOG_ROOT_PATH,
+            expandedPaths: new Set([BACKLOG_ROOT_PATH, ...this.#expandedNodes]),
             toggleOnBranchSelect: true,
             title: "Backlog",
             toolbarActions: [
@@ -2856,13 +3745,23 @@ class BacklogView extends HTMLElement {
                 label: node.label,
                 count,
                 children,
-                actions: []
+                actions: [{ id: "rename-domain", label: "Rename domain", icon: "edit" }]
             };
         };
-        return Array.from(projector.buildTree().children.values())
+        const domainNodes = Array.from(projector.buildTree().children.values())
             .filter(node => projector.matchesNode(node))
             .sort((left, right) => left.label.localeCompare(right.label))
             .map(toNode);
+        return [{
+                id: BACKLOG_ROOT_PATH,
+                path: BACKLOG_ROOT_PATH,
+                label: "Backlog",
+                icon: "database",
+                count: this.#tasks.filter(task => projector.matchesActiveFilters(task)).length,
+                children: domainNodes,
+                actions: [],
+                folder: true,
+            }];
     }
     /**
      * Select one Backlog domain without refetching its tree.
@@ -2873,11 +3772,21 @@ class BacklogView extends HTMLElement {
     #onTreeSelected(event) {
         if (!(event instanceof CustomEvent))
             return;
+        if (event.detail.branch) {
+            if (event.detail.expanded) {
+                this.#expandedNodes.add(event.detail.path);
+            }
+            else {
+                this.#expandedNodes.delete(event.detail.path);
+            }
+        }
         if (event.detail.branch && event.detail.clickedCaret) {
             return;
         }
-        this.#selectedDomain = event.detail.path;
-        this.#taskProjector().ancestorPaths(event.detail.path).forEach(path => this.#expandedNodes.add(path));
+        this.#selectedDomain = event.detail.path === BACKLOG_ROOT_PATH ? "" : event.detail.path;
+        if (this.#selectedDomain) {
+            this.#taskProjector().ancestorPaths(this.#selectedDomain).forEach(path => this.#expandedNodes.add(path));
+        }
         this.#render();
     }
     /**
@@ -2916,11 +3825,11 @@ class BacklogView extends HTMLElement {
                         imgInput.value = "";
                     this.#visualReferenceController.reset();
                     const modalTitle = this.querySelector("[data-role='modal-title']");
-                    const submitButton = this.querySelector("[data-role='modal-submit-btn']");
+                    const submitLabel = this.querySelector("[data-role='modal-submit-label']");
                     if (modalTitle)
                         modalTitle.textContent = `Create task in ${newDomain.trim()}`;
-                    if (submitButton)
-                        submitButton.textContent = "Create";
+                    if (submitLabel)
+                        submitLabel.textContent = "Create";
                     dialog.showModal();
                 }
             }
@@ -2935,11 +3844,23 @@ class BacklogView extends HTMLElement {
      * @param {CustomEvent} event Tree event.
      * @returns {void}
      */
-    #onTreeAction(event) {
+    async #onTreeAction(event) {
         if (!(event instanceof CustomEvent))
             return;
         const node = event.detail.node;
         if (!node?.path) {
+            return;
+        }
+        if (event.detail.action === "rename-domain") {
+            const target = await requestDomainRename(this, "backlog-domain-rename-dialog", node.path);
+            if (!target || !this.#api)
+                return;
+            const result = await this.#api.renameBacklogDomain({ source: node.path, target });
+            if (!result.ok)
+                return;
+            this.#expandedNodes = remapExpandedDomains(this.#expandedNodes, node.path, target);
+            this.#selectedDomain = target;
+            await this.#loadBacklog(true);
             return;
         }
         this.#selectedDomain = node.path;
@@ -2955,7 +3876,7 @@ class BacklogView extends HTMLElement {
         return new BacklogTaskProjector({
             tasks: this.#tasks,
             selectedDomain: this.#selectedDomain,
-            filter: this.#filter,
+            filter: this.#contentFilter || this.#filter,
             statusFilter: this.#statusFilter,
             priorityFilter: this.#priorityFilter
         });
@@ -2966,6 +3887,17 @@ class BacklogView extends HTMLElement {
      *
      * @returns {void}
      */
+    /**
+     * Apply the shell's reactive query exclusively to content cards.
+     * The domain tree and its own search input remain untouched.
+     *
+     * @param {string} query Debounced global-shell query, or empty text to clear it.
+     * @returns {void}
+     */
+    applyReactiveContentFilter(query) {
+        this.#contentFilter = query.trim();
+        this.#refreshTaskContent();
+    }
     #refreshTaskContent() {
         const projector = this.#taskProjector();
         const visibleTasks = projector.visibleTasks();
@@ -2998,6 +3930,7 @@ class BacklogView extends HTMLElement {
             const hasVisibleRows = Array.from(group.querySelectorAll("[data-task-row-id]")).some(row => !row.hidden);
             group.toggleAttribute("hidden", !hasVisibleRows);
         });
+        highlightRenderedContent(this, this.#contentFilter || this.#filter, "[data-task-row-id]:not([hidden])");
         const emptyState = this.querySelector(".backlog-filter-empty");
         if (emptyState) {
             emptyState.toggleAttribute("hidden", domainTasks.length === 0 || visibleIds.size > 0);
@@ -3057,6 +3990,10 @@ class BacklogView extends HTMLElement {
                     this.#setTaskStatus(button.dataset.taskId ?? "", status);
             });
         });
+        this.querySelectorAll("[data-action='enrich-task']").forEach(button => {
+            button.addEventListener("click", () => this.#enrichTask(button.dataset.taskId ?? ""));
+        });
+        this.querySelector("[data-action='enrich-task-draft']")?.addEventListener("click", () => this.#enrichTaskDraft());
         this.querySelectorAll("[data-action='delete-task']").forEach(button => {
             button.addEventListener("click", () => {
                 const status = button.dataset.taskStatus;
@@ -3089,12 +4026,69 @@ class BacklogView extends HTMLElement {
                 imgUploadZone.style.removeProperty("display");
             }
             const modalTitle = this.querySelector("[data-role='modal-title']");
-            const submitButton = this.querySelector("[data-role='modal-submit-btn']");
+            const submitLabel = this.querySelector("[data-role='modal-submit-label']");
+            const statusIndicator = this.querySelector("[data-role='modal-status-indicator']");
             if (modalTitle)
                 modalTitle.textContent = "Create task";
-            if (submitButton)
-                submitButton.textContent = "Create";
+            if (submitLabel)
+                submitLabel.textContent = "Create";
+            if (statusIndicator) {
+                statusIndicator.className = "task-status task-editor-status-indicator is-neutral";
+                statusIndicator.innerHTML = icon("clock");
+                statusIndicator.title = "New task";
+            }
             dialog.showModal();
+        });
+        // Open read-only task viewer.
+        this.querySelectorAll("[data-action='view-task']").forEach(button => {
+            button.addEventListener("click", () => {
+                const taskId = button.dataset.taskId ?? "";
+                const task = this.#tasks.find(candidate => candidate.id === taskId);
+                const dialog = this.querySelector("#task-viewer-modal");
+                const title = this.querySelector("[data-role='task-viewer-title']");
+                const meta = this.querySelector("[data-role='task-viewer-meta']");
+                const description = this.querySelector("[data-role='task-viewer-description']");
+                const optionsPanel = this.querySelector("[data-role='task-viewer-options-panel']");
+                const statusIndicator = this.querySelector("[data-role='task-viewer-status-indicator']");
+                if (!task || !dialog || !title || !meta || !description || !optionsPanel || !statusIndicator)
+                    return;
+                title.textContent = `${task.id} - ${task.title}`;
+                meta.textContent = `${task.domain} ┬╖ ${task.priority} ┬╖ ${task.status}`;
+                const statusIcon = task.status === "DONE" ? icon("checkSquare") : task.status === "WORKING" ? icon("pulse") : icon("clock");
+                const statusClass = task.status === "DONE" ? "task-status-done" : task.status === "WORKING" ? "task-status-working" : `task-status-${task.priority.toLowerCase()}`;
+                meta.innerHTML = `<span class="task-viewer-badge task-viewer-domain-badge">${icon("folder")}<span>${escapeHtml(task.domain)}</span></span><span class="task-viewer-badge task-viewer-priority-badge is-${task.priority.toLowerCase()}">${icon("pulse")}<span>${escapeHtml(task.priority)}</span></span><span class="task-viewer-badge task-viewer-state-badge is-${task.status.toLowerCase()}">${statusIcon}<span>${escapeHtml(task.status)}</span></span>`;
+                statusIndicator.className = `task-status task-viewer-status-indicator ${statusClass}`;
+                statusIndicator.innerHTML = statusIcon;
+                statusIndicator.title = task.status;
+                const statusOptions = task.status === "DONE"
+                    ? `<button type="button" data-viewer-task-status="TODO">${icon("clock")}<span>Reopen</span></button>`
+                    : task.status === "TODO"
+                        ? `<button type="button" data-viewer-task-status="WORKING">${icon("pulse")}<span>Iniciar trabajo</span></button><button type="button" data-viewer-task-status="DONE">${icon("checkSquare")}<span>Mark done</span></button>`
+                        : `<button type="button" data-viewer-task-status="DONE">${icon("checkSquare")}<span>Mark done</span></button><button type="button" data-viewer-task-status="TODO">${icon("clock")}<span>Pause (TODO)</span></button>`;
+                optionsPanel.innerHTML = `<button type="button" data-viewer-task-action="edit">${icon("edit")}<span>Edit</span></button>${statusOptions}<button type="button" data-viewer-task-action="delete" class="danger-button">${icon("trash")}<span>Delete task</span></button>`;
+                optionsPanel.querySelector("[data-viewer-task-action='edit']")?.addEventListener("click", () => {
+                    this.querySelector(`.task-row [data-action='edit-task'][data-task-id='${task.id}']`)?.click();
+                });
+                optionsPanel.querySelectorAll("[data-viewer-task-status]").forEach(action => {
+                    action.addEventListener("click", () => {
+                        const status = action.dataset.viewerTaskStatus;
+                        if (status === "TODO" || status === "WORKING" || status === "DONE") {
+                            dialog.close();
+                            void this.#setTaskStatus(task.id, status);
+                        }
+                    });
+                });
+                optionsPanel.querySelector("[data-viewer-task-action='delete']")?.addEventListener("click", () => {
+                    dialog.close();
+                    void this.#deleteTask(task.id, task.status);
+                });
+                const normalizedTaskId = task.id.replace(/^#/, "");
+                description.innerHTML = renderMarkdown(viewableBacklogDescription(task.description, task.id, this.#tasksWithImages.includes(normalizedTaskId)));
+                dialog.showModal();
+            });
+        });
+        this.querySelectorAll("[data-action='close-task-viewer']").forEach(button => {
+            button.addEventListener("click", () => this.querySelector("#task-viewer-modal")?.close());
         });
         // Open Edit Modal
         this.querySelectorAll("[data-action='edit-task']").forEach(button => {
@@ -3103,6 +4097,7 @@ class BacklogView extends HTMLElement {
                 const task = this.#tasks.find(t => t.id === taskId);
                 if (!task)
                     return;
+                this.querySelector("#task-viewer-modal")?.close();
                 const dialog = this.querySelector("#backlog-modal");
                 const taskIdInput = this.querySelector("[data-role='modal-task-id']");
                 const domInput = this.querySelector("[data-role='modal-domain']");
@@ -3115,7 +4110,11 @@ class BacklogView extends HTMLElement {
                 domInput.value = task.domain;
                 domInput.setAttribute("disabled", "true");
                 titleInput.value = task.title;
-                descriptionInput.value = task.description;
+                const editableDescription = editableBacklogDescription(task.description, task.id);
+                const normalizedTaskId = task.id.replace(/^#/, "");
+                descriptionInput.value = this.#tasksWithImages.includes(normalizedTaskId) && !editableDescription.includes("{ref_image}")
+                    ? `${editableDescription}\n\n{ref_image}`
+                    : editableDescription;
                 priorityInput.value = task.priority;
                 const imgUploadZone = this.querySelector("[data-role='image-upload-zone']");
                 if (imgUploadZone) {
@@ -3125,16 +4124,25 @@ class BacklogView extends HTMLElement {
                 if (imgInput)
                     imgInput.value = "";
                 this.#visualReferenceController.reset();
-                const imageTaskId = task.id.replace(/^#/, "");
+                const imageTaskId = normalizedTaskId;
                 if (this.#tasksWithImages.includes(imageTaskId)) {
-                    this.#visualReferenceController.displayImage(`/api/backlog/image?taskId=${encodeURIComponent(imageTaskId)}`);
+                    const imageUrl = workspaceScopedUrl(`/api/backlog/image?taskId=${encodeURIComponent(imageTaskId)}`);
+                    this.#visualReferenceController.displayImage(imageUrl);
                 }
                 const modalTitle = this.querySelector("[data-role='modal-title']");
-                const submitButton = this.querySelector("[data-role='modal-submit-btn']");
+                const submitLabel = this.querySelector("[data-role='modal-submit-label']");
+                const statusIndicator = this.querySelector("[data-role='modal-status-indicator']");
                 if (modalTitle)
                     modalTitle.textContent = `Edit task #${task.id}`;
-                if (submitButton)
-                    submitButton.textContent = "Save";
+                if (submitLabel)
+                    submitLabel.textContent = "Save";
+                if (statusIndicator) {
+                    const statusIcon = task.status === "DONE" ? icon("checkSquare") : task.status === "WORKING" ? icon("pulse") : icon("clock");
+                    const statusClass = task.status === "DONE" ? "task-status-done" : task.status === "WORKING" ? "task-status-working" : `task-status-${task.priority.toLowerCase()}`;
+                    statusIndicator.className = `task-status task-editor-status-indicator ${statusClass}`;
+                    statusIndicator.innerHTML = statusIcon;
+                    statusIndicator.title = task.status;
+                }
                 dialog.showModal();
             });
         });
@@ -3145,8 +4153,8 @@ class BacklogView extends HTMLElement {
             });
         });
         // Open & Close Visual Reference Modal
-        this.querySelector("[data-action='open-visual-reference']")?.addEventListener("click", () => {
-            this.querySelector("#visual-reference-modal")?.showModal();
+        this.querySelectorAll("[data-action='open-visual-reference']").forEach(button => {
+            button.addEventListener("click", () => this.querySelector("#visual-reference-modal")?.showModal());
         });
         this.querySelectorAll("[data-action='close-visual-reference']").forEach(btn => {
             btn.addEventListener("click", () => {
@@ -3160,7 +4168,7 @@ class BacklogView extends HTMLElement {
                 const modal = this.querySelector("#image-viewer-modal");
                 const img = this.querySelector("[data-role='viewer-img']");
                 if (modal && img) {
-                    img.src = `/api/backlog/image?taskId=${taskId}`;
+                    img.src = workspaceScopedUrl(`/api/backlog/image?taskId=${encodeURIComponent(taskId)}`);
                     modal.showModal();
                 }
             });
@@ -3298,12 +4306,27 @@ class BacklogView extends HTMLElement {
         });
     }
 }
+/**
+ * Preserve expanded tree state after moving one complete domain subtree.
+ *
+ * @param {Set<string>} expanded Existing expanded domain paths.
+ * @param {string} source Previous subtree root.
+ * @param {string} target Replacement subtree root.
+ * @returns {Set<string>} Expanded paths rewritten to the new canonical prefix.
+ */
+function remapExpandedDomains(expanded, source, target) {
+    return new Set(Array.from(expanded, path => {
+        if (path === source)
+            return target;
+        return path.startsWith(`${source}.`) ? `${target}${path.slice(source.length)}` : path;
+    }));
+}
 customElements.define(BacklogView.selector, BacklogView);
 
 cache=(()=>{return { BacklogView: BacklogView };})();return cache;};})();
-const __brainExplorerModule9=(()=>{let cache;return()=>{if(cache)return cache;
-const { escapeHtml } = __brainExplorerModule4();
-const { icon } = __brainExplorerModule5();
+const __brainExplorerModule11=(()=>{let cache;return()=>{if(cache)return cache;
+const { escapeHtml } = __brainExplorerModule6();
+const { icon } = __brainExplorerModule7();
 /**
  * @author Yoel David <yoeldcd@gmail.com>
  * @see https://x.com/SAY6267
@@ -3589,11 +4612,10 @@ class StructureTree extends HTMLElement {
      * @returns {boolean} True if the node's label or path contains the search query, or if any of its children match; otherwise false.
      */
     #matchesFilter(node) {
-        if (this.#disableFilter)
+        const query = this.#activeSearchQuery();
+        if (this.#disableFilter || !query)
             return true;
-        if (!this.#searchQuery)
-            return true;
-        const needle = this.#searchQuery.toLowerCase();
+        const needle = query.toLowerCase();
         if ((node.label || "").toLowerCase().includes(needle) || (node.path || "").toLowerCase().includes(needle)) {
             return true;
         }
@@ -3601,6 +4623,17 @@ class StructureTree extends HTMLElement {
             return node.children.some(child => this.#matchesFilter(child));
         }
         return false;
+    }
+    /**
+     * Return the normalized query only after the shared two-character threshold.
+     * Keeping the raw input separately preserves what the user is typing while
+     * preventing one-character tree and consumer matches.
+     *
+     * @returns {string} Search text used for matching, or an empty string below the threshold.
+     */
+    #activeSearchQuery() {
+        const query = this.#searchQuery.trim();
+        return query.length >= 2 ? query : "";
     }
     /**
      * Updates the component's innerHTML by rendering a toolbar, an optional search input, and a sorted, filtered list of structure nodes based on the current model state.
@@ -3639,8 +4672,8 @@ class StructureTree extends HTMLElement {
                 ${this.#model.title ? `<strong>${escapeHtml(this.#model.title)}</strong>` : "<span></span>"}
                 <div>
                     ${this.#model.toolbarActions.map(action => `
-                    <button class="icon-action ${action.active ? "is-active" : ""}" data-tree-toolbar-action="${escapeHtml(action.id)}" title="${escapeHtml(action.label)}" aria-label="${escapeHtml(action.label)}" ${action.active !== undefined ? `aria-pressed="${String(!!action.active)}"` : ""}>
-                            ${icon(action.icon || "more")}
+                    <button class="icon-action ${action.showLabel ? "structure-tree-toolbar-action--labeled" : ""} ${action.active ? "is-active" : ""}" data-tree-toolbar-action="${escapeHtml(action.id)}" title="${escapeHtml(action.label)}" aria-label="${escapeHtml(action.label)}" ${action.active !== undefined ? `aria-pressed="${String(!!action.active)}"` : ""}>
+                            ${icon(action.icon || "more")}${action.showLabel ? `<span>${escapeHtml(action.label)}</span>` : ""}
                         </button>
                     `).join("")}
                 </div>
@@ -3660,7 +4693,7 @@ class StructureTree extends HTMLElement {
         }
         const children = Array.isArray(node.children) ? node.children : [];
         const hasChildren = children.length > 0;
-        const expanded = this.#model.expandedPaths.has(node.id || node.path);
+        const expanded = Boolean(this.#activeSearchQuery()) || this.#model.expandedPaths.has(node.id || node.path);
         const active = node.path === this.#model.selectedPath;
         const sourceClass = node.color ? "tree-node--source" : "";
         const sourceStyle = node.color ? ` style="--tree-source-color: ${escapeHtml(node.color)};"` : "";
@@ -3672,7 +4705,7 @@ class StructureTree extends HTMLElement {
                     <div class="tree-item ${active ? "is-active" : ""}">
                         <button class="tree-node tree-terminal-log tree-node--leaf ${active ? "is-active" : ""}"
                             data-tree-id="${escapeHtml(node.id || node.path)}" data-tree-path="${escapeHtml(node.path)}" data-tree-branch="false"
-                            title="${escapeHtml(node.label)}">
+                            title="${escapeHtml(node.title || node.label)}">
                             <span class="tree-node-icon">${icon(node.icon || defaultLeaf)}</span>
                             <time>${escapeHtml(node.timestamp || "No date")}</time>
                             <strong>${escapeHtml(node.label)}</strong>
@@ -3695,7 +4728,7 @@ class StructureTree extends HTMLElement {
                 <div class="tree-item ${active ? "is-active" : ""}">
                     <button class="tree-node ${hasChildren ? "" : "tree-node--leaf"} ${sourceClass} ${active ? "is-active" : ""}"${sourceStyle}
                         data-tree-id="${escapeHtml(node.id || node.path)}" data-tree-path="${escapeHtml(node.path)}" data-tree-branch="${hasChildren}"
-                        title="${escapeHtml(node.label)}">
+                        title="${escapeHtml(node.title || node.label)}">
                         <span class="tree-caret ${isFolder && !hasChildren ? "is-empty-folder" : ""}">${caret}</span>
                         ${icon(node.icon || (isFolder ? defaultBranch : defaultLeaf))}
                         <span>${escapeHtml(node.label)}</span>
@@ -3773,7 +4806,10 @@ class StructureTree extends HTMLElement {
             const sortedRootNodes = [...this.#model.nodes].sort((left, right) => this.#compareNodes(left, right, rootDirection));
             const nodesContainer = this.querySelector(".structure-tree-nodes");
             if (nodesContainer) {
-                nodesContainer.innerHTML = sortedRootNodes.map(node => this.#renderNode(node, 1)).join("");
+                const visibleNodes = sortedRootNodes.filter(node => this.#matchesFilter(node));
+                nodesContainer.innerHTML = visibleNodes.length
+                    ? visibleNodes.map(node => this.#renderNode(node, 1)).join("")
+                    : `<p class="structure-tree-empty">${escapeHtml(this.#model.emptyText)}</p>`;
             }
             // Re-bind listeners on new node elements!
             this.querySelectorAll("[data-tree-id]").forEach(button => {
@@ -3785,7 +4821,7 @@ class StructureTree extends HTMLElement {
             // Emit search query event to parent view
             this.dispatchEvent(new CustomEvent("brain-tree-search", {
                 bubbles: true,
-                detail: { query: this.#searchQuery }
+                detail: { query: this.#activeSearchQuery() }
             }));
         });
     }
@@ -3970,9 +5006,76 @@ _a = StructureTree;
 customElements.define(StructureTree.selector, StructureTree);
 
 cache=(()=>{return { StructureTree: StructureTree };})();return cache;};})();
-const __brainExplorerModule10=(()=>{let cache;return()=>{if(cache)return cache;
-const { documentPictureInPictureController } = __brainExplorerModule11();
-const { BacklogPip } = __brainExplorerModule12();
+const __brainExplorerModule12=(()=>{let cache;return()=>{if(cache)return cache;
+const { escapeHtml } = __brainExplorerModule6();
+const { icon } = __brainExplorerModule7();
+/**
+ * Shared dialog rendering and interaction for canonical domain renaming.
+ *
+ * @module presentation/shared/components/domain-rename-dialog
+ */
+
+
+/**
+ * Render the shared domain-renaming surface used by structural trees.
+ *
+ * @param {string} id Unique dialog identifier within its host view.
+ * @returns {string} Inert dialog markup ready for event binding.
+ */
+function renderDomainRenameDialog(id) {
+    return `<dialog id="${escapeHtml(id)}" class="domain-rename-dialog">
+        <form method="dialog" class="domain-rename-card" data-role="domain-rename-form">
+            <header class="domain-rename-header">
+                <span class="domain-rename-icon">${icon("edit")}</span>
+                <div><strong>Rename domain</strong><small>Move this domain and all its subdomains</small></div>
+                <button class="icon-action" value="cancel" title="Close" aria-label="Close">${icon("close")}</button>
+            </header>
+            <label class="domain-rename-field"><span>Current domain</span>
+                <input data-role="domain-rename-source" readonly>
+            </label>
+            <label class="domain-rename-field"><span>New canonical domain</span>
+                <input data-role="domain-rename-target" autocomplete="off" spellcheck="false" required>
+            </label>
+            <p class="domain-rename-status" data-role="domain-rename-status" aria-live="polite">Descendant paths keep their relative suffixes.</p>
+            <footer class="domain-rename-actions">
+                <button class="ghost-action" value="cancel">Cancel</button>
+                <button class="primary-action" value="confirm">Rename domain</button>
+            </footer>
+        </form>
+    </dialog>`;
+}
+/**
+ * Ask for a canonical replacement path through the Explorer-styled dialog.
+ *
+ * @param {ParentNode} host View containing the rendered dialog.
+ * @param {string} id Unique dialog identifier within the host.
+ * @param {string} source Existing canonical domain path.
+ * @returns {Promise<string | null>} Trimmed target path, or null when cancelled or unchanged.
+ */
+function requestDomainRename(host, id, source) {
+    const dialog = host.querySelector(`#${id}`);
+    const sourceInput = dialog?.querySelector("[data-role='domain-rename-source']");
+    const targetInput = dialog?.querySelector("[data-role='domain-rename-target']");
+    if (!dialog || !sourceInput || !targetInput)
+        return Promise.resolve(null);
+    sourceInput.value = source;
+    targetInput.value = source;
+    dialog.returnValue = "cancel";
+    dialog.showModal();
+    targetInput.focus();
+    targetInput.select();
+    return new Promise(resolve => {
+        dialog.addEventListener("close", () => {
+            const target = targetInput.value.trim();
+            resolve(dialog.returnValue === "confirm" && target && target !== source ? target : null);
+        }, { once: true });
+    });
+}
+
+cache=(()=>{return { renderDomainRenameDialog: renderDomainRenameDialog, requestDomainRename: requestDomainRename };})();return cache;};})();
+const __brainExplorerModule13=(()=>{let cache;return()=>{if(cache)return cache;
+const { documentPictureInPictureController } = __brainExplorerModule14();
+const { BacklogPip } = __brainExplorerModule15();
 /**
  * Owns native Document Picture-in-Picture lifecycle for the Backlog feature.
  *
@@ -4139,7 +5242,7 @@ class BacklogPipController {
 }
 
 cache=(()=>{return { BacklogPipController: BacklogPipController };})();return cache;};})();
-const __brainExplorerModule11=(()=>{let cache;return()=>{if(cache)return cache;
+const __brainExplorerModule14=(()=>{let cache;return()=>{if(cache)return cache;
 
 /**
  * Browser contract for the Document Picture-in-Picture API.
@@ -4168,10 +5271,10 @@ function documentPictureInPictureController(browserWindow) {
 }
 
 cache=(()=>{return { documentPictureInPictureController: documentPictureInPictureController };})();return cache;};})();
-const __brainExplorerModule12=(()=>{let cache;return()=>{if(cache)return cache;
-const { escapeHtml } = __brainExplorerModule4();
-const { icon } = __brainExplorerModule5();
-const { isBacklogPipPriority } = __brainExplorerModule13();
+const __brainExplorerModule15=(()=>{let cache;return()=>{if(cache)return cache;
+const { escapeHtml, renderMarkdown } = __brainExplorerModule6();
+const { icon } = __brainExplorerModule7();
+const { isBacklogPipPriority } = __brainExplorerModule16();
 /**
  * @author Yoel David <yoeldcd@gmail.com>
  * @see https://x.com/SAY6267
@@ -4482,7 +5585,7 @@ class BacklogPip extends HTMLElement {
                     <div class="pip-task-detail" style="padding: 6px 8px 8px 8px; border-top: 1px solid var(--border); background: color-mix(in srgb, var(--bg), transparent 60%); font-size: 11px; color: var(--text);">
                         <span style="font-weight: bold; color: var(--primary); margin-right: 8px;">${escapeHtml(task.id)}</span>
                         <span style="background: var(--surface-strong); padding: 1px 4px; border-radius: 3px; font-size: 10px; font-weight: bold;">${escapeHtml(String(task.priority).toUpperCase())}</span>
-                        ${task.description ? `<p class="pip-task-desc" style="margin-top: 4px; line-height: 1.4; white-space: pre-wrap;">${escapeHtml(task.description)}</p>` : ""}
+                        ${task.description ? `<div class="pip-task-desc" style="margin-top: 4px; line-height: 1.4;">${renderMarkdown(task.description)}</div>` : ""}
                     </div>
                 ` : ""}
             </div>
@@ -4763,7 +5866,7 @@ class BacklogPip extends HTMLElement {
 customElements.define(BacklogPip.selector, BacklogPip);
 
 cache=(()=>{return { BacklogPip: BacklogPip };})();return cache;};})();
-const __brainExplorerModule13=(()=>{let cache;return()=>{if(cache)return cache;
+const __brainExplorerModule16=(()=>{let cache;return()=>{if(cache)return cache;
 
 /**
  * Runtime validation helpers for backlog PiP form values.
@@ -4789,8 +5892,8 @@ function isBacklogPipPriority(value) {
 }
 
 cache=(()=>{return { isBacklogPipPriority: isBacklogPipPriority };})();return cache;};})();
-const __brainExplorerModule14=(()=>{let cache;return()=>{if(cache)return cache;
-const { VisualReferenceEditor } = __brainExplorerModule15();
+const __brainExplorerModule17=(()=>{let cache;return()=>{if(cache)return cache;
+const { VisualReferenceEditor } = __brainExplorerModule18();
 /**
  * Coordinates Backlog visual-reference editor state and desktop capture.
  *
@@ -4893,8 +5996,8 @@ class BacklogVisualReferenceController {
 }
 
 cache=(()=>{return { BacklogVisualReferenceController: BacklogVisualReferenceController };})();return cache;};})();
-const __brainExplorerModule15=(()=>{let cache;return()=>{if(cache)return cache;
-const { icon } = __brainExplorerModule5();
+const __brainExplorerModule18=(()=>{let cache;return()=>{if(cache)return cache;
+const { icon } = __brainExplorerModule7();
 /**
  * @author Yoel David <yoeldcd@gmail.com>
  * @see https://x.com/SAY6267
@@ -5347,7 +6450,7 @@ class VisualReferenceEditor extends HTMLElement {
 customElements.define(VisualReferenceEditor.selector, VisualReferenceEditor);
 
 cache=(()=>{return { VisualReferenceEditor: VisualReferenceEditor };})();return cache;};})();
-const __brainExplorerModule16=(()=>{let cache;return()=>{if(cache)return cache;
+const __brainExplorerModule19=(()=>{let cache;return()=>{if(cache)return cache;
 
 /**
  * View-ready contracts owned by the main Backlog presentation feature.
@@ -5372,7 +6475,7 @@ const BACKLOG_PRIORITY_FILTER_OPTIONS = [
 ];
 
 cache=(()=>{return { BACKLOG_STATUS_FILTER_OPTIONS: BACKLOG_STATUS_FILTER_OPTIONS, BACKLOG_PRIORITY_FILTER_OPTIONS: BACKLOG_PRIORITY_FILTER_OPTIONS };})();return cache;};})();
-const __brainExplorerModule17=(()=>{let cache;return()=>{if(cache)return cache;
+const __brainExplorerModule20=(()=>{let cache;return()=>{if(cache)return cache;
 
 /**
  * Projects Backlog tasks into domain trees and filtered task collections.
@@ -5491,9 +6594,9 @@ class BacklogTaskProjector {
 }
 
 cache=(()=>{return { BacklogTaskProjector: BacklogTaskProjector };})();return cache;};})();
-const __brainExplorerModule18=(()=>{let cache;return()=>{if(cache)return cache;
-const { escapeHtml } = __brainExplorerModule4();
-const { icon } = __brainExplorerModule5();
+const __brainExplorerModule21=(()=>{let cache;return()=>{if(cache)return cache;
+const { escapeHtml, workspaceScopedUrl } = __brainExplorerModule6();
+const { icon } = __brainExplorerModule7();
 /**
  * Renders Backlog task collections and dialog surfaces as inert HTML strings.
  *
@@ -5509,7 +6612,7 @@ const { icon } = __brainExplorerModule5();
  *
  * @param {readonly BacklogPipTaskViewModel[]} tasks Domain-scoped tasks in endpoint order.
  * @param {string} selectedDomain Domain used to distinguish direct tasks and shorten subgroup labels.
- * @param {readonly string[]} tasksWithImages Task identifiers with a persisted visual reference.
+ * @param {readonly string[]} tasksWithImages Task identifiers with persisted visual references.
  * @returns {string} Backlog task-list markup or an empty-state paragraph.
  */
 function renderBacklogTaskList(tasks, selectedDomain, tasksWithImages) {
@@ -5556,30 +6659,50 @@ function renderBacklogTaskList(tasks, selectedDomain, tasksWithImages) {
  */
 function renderBacklogDialogs() {
     return `
-        <dialog id="backlog-modal" class="backlog-dialog" style="border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 0; width: 720px; height: 540px; max-width: 90vw; max-height: 90vh; box-shadow: var(--shadow); background: var(--surface); color: var(--text);">
-            <form method="dialog" class="backlog-modal-form" data-role="modal-form" style="display: flex; flex-direction: column; height: 100%;">
-                <header class="modal-header" style="display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border); background: var(--surface-strong);">
-                    <strong data-role="modal-title" style="font-size: 16px; color: var(--text-strong);">Create task</strong>
-                    <button type="button" class="icon-action close-modal-btn" data-action="close-modal" style="border: 0; background: transparent; cursor: pointer; color: var(--text);">${icon("close")}</button>
+        <dialog id="backlog-modal" class="backlog-dialog backlog-task-editor-dialog">
+            <form method="dialog" class="backlog-modal-form task-editor-form" data-role="modal-form">
+                <header class="modal-header task-editor-header">
+                    <span class="task-status task-editor-status-indicator is-neutral" data-role="modal-status-indicator" title="New task">${icon("clock")}</span>
+                    <div class="task-editor-heading"><strong data-role="modal-title">Create task</strong></div>
+                    <button type="button" class="task-dialog-close" data-action="close-modal" title="Close editor" aria-label="Close editor">${icon("close")}</button>
                 </header>
                 <div class="modal-body" style="padding: 18px; flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden;">
                     <input type="hidden" data-role="modal-task-id" value=""><input type="hidden" data-role="modal-domain" value="">
-                    <div class="modal-toolbar" style="display: flex; gap: 10px; align-items: center; padding-bottom: 12px; border-bottom: 1px solid var(--border);">
-                        <input type="text" data-role="modal-title-input" placeholder="Task title" required style="flex: 1; min-height: 38px;">
-                        <select data-role="modal-priority" style="width: 110px; min-height: 38px;">
-                            <option value="HIGH">HIGH</option><option value="MEDIUM">MEDIUM</option><option value="LOW">LOW</option>
-                        </select>
-                        <button type="button" data-action="open-visual-reference" class="ghost-action compact-action" style="display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px; font-weight: bold; background: var(--surface-muted); color: var(--primary); height: 38px;">${icon("camera")} Visual Reference</button>
+                    <div class="modal-toolbar task-editor-toolbar">
+                        <label class="task-editor-field task-editor-title-field"><span>Title</span><input type="text" data-role="modal-title-input" placeholder="Task title" required></label>
+                        <label class="task-editor-field task-editor-priority-field"><span>Priority</span><select data-role="modal-priority"><option value="HIGH">HIGH</option><option value="MEDIUM">MEDIUM</option><option value="LOW">LOW</option></select></label>
+                        <div class="task-editor-tools">
+                            <button type="button" data-action="open-visual-reference" class="task-editor-tool-action" title="Attach or edit a visual reference">${icon("camera")}<span>Image</span></button>
+                            <button type="button" data-action="enrich-task-draft" class="task-editor-tool-action task-draft-enrich-action" title="Enrich this draft with profiles and visual context">${icon("enrich")}<span>Enrich</span></button>
+                        </div>
                     </div>
-                    <div style="flex: 1; display: flex; min-height: 0; margin-top: 12px;">
-                        <textarea data-role="modal-description" placeholder="Write task details and description here..." required style="flex: 1; border: 0; padding: 0; outline: none; background: transparent; font-family: inherit; font-size: 14px; line-height: 1.6; resize: none; overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none;"></textarea>
+                    <div class="task-editor-content">
+                        <textarea data-role="modal-description" placeholder="Write task details and description here..." required></textarea>
                     </div>
                 </div>
-                <footer class="modal-footer" style="display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 14px 18px; border-top: 1px solid var(--border); background: var(--surface-strong);">
-                    <button type="button" class="ghost-action" data-action="close-modal">Cancel</button>
-                    <button type="submit" class="primary-action" data-role="modal-submit-btn">Create</button>
+                <footer class="modal-footer task-editor-footer">
+                    <button type="button" class="ghost-action task-footer-action" data-action="close-modal">${icon("close")}<span>Cancel</span></button>
+                    <button type="submit" class="primary-action task-footer-action" data-role="modal-submit-btn">${icon("save")}<span data-role="modal-submit-label">Create</span></button>
                 </footer>
+                <div class="task-enrichment-overlay" data-role="task-enrichment-overlay" role="status" aria-live="polite" hidden><span class="working-spinner" aria-hidden="true">${["blue", "cyan", "green", "yellow", "red", "pink"].map(color => `<span class="dot dot-${color}"></span>`).join("")}</span><span>Enriching taskΓÇª</span></div>
             </form>
+        </dialog>
+        <dialog id="task-viewer-modal" class="backlog-dialog backlog-task-viewer-dialog">
+            <article class="task-viewer-shell">
+                <header class="modal-header task-viewer-header">
+                    <span class="task-status task-viewer-status-indicator" data-role="task-viewer-status-indicator"></span>
+                    <div class="task-viewer-heading"><strong data-role="task-viewer-title">Task</strong><div class="task-viewer-badges" data-role="task-viewer-meta"></div></div>
+                    <div class="task-viewer-header-actions"><button type="button" class="task-dialog-close" data-action="close-task-viewer" title="Close viewer" aria-label="Close viewer">${icon("close")}</button></div>
+                </header>
+                <div class="task-viewer-markdown enriched-content" data-role="task-viewer-description"></div>
+                <footer class="modal-footer task-viewer-footer">
+                    <details class="action-menu task-viewer-options">
+                        <summary class="ghost-action task-footer-action" title="Task options">${icon("more")}<span>Options</span></summary>
+                        <div class="action-menu-panel task-viewer-options-panel" data-role="task-viewer-options-panel"></div>
+                    </details>
+                    <button type="button" class="primary-action task-footer-action" data-action="close-task-viewer">${icon("close")}<span>Close</span></button>
+                </footer>
+            </article>
         </dialog>
         <dialog id="visual-reference-modal" class="backlog-dialog visual-reference-dialog">
             <header class="modal-header" style="display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border); background: var(--surface-strong);">
@@ -5599,10 +6722,10 @@ function renderBacklogDialogs() {
         </dialog>`;
 }
 /**
- * Render one task row, its state actions, and optional visual-reference thumbnail.
+ * Render one compact task row whose title opens the complete task editor.
  *
  * @param {BacklogPipTaskViewModel} task View-ready task to render.
- * @param {readonly string[]} tasksWithImages Task identifiers with persisted reference images.
+ * @param {readonly string[]} tasksWithImages Task identifiers with persisted visual references.
  * @returns {string} Inert task-row markup.
  */
 function renderBacklogTask(task, tasksWithImages) {
@@ -5618,21 +6741,43 @@ function renderBacklogTask(task, tasksWithImages) {
         : status === "TODO"
             ? `<button data-action="set-task-status" data-task-id="${escapeHtml(task.id)}" data-task-status="WORKING">${startSpinner}Iniciar trabajo</button><button data-action="set-task-status" data-task-id="${escapeHtml(task.id)}" data-task-status="DONE">${icon("checkSquare")}Mark done</button>`
             : `<button data-action="set-task-status" data-task-id="${escapeHtml(task.id)}" data-task-status="DONE">${icon("checkSquare")}Mark done</button><button data-action="set-task-status" data-task-id="${escapeHtml(task.id)}" data-task-status="TODO">${icon("clock")}Pause (TODO)</button>`;
-    const imageTaskId = task.id.replace(/^#/, "");
-    const thumbnail = tasksWithImages.includes(imageTaskId)
-        ? `<button class="task-image-thumbnail" type="button" data-action="view-image" data-task-id="${escapeHtml(imageTaskId)}" title="View reference image"><img src="/api/backlog/image?taskId=${escapeHtml(imageTaskId)}" alt="Visual reference for ${escapeHtml(task.title)}"></button>`
+    const normalizedTaskId = task.id.replace(/^#/, "");
+    const imageUrl = workspaceScopedUrl(`/api/backlog/image?taskId=${encodeURIComponent(normalizedTaskId)}`);
+    const thumbnail = tasksWithImages.includes(normalizedTaskId)
+        ? `<button type="button" class="task-reference-thumbnail" data-action="view-image" data-task-id="${escapeHtml(normalizedTaskId)}" title="Open visual reference" aria-label="Open visual reference for ${escapeHtml(task.title)}"><img src="${escapeHtml(imageUrl)}" alt=""></button>`
         : "";
-    return `<article class="task-row ${status === "DONE" ? "is-done" : ""}" data-task-row-id="${escapeHtml(task.id)}">
-        <span class="task-status ${statusClass}">${statusIcon}</span><div style="flex: 1; min-width: 0;"><strong>${escapeHtml(task.id)} - ${escapeHtml(task.title)}</strong><p>${escapeHtml(task.description)}</p></div>
-        <div class="task-actions" style="display: inline-flex; align-items: center; gap: 8px; justify-self: end;">${thumbnail}<details class="action-menu"><summary class="icon-action borderless-summary" title="Opciones">${icon("more")}</summary><div class="action-menu-panel"><button data-action="edit-task" data-task-id="${escapeHtml(task.id)}">${icon("edit")}Edit</button>${buttons}<button data-action="delete-task" data-task-id="${escapeHtml(task.id)}" data-task-status="${status}" class="danger-button">${icon("trash")}Delete task</button></div></details></div>
+    return `<article class="task-row ${status === "DONE" ? "is-done" : ""}" data-task-row-id="${escapeHtml(task.id)}" tabindex="-1">
+        <span class="task-status ${statusClass}">${statusIcon}</span>
+        <button type="button" class="task-open-viewer" data-action="view-task" data-task-id="${escapeHtml(task.id)}"><strong>${escapeHtml(task.id)} - ${escapeHtml(task.title)}</strong></button>
+        ${thumbnail}
+        <div class="task-actions" style="display: inline-flex; align-items: center; gap: 8px; justify-self: end;"><details class="action-menu"><summary class="icon-action borderless-summary" title="Options">${icon("more")}</summary><div class="action-menu-panel"><button data-action="edit-task" data-task-id="${escapeHtml(task.id)}">${icon("edit")}Edit</button>${buttons}<button data-action="delete-task" data-task-id="${escapeHtml(task.id)}" data-task-status="${status}" class="danger-button">${icon("trash")}Delete task</button></div></details></div>
     </article>`;
 }
 
 cache=(()=>{return { renderBacklogTaskList: renderBacklogTaskList, renderBacklogDialogs: renderBacklogDialogs };})();return cache;};})();
-const __brainExplorerModule19=(()=>{let cache;return()=>{if(cache)return cache;
-const { escapeHtml } = __brainExplorerModule4();
-const { icon } = __brainExplorerModule5();
-const { isRouteId } = __brainExplorerModule20();
+const __brainExplorerModule22=(()=>{let cache;return()=>{if(cache)return cache;
+
+/**
+ * Runtime validation for Backlog route targets.
+ *
+ * @module presentation/backlog/validators/backlog-navigation-target
+ */
+/**
+ * Narrow an untrusted shell target to a canonical Backlog navigation target.
+ *
+ * @param {Record<string, unknown> | null} target Raw destination payload from application state.
+ * @returns {BacklogNavigationTarget | null} Valid target, or null when no canonical task id exists.
+ */
+function parseBacklogNavigationTarget(target) {
+    const taskId = typeof target?.taskId === "string" ? target.taskId.trim() : "";
+    return /^t\d+$/i.test(taskId) ? { taskId: taskId.toLowerCase() } : null;
+}
+
+cache=(()=>{return { parseBacklogNavigationTarget: parseBacklogNavigationTarget };})();return cache;};})();
+const __brainExplorerModule23=(()=>{let cache;return()=>{if(cache)return cache;
+const { escapeHtml } = __brainExplorerModule6();
+const { icon } = __brainExplorerModule7();
+const { isRouteId } = __brainExplorerModule3();
 /**
  * @author Yoel David <yoeldcd@gmail.com>
  * @see https://x.com/SAY6267
@@ -5807,10 +6952,9 @@ class DashboardView extends HTMLElement {
      */
     #renderSectionBody(kind, entries) {
         if (kind === "logs") {
-            const chronologicalEntries = this.#sortLogsNewestFirst(entries);
             return `
-                <nav class="context-log-links" aria-label="Recent log entries">
-                    ${chronologicalEntries.map(entry => this.#renderContextLine(entry, "context-link-line")).join("")}
+                <nav class="context-log-links" aria-label="Log domains">
+                    ${entries.map(entry => this.#renderContextLine(entry, "context-link-line")).join("")}
                 </nav>
             `;
         }
@@ -5832,46 +6976,6 @@ class DashboardView extends HTMLElement {
             return entries.map(entry => this.#renderFactRow(entry)).join("");
         }
         return entries.map(entry => this.#renderContextLine(entry, "context-link-line")).join("");
-    }
-    /**
-     * Return log entries in reverse chronological order without mutating the
-     * domain-oriented sequence received from the CLI facade.
-     *
-     * Entries with equal or missing timestamps retain their original order.
-     *
-     * @param {object[]} entries Normalized log entries.
-     * @returns {object[]} Newest entries first.
-     */
-    #sortLogsNewestFirst(entries) {
-        return entries
-            .map((entry, index) => ({
-            entry,
-            index,
-            timestamp: this.#logTimestamp(entry)
-        }))
-            .sort((left, right) => {
-            if (left.timestamp === right.timestamp) {
-                return left.index - right.index;
-            }
-            return right.timestamp - left.timestamp;
-        })
-            .map(({ entry }) => entry);
-    }
-    /**
-     * Parse the CLI display date and time into a sortable UTC value.
-     *
-     * @param {object} entry Normalized log entry.
-     * @returns {number} UTC timestamp or negative infinity when unavailable.
-     */
-    #logTimestamp(entry) {
-        const dateMatch = String(entry.date || "").match(/^(\d{2})-(\d{2})-(\d{4})$/);
-        const timeMatch = String(entry.time || "00:00").match(/^(\d{2}):(\d{2})(?::(\d{2}))?$/);
-        if (!dateMatch || !timeMatch) {
-            return Number.NEGATIVE_INFINITY;
-        }
-        const [, day, month, year] = dateMatch;
-        const [, hour, minute, second = "0"] = timeMatch;
-        return Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second));
     }
     /**
      * Render one navigable document line.
@@ -5964,19 +7068,59 @@ class DashboardView extends HTMLElement {
             logs: "document",
             backlog: "checkSquare"
         }[section.kind ?? ""] || "document";
+        const lastChange = item.last_change;
+        const route = this.#itemRoute(section, item);
         return {
             kind: section.kind || "item",
             icon: iconName,
             typeLabel: this.#typeLabel(section, item),
             label: this.#itemLabel(section, item),
             summary: this.#itemSummary(section, item),
-            title: item.label || item.id || section.title || "Contexto",
-            ...((item.route || section.route) ? { route: item.route || section.route } : {}),
-            target: item.target || {},
+            title: lastChange?.title || item.title || item.name || item.label || String(item.id || "") || section.title || "Contexto",
+            ...(route ? { route } : {}),
+            target: this.#itemTarget(section, item),
             domain: item.domain || item.target?.domain || "",
             date: item.date || item.target?.date || "",
             time: item.time || item.target?.time || "",
-            changeType: item.changeType || item.type || ""
+            changeType: lastChange?.type || item.changeType || item.type || ""
+        };
+    }
+    /**
+     * Resolve navigation from the owning section instead of transport metadata.
+     *
+     * @param {object} section Context section.
+     * @param {object} item Section item.
+     * @returns {RouteId | undefined} Destination route.
+     */
+    #itemRoute(section, item) {
+        if (section.kind === "logs")
+            return "logs";
+        if (section.kind === "diary")
+            return "memory";
+        if (section.kind === "profiles")
+            return "profiles";
+        return item.route || section.route;
+    }
+    /**
+     * Derive route state from compact context fields.
+     *
+     * @param {object} section Context section.
+     * @param {object} item Section item.
+     * @returns {object} Destination target.
+     */
+    #itemTarget(section, item) {
+        if (section.kind === "logs")
+            return { domain: item.domain || "" };
+        if (section.kind === "profiles")
+            return { profile: item.name || "" };
+        if (section.kind !== "diary")
+            return item.target || {};
+        const date = item.retrieve_command?.match(/(?:^|\s)-d\s+(\d{2}-\d{2}-\d{4})(?:\s|$)/)?.[1] || "";
+        const [, month = "", year = ""] = date.split("-");
+        return {
+            path: date && month && year ? `diary.${year}-${month}.${date}` : "diary",
+            domain: "diary",
+            mode: "read"
         };
     }
     /**
@@ -5991,12 +7135,12 @@ class DashboardView extends HTMLElement {
      * @returns {string} Entry label.
      */
     #itemLabel(section, item) {
-        const fallback = item.label || item.id || section.title || "Contexto";
+        const fallback = item.title || item.name || item.label || String(item.id || "") || section.title || "Contexto";
         if (section.kind !== "logs") {
             return fallback;
         }
-        const timestamp = [item.date, item.time].filter(Boolean).join(" ");
-        return timestamp ? `${timestamp} -> ${fallback}` : fallback;
+        const domain = item.domain || "logs";
+        return item.last_change?.title ? `${domain} -> ${item.last_change.title}` : domain;
     }
     /**
      * Return the Spanish card type label.
@@ -6026,13 +7170,14 @@ class DashboardView extends HTMLElement {
      */
     #itemSummary(section, item) {
         if (section.kind === "profiles") {
-            return item.command || `read-profile ${item.label || ""}`;
+            return item.retrieve_command || `read-profile ${item.name || ""}`;
         }
         if (section.kind === "diary") {
-            return item.target?.path || item.command || "Diary entry";
+            return item.retrieve_command || "Diary entry";
         }
         if (section.kind === "logs") {
-            return `${item.domain || "logs"} - ${item.changeType || "registro"}`;
+            const change = item.last_change;
+            return [change?.type || "registro", change?.retrieve_command || ""].filter(Boolean).join(" - ");
         }
         return item.command || section.summary || "";
     }
@@ -6121,45 +7266,16 @@ class DashboardView extends HTMLElement {
 customElements.define(DashboardView.selector, DashboardView);
 
 cache=(()=>{return { DashboardView: DashboardView };})();return cache;};})();
-const __brainExplorerModule20=(()=>{let cache;return()=>{if(cache)return cache;
-
-/**
- * Runtime narrowing for route identifiers crossing outer-layer boundaries.
- *
- * @module application/shell/validators/route-id
- */
-/**
- * Complete closed route vocabulary accepted by Explorer navigation state.
- */
-const ROUTE_IDS = [
-    "dashboard", "memory", "knowledge", "pictures", "query", "profiles",
-    "logs", "backlog", "messages", "wikis", "settings",
-];
-/**
- * Narrow an untrusted DOM or API string to the application route contract.
- *
- * This validator deliberately lives in Application rather than the shell route
- * registry so feature layouts can validate navigation without importing the
- * Presentation composition root and creating a circular module dependency.
- *
- * @param {string | null} value Untrusted route identifier read at an outer-layer boundary.
- * @returns {boolean} `true` only when `value` belongs to the complete route vocabulary.
- */
-function isRouteId(value) {
-    return value !== null && ROUTE_IDS.some(route => route === value);
-}
-
-cache=(()=>{return { isRouteId: isRouteId };})();return cache;};})();
-const __brainExplorerModule21=(()=>{let cache;return()=>{if(cache)return cache;
-const { escapeHtml } = __brainExplorerModule4();
-const { icon } = __brainExplorerModule5();
-const { StructureTree } = __brainExplorerModule9();
-const { KnowledgeGraphNormalizer } = __brainExplorerModule22();
-const { KnowledgeSourceTreeProjector } = __brainExplorerModule24();
-const { KnowledgeInspectorRenderer } = __brainExplorerModule26();
-const { KnowledgeGraphLayoutEngine } = __brainExplorerModule28();
-const { knowledgeNodeId } = __brainExplorerModule25();
-const { KnowledgeTreeInteractionController } = __brainExplorerModule29();
+const __brainExplorerModule24=(()=>{let cache;return()=>{if(cache)return cache;
+const { escapeHtml } = __brainExplorerModule6();
+const { icon } = __brainExplorerModule7();
+const { StructureTree } = __brainExplorerModule11();
+const { KnowledgeGraphNormalizer } = __brainExplorerModule25();
+const { KnowledgeSourceTreeProjector } = __brainExplorerModule27();
+const { KnowledgeInspectorRenderer } = __brainExplorerModule29();
+const { KnowledgeGraphLayoutEngine } = __brainExplorerModule31();
+const { knowledgeNodeId } = __brainExplorerModule28();
+const { KnowledgeTreeInteractionController } = __brainExplorerModule32();
 /**
  * @author Yoel David <yoeldcd@gmail.com>
  * @see https://x.com/SAY6267
@@ -6210,12 +7326,8 @@ class KnowledgeView extends KnowledgeTreeInteractionController {
     set context(context) {
         this.api = context.api;
         this.state = context.state;
-        const target = this.state?.consumeRouteTarget?.("knowledge") || null;
-        this.pendingEntityLabel = String(target?.entityLabel || "").trim();
         this.render();
         this.scheduleInitialLoad();
-        if (this.output)
-            queueMicrotask(() => this.resolvePendingEntity());
     }
     /**
      * Initialize component DOM.
@@ -6274,13 +7386,18 @@ class KnowledgeView extends KnowledgeTreeInteractionController {
             .map(input => input.value)
             .filter((mode) => mode === "entities" || mode === "classes");
         this.mode = selectedModes.length === 1 ? (selectedModes[0] ?? "all") : "all";
-        this.query = this.querySelector("[data-role='kg-query']")?.value.trim() || "";
     }
     /**
      * Render view markup.
      *
      * @returns {void}
      */
+    applyReactiveContentFilter(query) {
+        this.query = query.trim();
+        this.needsViewportFit = true;
+        this.prepareGraph();
+        this.drawCanvas();
+    }
     render() {
         this.innerHTML = `
             <section class="page-surface knowledge-console">
@@ -6292,7 +7409,6 @@ class KnowledgeView extends KnowledgeTreeInteractionController {
                     </aside>
                     <main class="structure-content knowledge-content">
                         <div class="content-head graph-toolbar">
-                            <input class="graph-search-input" aria-label="Search graph" data-role="kg-query" value="${escapeHtml(this.query)}" placeholder="Filter or search graph">
                             <details class="action-menu filter-menu knowledge-filter-menu" ${this.filtersOpen ? "open" : ""}>
                                 <summary class="compact-action">${icon("filter")}<span>Filters</span></summary>
                                 <div class="action-menu-panel filter-menu-panel">
@@ -6438,6 +7554,7 @@ class KnowledgeView extends KnowledgeTreeInteractionController {
     renderDomainTree() {
         this.domainTreeNodes = this.sourceTreeProjector.project({
             selectedScopes: this.selectedScopes,
+            rootPath: this.treeFilterActive ? this.selectedTreePath : "",
             memoryPaths: this.memoryPaths,
             pictures: this.pictures,
             messages: this.messages,
@@ -6453,11 +7570,18 @@ class KnowledgeView extends KnowledgeTreeInteractionController {
      * @returns {string} An HTML string representing the rendered inspector details.
      */
     renderDetails() {
+        const focus = this.focusGraph();
+        const projectedNodes = focus
+            ? this.nodes.filter(node => focus.nodeIds.has(node.id))
+            : this.nodes;
+        const projectedEdges = focus
+            ? this.edges.filter(edge => focus.edgeIds.has(edge.id))
+            : this.edges;
         const proxiedInspector = this.inspectorRenderer.render({
-            nodes: this.nodes,
-            edges: this.edges,
-            selectedNodeId: this.selectedNodeId,
-            selectedRelationId: this.selectedRelationId,
+            nodes: projectedNodes,
+            edges: projectedEdges,
+            selectedNodeId: this.hoveredNodeId || this.selectedNodeId,
+            selectedRelationId: this.hoveredRelationId || this.selectedRelationId,
             importantNodes: this.importantNodes(),
             pictureForNode: node => this.pictureForNode(node),
             messageForNode: node => this.messageForNode(node),
@@ -6849,6 +7973,7 @@ class KnowledgeView extends KnowledgeTreeInteractionController {
             this.readControls();
             if (this.treeScope !== "all" && !this.selectedScopes.has(this.treeScope)) {
                 this.selectedTreePath = "";
+                this.treeFilterActive = false;
                 this.treeScope = "all";
                 this.domain = "all";
                 this.sourceKind = "";
@@ -6870,9 +7995,12 @@ class KnowledgeView extends KnowledgeTreeInteractionController {
         this.beginGraphBusy("Focusing graph source");
         await this.waitForGraphPaint();
         try {
-            this.resetGraphRegion();
-            this.needsViewportFit = true;
-            this.prepareGraph();
+            this.treeHighlightNodeIds = new Set(this.nodes
+                .filter(node => this.recordMatchesTreeSelection(node, this.highlightDomain, this.highlightScope, this.highlightSourceKind, this.highlightSourcePath, this.highlightVisualType))
+                .map(node => node.id));
+            this.treeHighlightEdgeIds = new Set(this.edges
+                .filter(edge => this.recordMatchesTreeSelection(edge, this.highlightDomain, this.highlightScope, this.highlightSourceKind, this.highlightSourcePath, this.highlightVisualType))
+                .map(edge => edge.id));
             this.syncDomainTreeSelection();
             this.drawCanvas();
             this.renderInspector();
@@ -6892,12 +8020,46 @@ class KnowledgeView extends KnowledgeTreeInteractionController {
             button.closest("[role='treeitem']")?.setAttribute("aria-selected", String(selected));
         });
     }
+    /**
+     * Focus a canonical Knowledge graph target after graph data is ready.
+     *
+     * @param {Readonly<Record<string, unknown>>} target - Canonical target identity.
+     * @returns {Promise<void>} Resolves after selection and canvas navigation complete.
+     */
+    async focusTarget(target) {
+        const nodeId = String(target.nodeId || "").trim();
+        const relationId = String(target.relationId || "").trim();
+        const entityLabel = String(target.entityLabel || "").trim();
+        const readinessDeadline = Date.now() + 5000;
+        while (!this.output && Date.now() < readinessDeadline) {
+            await new Promise(resolve => requestAnimationFrame(() => resolve()));
+        }
+        if (relationId && this.edges.some(edge => edge.id === relationId)) {
+            this.selectRelation(relationId);
+            return;
+        }
+        if (nodeId && this.nodes.some(node => node.id === nodeId)) {
+            this.focusNode(nodeId);
+            return;
+        }
+        if (entityLabel) {
+            this.focusEntityByLabel(entityLabel);
+        }
+    }
+    /**
+     * Route targets are focused through the shared public contract.
+     *
+     * @returns {void} No-op retained for the controller lifecycle contract.
+     */
+    resolvePendingEntity() {
+        return;
+    }
 }
 customElements.define(KnowledgeView.selector, KnowledgeView);
 
 cache=(()=>{return { KnowledgeView: KnowledgeView };})();return cache;};})();
-const __brainExplorerModule22=(()=>{let cache;return()=>{if(cache)return cache;
-const { isRawKnowledgeItem, rawKnowledgeItems } = __brainExplorerModule23();
+const __brainExplorerModule25=(()=>{let cache;return()=>{if(cache)return cache;
+const { isRawKnowledgeItem, rawKnowledgeItems } = __brainExplorerModule26();
 /**
  * @author Yoel David <yoeldcd@gmail.com>
  * @see https://x.com/SAY6267
@@ -7147,7 +8309,7 @@ class KnowledgeGraphNormalizer {
 }
 
 cache=(()=>{return { KnowledgeGraphNormalizer: KnowledgeGraphNormalizer };})();return cache;};})();
-const __brainExplorerModule23=(()=>{let cache;return()=>{if(cache)return cache;
+const __brainExplorerModule26=(()=>{let cache;return()=>{if(cache)return cache;
 
 /**
  * Runtime guards for heterogeneous Knowledge CLI payloads.
@@ -7173,8 +8335,8 @@ function rawKnowledgeItems(values) {
 }
 
 cache=(()=>{return { isRawKnowledgeItem: isRawKnowledgeItem, rawKnowledgeItems: rawKnowledgeItems };})();return cache;};})();
-const __brainExplorerModule24=(()=>{let cache;return()=>{if(cache)return cache;
-const { shortKnowledgeLabel } = __brainExplorerModule25();
+const __brainExplorerModule27=(()=>{let cache;return()=>{if(cache)return cache;
+const { shortKnowledgeLabel } = __brainExplorerModule28();
 /**
  * Projects Knowledge persistence sources into the shared structure-tree contract.
  *
@@ -7196,10 +8358,39 @@ class KnowledgeSourceTreeProjector {
      * @returns {KnowledgeTreeNode[]} Root nodes ordered as global then local scope.
      */
     project(input) {
-        return [
+        const roots = [
             this.#scopeRoot("global", "Global knowledge", input.memoryPaths, input),
             this.#scopeRoot("local", "Local knowledge", [], input),
         ].filter(root => input.selectedScopes.has(root.scope === "global" ? "global" : "local"));
+        const rootPath = String(input.rootPath || "");
+        if (!rootPath)
+            return roots;
+        const filteredRoot = this.#findNode(roots, rootPath);
+        if (!filteredRoot)
+            return roots;
+        return [{
+                ...filteredRoot,
+                ...(filteredRoot.actions
+                    ? { actions: filteredRoot.actions.filter(action => action.id !== "filter-source") }
+                    : {}),
+            }];
+    }
+    /**
+     * Find one projected source node by its canonical tree path.
+     *
+     * @param {readonly KnowledgeTreeNode[]} nodes Candidate hierarchy.
+     * @param {string} path Canonical node path.
+     * @returns {KnowledgeTreeNode | null} Matching node, or null when the path is stale.
+     */
+    #findNode(nodes, path) {
+        for (const node of nodes) {
+            if (node.path === path)
+                return node;
+            const descendant = this.#findNode(node.children || [], path);
+            if (descendant)
+                return descendant;
+        }
+        return null;
     }
     /**
      * Build one physical-scope root without hiding canonical empty sources.
@@ -7315,7 +8506,13 @@ class KnowledgeSourceTreeProjector {
             icon: categoryIcon,
             count: input.graphCountLabel("all", scope, key),
             children: this.#treeNodes([...root.children.values()], input),
-            actions: [{ id: "filter-source", label: "FILTER", icon: "filter" }],
+            actions: key === "pictures"
+                ? [{ id: "filter-source", label: "FILTER", icon: "filter" }]
+                : [
+                    { id: "consolidate-source", label: "CONSOLIDATE", icon: "graph" },
+                    { id: "recompose-source", label: "RECOMPOSE", icon: "refresh" },
+                    { id: "filter-source", label: "FILTER", icon: "filter" },
+                ],
             scope,
             domain: "all",
             sourceKind: key,
@@ -7438,8 +8635,12 @@ class KnowledgeSourceTreeProjector {
     #treeNodes(nodes, input) {
         return nodes.map(node => {
             const children = this.#treeNodes([...node.children.values()], input);
-            const actions = [
+            const knowledgeActions = node.sourceKind === "pictures" ? [] : [
                 { id: "consolidate-source", label: "CONSOLIDATE", icon: "graph" },
+                { id: "recompose-source", label: "RECOMPOSE", icon: "refresh" },
+            ];
+            const actions = [
+                ...knowledgeActions,
                 { id: "filter-source", label: "FILTER", icon: "filter" },
                 ...(node.openRoute ? [{ id: "open-source", label: "OPEN", icon: "chevronRight" }] : []),
             ];
@@ -7476,7 +8677,7 @@ class KnowledgeSourceTreeProjector {
 }
 
 cache=(()=>{return { KnowledgeSourceTreeProjector: KnowledgeSourceTreeProjector };})();return cache;};})();
-const __brainExplorerModule25=(()=>{let cache;return()=>{if(cache)return cache;
+const __brainExplorerModule28=(()=>{let cache;return()=>{if(cache)return cache;
 
 /**
  * Build a deterministic fallback node identifier from graph context.
@@ -7505,9 +8706,9 @@ function shortKnowledgeLabel(label, limit = 14) {
 }
 
 cache=(()=>{return { knowledgeNodeId: knowledgeNodeId, shortKnowledgeLabel: shortKnowledgeLabel };})();return cache;};})();
-const __brainExplorerModule26=(()=>{let cache;return()=>{if(cache)return cache;
-const { renderDescriptionCard } = __brainExplorerModule27();
-const { escapeHtml } = __brainExplorerModule4();
+const __brainExplorerModule29=(()=>{let cache;return()=>{if(cache)return cache;
+const { renderDescriptionCard } = __brainExplorerModule30();
+const { escapeHtml, renderMarkdown } = __brainExplorerModule6();
 /**
  * Renders the Knowledge inspector without owning DOM lifecycle or graph state.
  *
@@ -7584,11 +8785,11 @@ class KnowledgeInspectorRenderer {
                     </button>
                 ` : ""}
                 ${message ? `
-                    <blockquote class="knowledge-message-preview">${escapeHtml(String(message.text || ""))}</blockquote>
+                    <div class="knowledge-message-preview">${renderMarkdown(String(message.text || ""))}</div>
                     <button class="secondary-action" data-action="open-detail-source" data-route="messages" data-message-id="${escapeHtml(String(message.id))}">Open in Messages</button>
                 ` : ""}
                 <dl>
-                    <dt>Context</dt><dd>${escapeHtml(selected.context)}</dd>
+                    <dt>Context</dt><dd>${renderMarkdown(selected.context)}</dd>
                     <dt>Domain</dt><dd>${escapeHtml(selected.domain)}</dd>
                     <dt>${pictureTag ? "Provenance" : "Source"}</dt><dd>${pictureTag
             ? `Derived from image analysis · ${escapeHtml(selected.source)}`
@@ -7615,7 +8816,7 @@ class KnowledgeInspectorRenderer {
                     <dt>Name</dt><dd>${escapeHtml(relation.label)}</dd>
                     <dt>Source node</dt><dd>${escapeHtml(relation.fromLabel)}</dd>
                     <dt>Target node</dt><dd>${escapeHtml(relation.toLabel)}</dd>
-                    <dt>Context</dt><dd>${escapeHtml(relation.context)}</dd>
+                    <dt>Context</dt><dd>${renderMarkdown(relation.context)}</dd>
                     <dt>Domain</dt><dd>${escapeHtml(relation.domain)}</dd>
                     <dt>Source</dt><dd>${escapeHtml(relation.source)}</dd>
                     <dt>Confidence</dt><dd>${escapeHtml(String(relation.confidence || "-"))}</dd>
@@ -7664,8 +8865,8 @@ class KnowledgeInspectorRenderer {
 }
 
 cache=(()=>{return { KnowledgeInspectorRenderer: KnowledgeInspectorRenderer };})();return cache;};})();
-const __brainExplorerModule27=(()=>{let cache;return()=>{if(cache)return cache;
-const { escapeHtml, renderMarkdown } = __brainExplorerModule4();
+const __brainExplorerModule30=(()=>{let cache;return()=>{if(cache)return cache;
+const { escapeHtml, renderMarkdown } = __brainExplorerModule6();
 /**
  * Shared structured presentation for long image and entity descriptions.
  */
@@ -7730,7 +8931,7 @@ function renderDescriptionCard(markdown, options = {}) {
     const sections = parseDescriptionSections(markdown);
     const content = sections.length
         ? sections.map((section, index) => `
-            <details class="description-card-section" ${options.openFirst !== false && index === 0 ? "open" : ""}>
+            <details class="description-card-section" ${options.openAll || (options.openFirst !== false && index === 0) ? "open" : ""}>
                 <summary>
                     <span>${escapeHtml(section.title)}</span>
                     <span class="description-card-chevron" aria-hidden="true">&#8250;</span>
@@ -7829,7 +9030,7 @@ function normalizeSectionTitle(title) {
 }
 
 cache=(()=>{return { parseDescriptionSections: parseDescriptionSections, renderDescriptionCard: renderDescriptionCard, descriptionEntityValues: descriptionEntityValues };})();return cache;};})();
-const __brainExplorerModule28=(()=>{let cache;return()=>{if(cache)return cache;
+const __brainExplorerModule31=(()=>{let cache;return()=>{if(cache)return cache;
 
 /**
  * Positions Knowledge graph nodes as connected components and domain grids.
@@ -8157,9 +9358,9 @@ class KnowledgeGraphLayoutEngine {
 }
 
 cache=(()=>{return { KnowledgeGraphLayoutEngine: KnowledgeGraphLayoutEngine };})();return cache;};})();
-const __brainExplorerModule29=(()=>{let cache;return()=>{if(cache)return cache;
-const { StructureTree } = __brainExplorerModule9();
-const { KnowledgeCanvasInteractionController } = __brainExplorerModule30();
+const __brainExplorerModule32=(()=>{let cache;return()=>{if(cache)return cache;
+const { StructureTree } = __brainExplorerModule11();
+const { KnowledgeCanvasInteractionController } = __brainExplorerModule33();
 /**
  * Coordinates Knowledge source-tree selection, actions, and navigation.
  */
@@ -8184,9 +9385,10 @@ class KnowledgeTreeInteractionController extends KnowledgeCanvasInteractionContr
             toggleOnBranchSelect: true,
             title: "Knowledge",
             toolbarActions: [
-                { id: "refresh-graph", label: "Refresh graph", icon: "refresh" },
-                { id: "review-deltas", label: "Review deltas", icon: "graph" },
-                { id: "fit-graph", label: "Fit canvas", icon: "filter" }
+                { id: "refresh-tree", label: "Refresh", icon: "refresh", showLabel: true },
+                ...(this.treeFilterActive
+                    ? [{ id: "revert-tree-filter", label: "Revert", icon: "chevronLeft", showLabel: true }]
+                    : []),
             ],
             defaultBranchIcon: "folder",
             defaultLeafIcon: "document"
@@ -8206,12 +9408,15 @@ class KnowledgeTreeInteractionController extends KnowledgeCanvasInteractionContr
             return;
         const node = event.detail.node || {};
         this.selectedTreePath = String(node.path || "");
-        this.treeScope = node.scope === "global" || node.scope === "local" ? node.scope : "all";
-        this.domain = String(node.domain || "all");
+        this.highlightScope = node.scope === "global" || node.scope === "local" ? node.scope : "all";
+        this.highlightDomain = String(node.domain || "all");
         this.sourceKind = node.sourceKind === "memory" || node.sourceKind === "pictures"
             || node.sourceKind === "messages" || node.sourceKind === "logs" ? node.sourceKind : "";
-        this.treeVisualType = node.visualType === "class" || node.visualType === "entity" ? node.visualType : "";
-        this.sourcePath = String(node.sourcePath || "");
+        this.highlightSourceKind = this.sourceKind;
+        this.sourceKind = "";
+        this.highlightVisualType = node.visualType === "class" || node.visualType === "entity" ? node.visualType : "";
+        this.highlightSourcePath = String(node.sourcePath || "");
+        this.treeHighlightActive = true;
         this.applyTreeSelection();
     }
     /**
@@ -8223,15 +9428,11 @@ class KnowledgeTreeInteractionController extends KnowledgeCanvasInteractionContr
     onDomainTreeToolbarAction(event) {
         if (!(event instanceof CustomEvent))
             return;
-        if (event.detail.action === "refresh-graph") {
+        if (event.detail.action === "refresh-tree") {
             this.showRecords(true);
         }
-        else if (event.detail.action === "review-deltas") {
-            this.reviewDeltas();
-        }
-        else if (event.detail.action === "fit-graph") {
-            this.needsViewportFit = true;
-            this.drawCanvas();
+        else if (event.detail.action === "revert-tree-filter") {
+            this.revertTreeFilter();
         }
     }
     /**
@@ -8248,6 +9449,7 @@ class KnowledgeTreeInteractionController extends KnowledgeCanvasInteractionContr
         }
         if (event.detail.action === "filter-source") {
             this.selectedTreePath = String(event.detail.node.path);
+            this.treeFilterActive = true;
             this.treeScope = event.detail.node.scope === "global" || event.detail.node.scope === "local" ? event.detail.node.scope : "all";
             this.domain = String(event.detail.node.domain || "all");
             const sourceKind = event.detail.node.sourceKind;
@@ -8255,16 +9457,88 @@ class KnowledgeTreeInteractionController extends KnowledgeCanvasInteractionContr
                 || sourceKind === "messages" || sourceKind === "logs" ? sourceKind : "";
             this.treeVisualType = event.detail.node.visualType === "class" || event.detail.node.visualType === "entity" ? event.detail.node.visualType : "";
             this.sourcePath = String(event.detail.node.sourcePath || "");
-            this.applyTreeSelection();
+            this.treeHighlightActive = false;
+            this.treeHighlightNodeIds.clear();
+            this.treeHighlightEdgeIds.clear();
+            this.applyFilters();
             return;
         }
         if (event.detail.action === "open-source" && event.detail.node.openRoute) {
             this.state?.setRouteTarget?.(event.detail.node.openRoute, event.detail.node.openTarget || {});
             return;
         }
-        if (event.detail.action === "consolidate-source") {
-            this.reviewDeltas();
+        if (event.detail.action === "consolidate-source" || event.detail.action === "recompose-source") {
+            this.runContainerDream(event.detail.node, event.detail.action === "recompose-source" ? "recompose" : "consolidate");
         }
+    }
+    /**
+     * Restore the complete source hierarchy and remove its structural graph scope.
+     */
+    revertTreeFilter() {
+        this.selectedTreePath = "";
+        this.treeFilterActive = false;
+        this.treeScope = "all";
+        this.domain = "all";
+        this.sourceKind = "";
+        this.sourcePath = "";
+        this.treeVisualType = "";
+        this.treeHighlightActive = false;
+        this.treeHighlightNodeIds.clear();
+        this.treeHighlightEdgeIds.clear();
+        this.applyFilters();
+    }
+    /**
+     * Generate proposals for every source owned by one selected tree container.
+     *
+     * @param {Record<string, any>} node Selected tree node.
+     * @param {"consolidate" | "recompose"} action Requested generation mode.
+     * @returns {Promise<void>} Resolves after the graph reflects the dream response.
+     */
+    async runContainerDream(node, action) {
+        if (!this.api)
+            return;
+        const api = this.api;
+        const scope = node.scope === "global" || node.scope === "local" ? node.scope : "global";
+        const sourceKind = String(node.sourceKind || "");
+        const sourcePaths = this.collectTreeSourcePaths(node);
+        const rawDomain = String(node.domain || "all").split(/[./\\]/)[0]?.toLowerCase() || "all";
+        const domain = sourceKind === "logs" || sourceKind === "messages"
+            ? sourceKind
+            : rawDomain === "profiles" || rawDomain === "diary" ? rawDomain : "memory";
+        this.beginGraphBusy(action === "recompose" ? "Recomposing source container" : "Consolidating source container");
+        try {
+            const result = await api.knowledgeDream({
+                action,
+                scope,
+                domain,
+                sourcePaths,
+                limit: Math.max(sourcePaths.length, 20),
+            });
+            this.state?.setLastResult(result);
+            this.output = result;
+            this.ingestGraph(result.data);
+            this.render();
+        }
+        finally {
+            this.endGraphBusy();
+        }
+    }
+    /**
+     * Return the unique canonical leaf paths owned by a tree container.
+     * @param {Record<string, any>} node Selected tree container.
+     * @returns {string[]} Unique canonical descendant source paths.
+     */
+    collectTreeSourcePaths(node) {
+        const paths = new Set();
+        const visit = (current) => {
+            const sourcePath = String(current.sourcePath || "").trim();
+            if (sourcePath)
+                paths.add(sourcePath.replaceAll("\\", "/"));
+            if (Array.isArray(current.children))
+                current.children.forEach(child => visit(child));
+        };
+        visit(node);
+        return [...paths].sort();
     }
     /**
      * Render recursive domain rows.
@@ -8376,9 +9650,9 @@ class KnowledgeTreeInteractionController extends KnowledgeCanvasInteractionContr
 }
 
 cache=(()=>{return { KnowledgeTreeInteractionController: KnowledgeTreeInteractionController };})();return cache;};})();
-const __brainExplorerModule30=(()=>{let cache;return()=>{if(cache)return cache;
-const { pointToSegmentDistance } = __brainExplorerModule31();
-const { KnowledgeCanvasRenderer } = __brainExplorerModule32();
+const __brainExplorerModule33=(()=>{let cache;return()=>{if(cache)return cache;
+const { pointToSegmentDistance } = __brainExplorerModule34();
+const { KnowledgeCanvasRenderer } = __brainExplorerModule35();
 /**
  * Controls Knowledge canvas pointer, camera, selection, and hit-testing behavior.
  */
@@ -8603,11 +9877,52 @@ class KnowledgeCanvasInteractionController extends KnowledgeCanvasRenderer {
             return;
         }
         if (!this.panState) {
+            this.previewCanvasGeometry(event, canvas);
             return;
         }
+        this.clearCanvasHover();
         this.viewport.x = this.panState.startX + (event.clientX - this.panState.clientX);
         this.viewport.y = this.panState.startY + (event.clientY - this.panState.clientY);
         this.drawCanvas();
+    }
+    /**
+     * Preview the graph entity whose rendered geometry contains the pointer.
+     *
+     * @param {PointerEvent} event Pointer event.
+     * @param {HTMLCanvasElement} canvas Bound Knowledge canvas.
+     * @returns {void}
+     */
+    previewCanvasGeometry(event, canvas) {
+        const point = this.canvasPoint(event, canvas);
+        const node = this.hitTestNode(point.x, point.y);
+        const edge = this.hitTestEdge(point.x, point.y);
+        const hoveredNodeId = node && (!edge || this.nodeOwnsPoint(node, point.x, point.y)) ? node.id : "";
+        const hoveredRelationId = hoveredNodeId ? "" : edge?.id || "";
+        if (hoveredNodeId === this.hoveredNodeId && hoveredRelationId === this.hoveredRelationId) {
+            return;
+        }
+        this.hoveredNodeId = hoveredNodeId;
+        this.hoveredRelationId = hoveredRelationId;
+        canvas.style.cursor = hoveredNodeId || hoveredRelationId ? "pointer" : "default";
+        this.drawCanvas();
+        this.renderInspector();
+    }
+    /**
+     * Clear transient canvas hover while preserving the persistent click selection.
+     *
+     * @returns {void}
+     */
+    clearCanvasHover() {
+        const hadHover = Boolean(this.hoveredNodeId || this.hoveredRelationId);
+        this.hoveredNodeId = "";
+        this.hoveredRelationId = "";
+        const canvas = this.querySelector("[data-role='knowledge-canvas']");
+        if (canvas)
+            canvas.style.cursor = "default";
+        if (!hadHover)
+            return;
+        this.drawCanvas();
+        this.renderInspector();
     }
     /**
      * End dragging or panning.
@@ -8854,18 +10169,6 @@ class KnowledgeCanvasInteractionController extends KnowledgeCanvasRenderer {
                 this.applyFilters();
             });
         });
-        this.querySelector("[data-role='kg-query']")?.addEventListener("input", () => {
-            this.readControls();
-            this.needsViewportFit = true;
-            this.prepareGraph();
-            this.drawCanvas();
-            this.renderInspector();
-        });
-        this.querySelector("[data-role='kg-query']")?.addEventListener("keydown", event => {
-            if (event instanceof KeyboardEvent && event.key === "Enter") {
-                this.queryRecords();
-            }
-        });
         this.querySelectorAll("[data-filter-kind='kg-scope']").forEach(input => {
             input.addEventListener("change", () => this.applyFilters());
         });
@@ -9040,7 +10343,7 @@ class KnowledgeCanvasInteractionController extends KnowledgeCanvasRenderer {
 }
 
 cache=(()=>{return { KnowledgeCanvasInteractionController: KnowledgeCanvasInteractionController };})();return cache;};})();
-const __brainExplorerModule31=(()=>{let cache;return()=>{if(cache)return cache;
+const __brainExplorerModule34=(()=>{let cache;return()=>{if(cache)return cache;
 
 /**
  * Calculate the shortest Euclidean distance between a point and a finite segment.
@@ -9067,10 +10370,10 @@ function pointToSegmentDistance(pointX, pointY, startX, startY, endX, endY) {
 }
 
 cache=(()=>{return { pointToSegmentDistance: pointToSegmentDistance };})();return cache;};})();
-const __brainExplorerModule32=(()=>{let cache;return()=>{if(cache)return cache;
-const { shortKnowledgeLabel } = __brainExplorerModule25();
-const { pointToSegmentDistance } = __brainExplorerModule31();
-const { KnowledgeCanvasState } = __brainExplorerModule33();
+const __brainExplorerModule35=(()=>{let cache;return()=>{if(cache)return cache;
+const { shortKnowledgeLabel } = __brainExplorerModule28();
+const { pointToSegmentDistance } = __brainExplorerModule34();
+const { KnowledgeCanvasState } = __brainExplorerModule36();
 /**
  * Draws the Knowledge graph canvas while preserving the established visual contract.
  */
@@ -9095,7 +10398,10 @@ class KnowledgeCanvasRenderer extends KnowledgeCanvasState {
         canvas.addEventListener("pointerdown", event => this.onPointerDown(event, canvas));
         canvas.addEventListener("pointermove", event => this.onPointerMove(event, canvas));
         canvas.addEventListener("pointerup", event => this.onPointerUp(event, canvas));
-        canvas.addEventListener("pointerleave", event => this.onPointerUp(event, canvas));
+        canvas.addEventListener("pointerleave", event => {
+            this.onPointerUp(event, canvas);
+            this.clearCanvasHover();
+        });
         canvas.addEventListener("wheel", event => this.onWheel(event, canvas), { passive: false });
         canvas.addEventListener("dblclick", event => {
             event.preventDefault();
@@ -9381,7 +10687,7 @@ class KnowledgeCanvasRenderer extends KnowledgeCanvasState {
             const activeRelationId = this.hoveredRelationId || this.selectedRelationId;
             const selected = edge.id === activeRelationId;
             context.save();
-            context.globalAlpha = 0.92;
+            context.globalAlpha = this.treeHighlightActive && !this.treeHighlightEdgeIds.has(edge.id) ? 0.12 : 0.92;
             context.beginPath();
             context.moveTo(from.x, from.y);
             context.lineTo(to.x, to.y);
@@ -9492,10 +10798,10 @@ class KnowledgeCanvasRenderer extends KnowledgeCanvasState {
             const hovered = node.id === this.hoveredNodeId;
             const ranked = rankedNodeIds.has(node.id);
             const relationEndpoint = selectedRelation?.from === node.id || selectedRelation?.to === node.id;
-            const focused = selected || hovered || relationEndpoint || Boolean(focus?.nodeIds.has(node.id));
+            const focused = selected || hovered || relationEndpoint;
             const radius = selected || hovered ? node.radius + 5 : relationEndpoint ? node.radius + 4 : focused ? node.radius + 2 : node.radius;
             context.save();
-            context.globalAlpha = 1;
+            context.globalAlpha = this.treeHighlightActive && !this.treeHighlightNodeIds.has(node.id) ? 0.16 : 1;
             context.beginPath();
             context.arc(node.x, node.y, radius, 0, Math.PI * 2);
             context.fillStyle = selected || hovered || relationEndpoint
@@ -9762,6 +11068,9 @@ class KnowledgeCanvasRenderer extends KnowledgeCanvasState {
             : { x: node.x, y: node.y + node.radius + (14 / scale) };
         const x = placement.x;
         const y = placement.y;
+        if (ranked) {
+            this.drawNodeLabelLeader(context, node, placement, width, height);
+        }
         if (ranked || selected) {
             context.fillStyle = styles.getPropertyValue("--surface").trim();
             context.strokeStyle = node.color;
@@ -9769,18 +11078,54 @@ class KnowledgeCanvasRenderer extends KnowledgeCanvasState {
             this.roundedRect(context, x - width / 2, y - height / 2, width, height, 8 / scale);
             context.fill();
             context.stroke();
-            this.nodeLabelBounds.set(node.id, {
-                left: x - width / 2,
-                right: x + width / 2,
-                top: y - height / 2,
-                bottom: y + height / 2
-            });
         }
+        this.nodeLabelBounds.set(node.id, {
+            left: x - width / 2,
+            right: x + width / 2,
+            top: y - height / 2,
+            bottom: y + height / 2
+        });
         context.fillStyle = node.color;
         context.shadowColor = styles.getPropertyValue("--surface").trim();
         context.shadowBlur = 4 / scale;
         context.lineWidth = 3 / scale;
         context.fillText(label, x, y);
+        context.restore();
+    }
+    /**
+     * Draw a dashed ownership leader when collision avoidance materially separates a label.
+     *
+     * @param {CanvasRenderingContext2D} context Canvas context.
+     * @param {KnowledgeGraphNode} node Owner node.
+     * @param {KnowledgePoint} placement Label center.
+     * @param {number} width Label width in graph coordinates.
+     * @param {number} height Label height in graph coordinates.
+     * @returns {void}
+     */
+    drawNodeLabelLeader(context, node, placement, width, height) {
+        const dx = placement.x - node.x;
+        const dy = placement.y - node.y;
+        const distance = Math.hypot(dx, dy);
+        if (!distance)
+            return;
+        const labelBoundaryRatio = Math.min(Math.abs(dx) > 0 ? (width / 2) / Math.abs(dx) : Number.POSITIVE_INFINITY, Math.abs(dy) > 0 ? (height / 2) / Math.abs(dy) : Number.POSITIVE_INFINITY);
+        const nodeBoundaryRatio = node.radius / distance;
+        const labelX = placement.x - (dx * labelBoundaryRatio);
+        const labelY = placement.y - (dy * labelBoundaryRatio);
+        const nodeX = node.x + (dx * nodeBoundaryRatio);
+        const nodeY = node.y + (dy * nodeBoundaryRatio);
+        if (Math.hypot(labelX - nodeX, labelY - nodeY) * this.viewport.scale < 8)
+            return;
+        context.save();
+        context.beginPath();
+        context.moveTo(nodeX, nodeY);
+        context.lineTo(labelX, labelY);
+        context.strokeStyle = node.color;
+        context.globalAlpha = 0.58;
+        context.lineWidth = 1 / this.viewport.scale;
+        context.setLineDash([4 / this.viewport.scale, 4 / this.viewport.scale]);
+        context.lineCap = "round";
+        context.stroke();
         context.restore();
     }
     /**
@@ -9848,7 +11193,7 @@ class KnowledgeCanvasRenderer extends KnowledgeCanvasState {
 }
 
 cache=(()=>{return { KnowledgeCanvasRenderer: KnowledgeCanvasRenderer };})();return cache;};})();
-const __brainExplorerModule33=(()=>{let cache;return()=>{if(cache)return cache;
+const __brainExplorerModule36=(()=>{let cache;return()=>{if(cache)return cache;
 
 /**
  * State-bearing base contract for Knowledge canvas presentation collaborators.
@@ -10090,6 +11435,51 @@ class KnowledgeCanvasState extends HTMLElement {
      */
     selectedTreePath = "";
     /**
+     * Whether the source tree is projected from one filtered node as its sole root.
+     * @type {boolean}
+     */
+    treeFilterActive = false;
+    /**
+     * Whether one tree click is visually emphasizing a subset without filtering it.
+     * @type {boolean}
+     */
+    treeHighlightActive = false;
+    /**
+     * Node identifiers emphasized by the current non-structural tree selection.
+     * @type {Set<string>}
+     */
+    treeHighlightNodeIds = new Set();
+    /**
+     * Edge identifiers emphasized by the current non-structural tree selection.
+     * @type {Set<string>}
+     */
+    treeHighlightEdgeIds = new Set();
+    /**
+     * Domain selected for visual emphasis.
+     * @type {string}
+     */
+    highlightDomain = "all";
+    /**
+     * Scope selected for visual emphasis.
+     * @type {KnowledgeScope | ""}
+     */
+    highlightScope = "all";
+    /**
+     * Source kind selected for visual emphasis.
+     * @type {KnowledgeSourceKind | ""}
+     */
+    highlightSourceKind = "";
+    /**
+     * Canonical source path selected for visual emphasis.
+     * @type {string}
+     */
+    highlightSourcePath = "";
+    /**
+     * Visual type selected for emphasis.
+     * @type {KnowledgeVisualType | ""}
+     */
+    highlightVisualType = "";
+    /**
      * Stores the shared Knowledge canvas sourc ath state used by rendering and interaction collaborators.
      * @type {string}
      */
@@ -10142,15 +11532,17 @@ class KnowledgeCanvasState extends HTMLElement {
 }
 
 cache=(()=>{return { KnowledgeCanvasState: KnowledgeCanvasState };})();return cache;};})();
-const __brainExplorerModule34=(()=>{let cache;return()=>{if(cache)return cache;
-const { escapeHtml, optionTags, renderMarkdown } = __brainExplorerModule4();
-const { icon } = __brainExplorerModule5();
-const { StructureTree } = __brainExplorerModule9();
-const { logsRouteTarget } = __brainExplorerModule35();
-const { visibleLogEntries } = __brainExplorerModule36();
-const { projectLogDateTree } = __brainExplorerModule37();
-const { logDateTreeSelection, treeDetailNode } = __brainExplorerModule38();
-const { treeSelectDetail } = __brainExplorerModule39();
+const __brainExplorerModule37=(()=>{let cache;return()=>{if(cache)return cache;
+const { escapeHtml, optionTags, renderMarkdown } = __brainExplorerModule6();
+const { icon } = __brainExplorerModule7();
+const { StructureTree } = __brainExplorerModule11();
+const { renderDomainRenameDialog, requestDomainRename } = __brainExplorerModule12();
+const { logsRouteTarget } = __brainExplorerModule38();
+const { visibleLogEntries } = __brainExplorerModule39();
+const { projectLogDateTree } = __brainExplorerModule40();
+const { projectLogEntryGroups } = __brainExplorerModule41();
+const { logDatePeriodSelection } = __brainExplorerModule42();
+const { treeSelectDetail } = __brainExplorerModule43();
 /**
  * @author Yoel David <yoeldcd@gmail.com>
  * @see https://x.com/SAY6267
@@ -10163,6 +11555,9 @@ const { treeSelectDetail } = __brainExplorerModule39();
 
 
 
+
+
+const ALL_LOGS_PATH = "__all_logs__";
 void StructureTree;
 /**
  * LogsView renders log domains as a structural tree plus one focused content pane.
@@ -10254,6 +11649,11 @@ class LogsView extends HTMLElement {
      */
     #selectedDatePath = "";
     /**
+     * Human-readable calendar period currently loaded in date mode.
+     * @type {string}
+     */
+    #selectedPeriodLabel = "";
+    /**
      * Tracks the visibility state of the logs filter interface.
      *
      * @type {boolean}
@@ -10264,19 +11664,13 @@ class LogsView extends HTMLElement {
      *
      * @type {Set<string>}
      */
-    #expandedNodes = new Set();
+    #expandedNodes = new Set([ALL_LOGS_PATH]);
     /**
      * Stores a reference to a pending navigation target within the logs view, or null if no target is queued.
      *
      * @type {LogsRouteTarget | null}
      */
     #pendingTarget = null;
-    /**
-     * Maintains a private collection of image source URLs associated with the logs.
-     *
-     * @type {string[]}
-     */
-    #logsWithImages = [];
     /**
      * Stores the numeric identifier of the active polling timer used to trigger log refreshes.
      *
@@ -10298,8 +11692,34 @@ class LogsView extends HTMLElement {
     set context(context) {
         this.#api = context.api;
         this.#state = context.state;
-        this.#pendingTarget = logsRouteTarget(this.#state.consumeRouteTarget("logs")) || this.#pendingTarget;
         this.#loadIndex();
+    }
+    /**
+     * Focus a canonical Logs target after loading its index and entries.
+     *
+     * @param target - Immutable route target payload supplied by AppShell.
+     * @returns A promise that resolves after the native tree node is focused.
+     */
+    async focusTarget(target) {
+        const parsedTarget = logsRouteTarget({ ...target });
+        if (!parsedTarget) {
+            return;
+        }
+        this.#pendingTarget = parsedTarget;
+        await this.#loadIndex();
+        const focusPath = this.#treeMode === "date" ? this.#selectedDatePath : (this.#selectedDomain || ALL_LOGS_PATH);
+        const treeNode = Array.from(this.querySelectorAll("[data-tree-path]"))
+            .find(node => node.getAttribute("data-tree-path") === focusPath);
+        treeNode?.focus();
+        const targetEntry = Array.from(this.querySelectorAll("[data-log-entry]"))
+            .find(entry => entry.dataset.logDomain === (target.domain || "")
+            && entry.dataset.logDate === (target.date || target.from || "")
+            && entry.dataset.logTime === (target.time || target.hourFrom || ""));
+        if (targetEntry) {
+            targetEntry.open = true;
+            targetEntry.querySelector(".log-entry-summary")?.focus();
+            targetEntry.scrollIntoView({ block: "center" });
+        }
     }
     /**
      * Initialize DOM.
@@ -10354,7 +11774,7 @@ class LogsView extends HTMLElement {
                 return;
             }
             this.#indexEntries = nextIndexEntries;
-            if (!this.#logEntries.length || !this.#selectedDomain) {
+            if (!this.#logEntries.length) {
                 this.#state?.setLastResult(indexResult);
                 this.#render();
                 return;
@@ -10367,10 +11787,8 @@ class LogsView extends HTMLElement {
                 to: this.#to
             }, { forceRefresh: true, silent: true });
             const nextLogEntries = logsResult.data?.entries || [];
-            const nextImages = logsResult.hasImages || [];
             this.#state?.setLastResult(logsResult);
             this.#logEntries = nextLogEntries;
-            this.#logsWithImages = nextImages;
             this.#render();
         }
         finally {
@@ -10391,12 +11809,23 @@ class LogsView extends HTMLElement {
         const result = await this.#api.logIndex({}, { forceRefresh });
         this.#state?.setLastResult(result);
         this.#indexEntries = result.data?.entries || [];
-        const domains = this.#domains();
-        this.#selectedDomain = this.#selectedDomain || domains[0]?.path || "";
+        if (this.#treeMode === "date" && !this.#expandedNodes.size) {
+            const newestPeriod = this.#dateTreeNodes()[0];
+            if (newestPeriod)
+                this.#expandedNodes.add(newestPeriod.path);
+        }
+        else if (this.#treeMode === "domain") {
+            this.#expandedNodes.add(ALL_LOGS_PATH);
+        }
+        const initialLoad = !this.#selectedDomain && !this.#logEntries.length;
         if (this.#selectedDomain) {
             this.#expandAncestors(this.#selectedDomain);
         }
         if (await this.#applyPendingTarget()) {
+            return;
+        }
+        if (initialLoad) {
+            await this.#loadLogs(forceRefresh, false);
             return;
         }
         this.#render();
@@ -10407,7 +11836,7 @@ class LogsView extends HTMLElement {
      * @returns {Promise<boolean>} True when a target was consumed.
      */
     async #applyPendingTarget() {
-        const target = this.#pendingTarget || logsRouteTarget(this.#state?.consumeRouteTarget("logs") ?? null);
+        const target = this.#pendingTarget;
         this.#pendingTarget = null;
         if (!target) {
             return false;
@@ -10445,7 +11874,6 @@ class LogsView extends HTMLElement {
             to: this.#to
         }, { forceRefresh });
         this.#state?.setLastResult(result);
-        this.#logsWithImages = result.hasImages || [];
         this.#logEntries = result.data?.entries || [];
         this.#render();
     }
@@ -10481,8 +11909,8 @@ class LogsView extends HTMLElement {
                     </aside>
                     <main class="structure-content">
                         <div class="content-head logs-head">
-                            <strong>${escapeHtml(this.#selectedDomain || "Log index")}</strong>
-                            <span>${escapeHtml(this.#logEntries.length ? `${entries.length} entries` : (selectedRecord?.date ? "Indexed entry" : "Select a domain"))}</span>
+                            <strong>${escapeHtml(this.#treeMode === "date" && this.#selectedPeriodLabel ? this.#selectedPeriodLabel : (this.#selectedDomain || "All logs"))}</strong>
+                            <span>${escapeHtml(this.#logEntries.length ? `${entries.length} entries` : (selectedRecord?.date ? "Indexed entry" : "No logs"))}</span>
                             <details class="action-menu filter-menu" ${this.#filtersOpen ? "open" : ""}>
                                 <summary class="compact-action">${icon("filter")}<span>Filters</span></summary>
                                 <div class="action-menu-panel filter-menu-panel">
@@ -10504,6 +11932,7 @@ class LogsView extends HTMLElement {
                     </main>
                 </div>
             </section>
+            ${renderDomainRenameDialog("logs-domain-rename-dialog")}
         `;
         this.#bindEvents();
         this.#configureTree();
@@ -10518,13 +11947,18 @@ class LogsView extends HTMLElement {
         if (!entries.length) {
             return `<p class="empty-state">No entries match these filters.</p>`;
         }
-        return entries.map(entry => `
-            <details class="log-entry-card">
-                <summary class="log-entry-summary">
-                    <time class="log-date-badge">
-                        <strong>${escapeHtml(entry.date)}</strong>
-                        <span>${escapeHtml(entry.time)}</span>
-                    </time>
+        return projectLogEntryGroups(entries, this.#logSeparatorMode()).map(group => `
+            <details class="subdomain-group log-entry-group" open data-separator="${group.mode}">
+                <summary class="subdomain-group-header">
+                    ${icon("chevronRight")}<strong>${escapeHtml(group.label)}</strong>
+                    <span class="subdomain-task-count">(${group.entries.length} entries)</span>
+                    <span class="subdomain-line-separator"></span>
+                </summary>
+                <div class="subdomain-group-content">
+                ${group.entries.map(entry => `
+            <details class="log-entry-card" data-log-entry data-log-domain="${escapeHtml(entry.domain || this.#selectedDomain || "logs")}" data-log-date="${escapeHtml(entry.date)}" data-log-time="${escapeHtml(entry.time)}">
+                <summary class="log-entry-summary" tabindex="-1">
+                    <span class="log-entry-chevron">${icon("chevronDown")}</span>
                     <span class="log-entry-heading">
                         <strong>${escapeHtml(entry.title)}</strong>
                         <span class="log-entry-tags">
@@ -10533,35 +11967,31 @@ class LogsView extends HTMLElement {
                             <span>${escapeHtml(entry.changeType || "registro")}</span>
                         </span>
                     </span>
-                    <span class="log-entry-chevron">${icon("chevronDown")}</span>
+                    <time class="log-date-badge" datetime="${escapeHtml(`${entry.date} ${entry.time}`)}">${escapeHtml(entry.time)}</time>
                 </summary>
                 <div class="log-entry-body">
                     ${entry.why ? `<section><h2>Why</h2><div>${renderMarkdown(entry.why)}</div></section>` : ""}
                     ${entry.description ? `<section><h2>Description</h2><div>${renderMarkdown(entry.description)}</div></section>` : ""}
                     ${entry.impact ? `<section><h2>Impact</h2><div>${renderMarkdown(entry.impact)}</div></section>` : ""}
-                    ${this.#renderPictures(entry.pictures)}
+                </div>
+            </details>
+                `).join("")}
                 </div>
             </details>
         `).join("");
     }
     /**
-     * Render image attachments referenced by one log entry.
+     * Select domain grouping for superdomains and date grouping for terminal or ranged queries.
      *
-     * @param {string[]} pictures Safe workspace picture file names.
-     * @returns {string} Attachment gallery HTML.
+     * @returns {"domain" | "date"} Separator dimension matching the active log scope.
      */
-    #renderPictures(pictures = []) {
-        if (!pictures.length) {
-            return "";
-        }
-        return `
-            <div class="log-entry-media" aria-label="Attached images">
-                ${pictures.map(name => {
-            const source = `/api/logs/image?name=${encodeURIComponent(name)}`;
-            return `<a href="${source}" target="_blank" rel="noopener" title="Open attached image"><img src="${source}" alt="Attached image ${escapeHtml(name)}"></a>`;
-        }).join("")}
-            </div>
-        `;
+    #logSeparatorMode() {
+        if (this.#from || this.#to || this.#treeMode === "date")
+            return "date";
+        if (!this.#selectedDomain)
+            return "domain";
+        const hasSubdomain = this.#indexEntries.some(entry => String(entry.domain || "").startsWith(`${this.#selectedDomain}.`));
+        return hasSubdomain ? "domain" : "date";
     }
     /**
      * Parse, sort, and filter log entries.
@@ -10574,8 +12004,7 @@ class LogsView extends HTMLElement {
             selectedDomain: this.#selectedDomain,
             hourFrom: this.#hourFrom,
             hourTo: this.#hourTo,
-            sortOrder: this.#sortOrder,
-            logsWithImages: this.#logsWithImages
+            sortOrder: this.#sortOrder
         });
     }
     /**
@@ -10625,9 +12054,9 @@ class LogsView extends HTMLElement {
         }
         treeElement.model = {
             nodes: this.#treeNodes(),
-            selectedPath: this.#treeMode === "date" ? this.#selectedDatePath : this.#selectedDomain,
+            selectedPath: this.#treeMode === "date" ? this.#selectedDatePath : (this.#selectedDomain || ALL_LOGS_PATH),
             expandedPaths: this.#expandedNodes,
-            toggleOnBranchSelect: true,
+            toggleOnBranchSelect: false,
             title: "Logs",
             toolbarActions: [
                 { id: "tree-domain", label: "Group by domain", icon: "folder", active: this.#treeMode === "domain" },
@@ -10683,13 +12112,22 @@ class LogsView extends HTMLElement {
                 presentation: isEntry ? "log" : "default",
                 ...(!isEntry ? { count: this.#countTreeEntries(node) } : {}),
                 children,
-                actions: []
+                actions: isEntry ? [] : [{ id: "rename-domain", label: "Rename domain", icon: "edit" }]
             };
         };
-        return Array.from(this.#buildTree().children.values())
+        const children = Array.from(this.#buildTree().children.values())
             .filter(node => this.#matchesTree(node))
             .sort((left, right) => left.label.localeCompare(right.label))
             .map(toNode);
+        return [{
+                id: ALL_LOGS_PATH,
+                path: ALL_LOGS_PATH,
+                label: "All logs",
+                count: this.#indexEntries.length,
+                presentation: "default",
+                children,
+                actions: []
+            }];
     }
     /**
      * Group the complete log index into year, month, day, and entry nodes.
@@ -10721,23 +12159,34 @@ class LogsView extends HTMLElement {
         if (!(event instanceof CustomEvent))
             return;
         const selection = treeSelectDetail(event.detail);
-        if (!selection || selection.branch) {
+        if (!selection) {
             return;
         }
-        const dateNode = logDateTreeSelection(treeDetailNode(event.detail));
-        if (this.#treeMode === "date" && dateNode) {
+        if (selection.clickedCaret)
+            return;
+        const period = this.#treeMode === "date" ? logDatePeriodSelection(selection.path) : null;
+        if (period) {
             this.#selectedDatePath = selection.path;
-            this.#selectedDomain = dateNode.domain;
-            this.#from = dateNode.date;
-            this.#to = dateNode.date;
-            this.#hourFrom = dateNode.time;
-            this.#hourTo = dateNode.time;
-            await this.#loadLogs(true, false);
+            this.#expandDatePath(selection.path, true);
+            this.#selectedPeriodLabel = period.label;
+            this.#selectedDomain = "";
+            this.#from = period.from;
+            this.#to = period.to;
+            this.#hourFrom = "";
+            this.#hourTo = "";
+            await this.#loadLogs(false, false);
             return;
         }
-        const alreadySelected = selection.path === this.#selectedDomain;
-        this.#selectedDomain = selection.path;
+        const selectedDomain = selection.path === ALL_LOGS_PATH ? "" : selection.path;
+        const alreadySelected = selectedDomain === this.#selectedDomain;
+        this.#selectedDomain = selectedDomain;
+        this.#from = "";
+        this.#to = "";
+        this.#hourFrom = "";
+        this.#hourTo = "";
         this.#expandAncestors(selection.path);
+        if (selection.branch)
+            this.#expandedNodes.add(selection.path);
         const record = this.#recordForPath(selection.path);
         if (record?.date) {
             this.#from = record.date;
@@ -10749,7 +12198,7 @@ class LogsView extends HTMLElement {
             this.#render();
             return;
         }
-        await this.#loadLogs(true, !record?.date);
+        await this.#loadLogs(false, !record?.date);
     }
     /**
      * Handle a Logs tree toolbar action.
@@ -10766,7 +12215,20 @@ class LogsView extends HTMLElement {
                 return;
             }
             this.#treeMode = nextMode;
+            this.#selectedPeriodLabel = "";
             this.#expandedNodes.clear();
+            if (nextMode === "domain") {
+                this.#expandedNodes.add(ALL_LOGS_PATH);
+                this.#expandAncestors(this.#selectedDomain);
+            }
+            else if (this.#selectedDatePath) {
+                this.#expandDatePath(this.#selectedDatePath, true);
+            }
+            else {
+                const newestPeriod = this.#dateTreeNodes()[0];
+                if (newestPeriod)
+                    this.#expandedNodes.add(newestPeriod.path);
+            }
             this.#render();
             return;
         }
@@ -10780,11 +12242,24 @@ class LogsView extends HTMLElement {
      * @param {CustomEvent} event Tree event.
      * @returns {void}
      */
-    #onTreeAction(event) {
+    async #onTreeAction(event) {
         if (!(event instanceof CustomEvent))
             return;
         const node = event.detail.node;
         if (!node?.path) {
+            return;
+        }
+        if (event.detail.action === "rename-domain" && this.#treeMode === "domain") {
+            const target = await requestDomainRename(this, "logs-domain-rename-dialog", node.path);
+            if (!target || !this.#api)
+                return;
+            const result = await this.#api.renameLogDomain({ source: node.path, target });
+            if (!result.ok)
+                return;
+            this.#expandedNodes = remapExpandedDomains(this.#expandedNodes, node.path, target);
+            this.#selectedDomain = target;
+            await this.#loadIndex(true);
+            await this.#loadLogs(true, true);
             return;
         }
         this.#selectedDomain = node.path;
@@ -10913,6 +12388,24 @@ class LogsView extends HTMLElement {
         }
     }
     /**
+     * Expand every calendar ancestor represented by a synthetic date-tree path.
+     * @param {string} path Selected `logs-date:YYYY[-MM[-DD]]` path.
+     * @param {boolean} includeSelf Whether the selected branch should reveal its direct children.
+     */
+    #expandDatePath(path, includeSelf) {
+        const match = String(path).match(/^logs-date:(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?$/);
+        if (!match)
+            return;
+        const year = match[1] ?? "";
+        const month = match[2] ?? "";
+        const day = match[3] ?? "";
+        this.#expandedNodes.add(`logs-date:${year}`);
+        if (month)
+            this.#expandedNodes.add(`logs-date:${year}-${month}`);
+        if (includeSelf && day)
+            this.#expandedNodes.add(`logs-date:${year}-${month}-${day}`);
+    }
+    /**
      * Bind DOM events.
      *
      * @returns {void}
@@ -10978,10 +12471,25 @@ class LogsView extends HTMLElement {
         }));
     }
 }
+/**
+ * Preserve expanded tree state after moving one complete domain subtree.
+ *
+ * @param {Set<string>} expanded Existing expanded domain paths.
+ * @param {string} source Previous subtree root.
+ * @param {string} target Replacement subtree root.
+ * @returns {Set<string>} Expanded paths rewritten to the new canonical prefix.
+ */
+function remapExpandedDomains(expanded, source, target) {
+    return new Set(Array.from(expanded, path => {
+        if (path === source)
+            return target;
+        return path.startsWith(`${source}.`) ? `${target}${path.slice(source.length)}` : path;
+    }));
+}
 customElements.define(LogsView.selector, LogsView);
 
 cache=(()=>{return { LogsView: LogsView };})();return cache;};})();
-const __brainExplorerModule35=(()=>{let cache;return()=>{if(cache)return cache;
+const __brainExplorerModule38=(()=>{let cache;return()=>{if(cache)return cache;
 
 /**
  * Runtime narrowing for route state entering the Logs presentation feature.
@@ -11028,13 +12536,13 @@ function logsRouteTarget(value) {
 }
 
 cache=(()=>{return { logsRouteTarget: logsRouteTarget };})();return cache;};})();
-const __brainExplorerModule36=(()=>{let cache;return()=>{if(cache)return cache;
+const __brainExplorerModule39=(()=>{let cache;return()=>{if(cache)return cache;
 
 /**
  * Converts transport-level log records into sorted, filterable presentation entries.
  *
- * This module owns deterministic parsing and picture-reference discovery so the Logs
- * Web Component remains responsible only for rendering and interaction orchestration.
+ * This module owns deterministic parsing while the Logs Web Component remains
+ * responsible only for rendering and interaction orchestration.
  *
  * @module presentation/logs/formatters/log-entry-parser
  */
@@ -11048,7 +12556,7 @@ function visibleLogEntries(input) {
     const earliestMinute = timeInputMinute(input.hourFrom);
     const latestMinute = timeInputMinute(input.hourTo);
     return input.entries
-        .map((entry, index) => parsedLogEntry(entry, index, input.selectedDomain, input.logsWithImages))
+        .map((entry, index) => parsedLogEntry(entry, index, input.selectedDomain))
         .filter(entry => minuteIsWithinRange(entry.hourValue, earliestMinute, latestMinute))
         .sort((left, right) => {
         const delta = left.timestamp - right.timestamp;
@@ -11061,13 +12569,11 @@ function visibleLogEntries(input) {
  * @param {LogEntryPayload} entry Structured server record to normalize.
  * @param {number} index Stable array position used to build a local render identity.
  * @param {string} selectedDomain Domain fallback for records that omit their own domain.
- * @param {readonly string[]} logsWithImages Task ids known to own a backlog reference image.
- * @returns {ParsedLogEntryViewModel} Fully populated presentation entry with derived time and picture metadata.
+ * @returns {ParsedLogEntryViewModel} Fully populated presentation entry with derived time metadata.
  */
-function parsedLogEntry(entry, index, selectedDomain, logsWithImages) {
+function parsedLogEntry(entry, index, selectedDomain) {
     const [date = "", ...timeParts] = String(entry.timestamp || "").split(" ");
     const time = timeParts.join(" ");
-    const searchableText = [entry.title, entry.why, entry.description, entry.impact].join("\n");
     return {
         id: `log-${index}`,
         date,
@@ -11080,31 +12586,8 @@ function parsedLogEntry(entry, index, selectedDomain, logsWithImages) {
         changeType: entry.change_type || "",
         why: entry.why || "",
         description: entry.description || "",
-        impact: entry.impact || "",
-        pictures: pictureNames(searchableText, logsWithImages)
+        impact: entry.impact || ""
     };
-}
-/**
- * Extract unique safe picture filenames referenced by Markdown fields or task ids.
- *
- * @param {string} source Concatenated Markdown content belonging to one log record.
- * @param {readonly string[]} logsWithImages Task identifiers known to have a generated backlog picture.
- * @returns {string[]} Deduplicated filenames without directory traversal segments.
- */
-function pictureNames(source, logsWithImages) {
-    const names = new Set();
-    const matcher = /(?:\$agent[\\/])?pictures[\\/]([A-Za-z0-9][A-Za-z0-9._-]*\.(?:png|jpe?g|gif|webp))/gi;
-    for (const match of String(source || "").matchAll(matcher)) {
-        const name = match[1];
-        if (name)
-            names.add(name);
-    }
-    for (const match of String(source || "").matchAll(/#?(t\d+)\b/gi)) {
-        const taskId = (match[1] ?? "").toLowerCase();
-        if (logsWithImages.includes(taskId))
-            names.add(`backlog-pic-${taskId}.png`);
-    }
-    return [...names];
 }
 /**
  * Determine whether a minute value falls inside an optional inclusive range.
@@ -11165,8 +12648,8 @@ function sortableTimestamp(date, time) {
 }
 
 cache=(()=>{return { visibleLogEntries: visibleLogEntries, logClockMinute: logClockMinute };})();return cache;};})();
-const __brainExplorerModule37=(()=>{let cache;return()=>{if(cache)return cache;
-const { logClockMinute } = __brainExplorerModule36();
+const __brainExplorerModule40=(()=>{let cache;return()=>{if(cache)return cache;
+
 /**
  * Projects the flat log index into a year, month, day, and entry hierarchy.
  *
@@ -11175,7 +12658,6 @@ const { logClockMinute } = __brainExplorerModule36();
  *
  * @module presentation/logs/projectors/log-date-tree-projector
  */
-
 /**
  * Month labels indexed by their one-based numeric month value.
  */
@@ -11194,7 +12676,7 @@ const LOG_MONTH_LABELS = [
  */
 function projectLogDateTree(entries) {
     const years = new Map();
-    entries.forEach((entry, index) => appendDateEntry(years, entry, index));
+    entries.forEach(entry => appendDateEntry(years, entry));
     return Array.from(years.values())
         .sort((left, right) => right.id.localeCompare(left.id))
         .map(projectDateGroup);
@@ -11204,34 +12686,20 @@ function projectLogDateTree(entries) {
  *
  * @param {Map<string, LogDateGroup>} years Mutable top-level accumulator map owned by one projection call.
  * @param {LogEntryPayload} entry Structured log-index entry to classify.
- * @param {number} index Stable source position used to disambiguate render identities.
  */
-function appendDateEntry(years, entry, index) {
-    const [date = "", ...timeParts] = String(entry.timestamp || "").split(" ");
+function appendDateEntry(years, entry) {
+    const [date = ""] = String(entry.timestamp || "").split(" ");
     const match = date.match(/^(\d{2})-(\d{2})-(\d{4})$/);
     if (!match)
         return;
     const day = match[1] ?? "";
     const month = match[2] ?? "";
     const year = match[3] ?? "";
-    const time = timeParts.join(" ");
     const monthLabel = LOG_MONTH_LABELS[Number(month)] || month;
     const yearNode = ensureDateGroup(years, `logs-date:${year}`, year, "folder");
     const monthNode = ensureDateGroup(yearNode.children, `logs-date:${year}-${month}`, monthLabel, "folder");
     const dayNode = ensureDateGroup(monthNode.children, `logs-date:${year}-${month}-${day}`, `${day} ${monthLabel}`, "clock");
-    dayNode.entries.push({
-        id: `logs-date-entry:${index}:${date}:${time}:${entry.domain || "logs"}`,
-        path: `logs-date-entry:${date}:${time}:${entry.domain || "logs"}`,
-        label: entry.title || "Log entry",
-        timestamp: time,
-        sortKey: String(logClockMinute(time)).padStart(4, "0"),
-        detail: entry.domain || "logs",
-        presentation: "log",
-        domain: entry.domain || "",
-        date,
-        time,
-        children: []
-    });
+    dayNode.entryCount += 1;
 }
 /**
  * Create or retrieve one sibling date-group accumulator.
@@ -11246,7 +12714,7 @@ function ensureDateGroup(groups, id, label, icon) {
     const existing = groups.get(id);
     if (existing)
         return existing;
-    const created = { id, label, icon, children: new Map(), entries: [] };
+    const created = { id, label, icon, children: new Map(), entryCount: 0 };
     groups.set(id, created);
     return created;
 }
@@ -11260,7 +12728,6 @@ function projectDateGroup(group) {
     const groups = Array.from(group.children.values())
         .sort((left, right) => right.id.localeCompare(left.id))
         .map(projectDateGroup);
-    const entries = [...group.entries].sort((left, right) => right.timestamp.localeCompare(left.timestamp));
     return {
         id: group.id,
         path: group.id,
@@ -11269,7 +12736,8 @@ function projectDateGroup(group) {
         icon: group.icon,
         count: countDateEntries(group),
         sortDirection: "desc",
-        children: [...groups, ...entries]
+        folder: groups.length > 0,
+        children: groups
     };
 }
 /**
@@ -11279,41 +12747,85 @@ function projectDateGroup(group) {
  * @returns {number} Total number of terminal entries owned by the group hierarchy.
  */
 function countDateEntries(group) {
-    return group.entries.length + Array.from(group.children.values())
+    return group.entryCount + Array.from(group.children.values())
         .reduce((total, child) => total + countDateEntries(child), 0);
 }
 
 cache=(()=>{return { projectLogDateTree: projectLogDateTree };})();return cache;};})();
-const __brainExplorerModule38=(()=>{let cache;return()=>{if(cache)return cache;
+const __brainExplorerModule41=(()=>{let cache;return()=>{if(cache)return cache;
 
 /**
- * Narrow the untrusted node attached to a shared tree-selection event.
+ * Project chronological log entries into functional separator groups.
  *
- * @param {unknown} value Unknown `node` member emitted across the Custom Event boundary.
- * @returns {LogDateTreeSelection | null} Validated date-tree metadata, or `null` when any required field is absent.
+ * @module presentation/logs/projectors/log-entry-group-projector
  */
-function logDateTreeSelection(value) {
-    if (typeof value !== "object" || value === null || Array.isArray(value))
-        return null;
-    const node = Object.fromEntries(Object.entries(value));
-    if (typeof node.domain !== "string" || typeof node.date !== "string" || typeof node.time !== "string")
-        return null;
-    return { domain: node.domain, date: node.date, time: node.time };
-}
 /**
- * Read the optional node member from an untrusted tree event detail object.
+ * Group entries without losing their chronological order inside each group.
+ * Domain groups are alphabetical; date groups preserve the date order already
+ * established by the active ascending or descending log projection.
  *
- * @param {unknown} value Unknown Custom Event detail value.
- * @returns {unknown} Raw node member for subsequent feature-specific validation.
+ * @param {readonly ParsedLogEntryViewModel[]} entries Chronologically projected log entries.
+ * @param {LogEntryGroupMode} mode Functional separator dimension.
+ * @returns {LogEntryGroup[]} Ordered groups ready for rendering.
  */
-function treeDetailNode(value) {
-    if (typeof value !== "object" || value === null || Array.isArray(value))
-        return undefined;
-    return Object.fromEntries(Object.entries(value)).node;
+function projectLogEntryGroups(entries, mode) {
+    const groups = new Map();
+    for (const entry of entries) {
+        const key = mode === "domain" ? (entry.domain || "logs") : (entry.date || "Unknown date");
+        const group = groups.get(key) ?? { key, label: key, mode, entries: [] };
+        group.entries.push(entry);
+        groups.set(key, group);
+    }
+    const projected = [...groups.values()];
+    return mode === "domain"
+        ? projected.sort((left, right) => left.label.localeCompare(right.label))
+        : projected;
 }
 
-cache=(()=>{return { logDateTreeSelection: logDateTreeSelection, treeDetailNode: treeDetailNode };})();return cache;};})();
-const __brainExplorerModule39=(()=>{let cache;return()=>{if(cache)return cache;
+cache=(()=>{return { projectLogEntryGroups: projectLogEntryGroups };})();return cache;};})();
+const __brainExplorerModule42=(()=>{let cache;return()=>{if(cache)return cache;
+
+const MONTH_LABELS = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+/**
+ * Convert a year, month, or day tree path into the CLI date-range contract.
+ *
+ * @param {string} path Synthetic path emitted by the temporal tree.
+ * @returns {LogDatePeriodSelection | null} Inclusive period boundaries, or null for non-period nodes.
+ */
+function logDatePeriodSelection(path) {
+    const match = String(path).match(/^logs-date:(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?$/);
+    if (!match)
+        return null;
+    const year = Number(match[1]);
+    const month = match[2] ? Number(match[2]) : null;
+    const day = match[3] ? Number(match[3]) : null;
+    if (!Number.isInteger(year) || year < 1 || (month !== null && (month < 1 || month > 12)))
+        return null;
+    if (day !== null) {
+        const lastDay = new Date(year, month ?? 0, 0).getDate();
+        if (day < 1 || day > lastDay || month === null)
+            return null;
+        const date = formatDate(day, month, year);
+        return { from: date, to: date, label: `${String(day).padStart(2, "0")} ${MONTH_LABELS[month]} ${year}` };
+    }
+    if (month !== null) {
+        return { from: formatDate(1, month, year), to: formatDate(new Date(year, month, 0).getDate(), month, year), label: `${MONTH_LABELS[month]} ${year}` };
+    }
+    return { from: formatDate(1, 1, year), to: formatDate(31, 12, year), label: String(year) };
+}
+/**
+ * Format one calendar date for the Brain CLI.
+ * @param {number} day One-based day of month.
+ * @param {number} month One-based month.
+ * @param {number} year Four-digit year.
+ * @returns {string} Date formatted as `DD-MM-YYYY`.
+ */
+function formatDate(day, month, year) {
+    return `${String(day).padStart(2, "0")}-${String(month).padStart(2, "0")}-${year}`;
+}
+
+cache=(()=>{return { logDatePeriodSelection: logDatePeriodSelection };})();return cache;};})();
+const __brainExplorerModule43=(()=>{let cache;return()=>{if(cache)return cache;
 
 /**
  * Shared, framework-neutral contracts for the reusable hierarchical tree component.
@@ -11379,14 +12891,14 @@ function treeSearchDetail(value) {
 }
 
 cache=(()=>{return { treeSelectDetail: treeSelectDetail, treeActionDetail: treeActionDetail, treeSearchDetail: treeSearchDetail };})();return cache;};})();
-const __brainExplorerModule40=(()=>{let cache;return()=>{if(cache)return cache;
-const { compactLabel, escapeHtml, renderMarkdown } = __brainExplorerModule4();
-const { icon } = __brainExplorerModule5();
-const { StructureTree } = __brainExplorerModule9();
-const { treeActionDetail, treeSearchDetail, treeSelectDetail } = __brainExplorerModule39();
-const { memoryTarget } = __brainExplorerModule41();
-const { MemoryTreeProjector } = __brainExplorerModule42();
-const { renderMemoryLoadingState } = __brainExplorerModule43();
+const __brainExplorerModule44=(()=>{let cache;return()=>{if(cache)return cache;
+const { compactLabel, escapeHtml, filterRenderedContent, renderMarkdown } = __brainExplorerModule6();
+const { icon } = __brainExplorerModule7();
+const { StructureTree } = __brainExplorerModule11();
+const { treeActionDetail, treeSearchDetail, treeSelectDetail } = __brainExplorerModule43();
+const { memoryTarget } = __brainExplorerModule45();
+const { MemoryTreeProjector } = __brainExplorerModule46();
+const { renderMemoryLoadingState } = __brainExplorerModule47();
 /**
  * @author Yoel David <yoeldcd@gmail.com>
  * @see https://x.com/SAY6267
@@ -11497,7 +13009,6 @@ class MemoryView extends HTMLElement {
     set context(context) {
         this.#api = context.api;
         this.#state = context.state;
-        this.#pendingTarget = memoryTarget(this.#state.consumeRouteTarget("memory")) || this.#pendingTarget;
         this.#loadTree();
     }
     /**
@@ -11541,7 +13052,7 @@ class MemoryView extends HTMLElement {
      * @returns {Promise<boolean>} True when a route target was consumed.
      */
     async #applyPendingTarget(forceRefresh = false) {
-        const target = this.#pendingTarget || memoryTarget(this.#state.consumeRouteTarget("memory"));
+        const target = this.#pendingTarget;
         this.#pendingTarget = null;
         if (!target) {
             return false;
@@ -11568,6 +13079,29 @@ class MemoryView extends HTMLElement {
      * @param {boolean} forceRefresh Whether to bypass API cache.
      * @returns {Promise<void>} Resolves after render.
      */
+    async focusTarget(target) {
+        const parsedTarget = memoryTarget({ ...target });
+        if (!parsedTarget) {
+            return;
+        }
+        while (this.#loadingTree) {
+            await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+        }
+        if (parsedTarget.path) {
+            await this.#loadEntry(parsedTarget.path, parsedTarget.mode || "read");
+        }
+        else if (parsedTarget.domain) {
+            this.#selectedDomain = parsedTarget.domain;
+            this.#selectedPath = "";
+            this.#expandAncestors(parsedTarget.domain);
+            this.#mode = parsedTarget.mode || "browse";
+            this.#render();
+        }
+        const focusPath = parsedTarget.path || parsedTarget.domain || "";
+        const treeNode = Array.from(this.querySelectorAll("[data-node-path]")).find((node) => node.getAttribute("data-node-path") === focusPath);
+        treeNode?.focus({ preventScroll: true });
+        treeNode?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
     async #loadEntry(path, mode = "read", forceRefresh = false) {
         this.#selectedPath = path;
         this.#selectedDomain = this.#treeProjector().parentPath(path) || path.split(".")[0] || this.#selectedDomain;
@@ -11698,6 +13232,9 @@ class MemoryView extends HTMLElement {
      *
      * @returns {void}
      */
+    applyReactiveContentFilter(query) {
+        filterRenderedContent(this, query, ".structure-content .entry-row, .structure-content .domain-tile", ".structure-content");
+    }
     #render() {
         this.innerHTML = `
             <section class="page-surface memory-console">
@@ -11761,7 +13298,7 @@ class MemoryView extends HTMLElement {
         const action = isBranch ? "select-domain" : "select-entry";
         const count = isBranch ? `${this.#treeProjector().leafPathsUnder(item.path).length} entries` : "Entry";
         return `
-            <button class="entry-row ${item.path === this.#selectedPath ? "is-active" : ""}" data-action="${action}" data-node-path="${escapeHtml(item.path)}">
+            <button class="entry-row ${item.path === this.#selectedPath ? "is-active" : ""}" data-action="${action}" data-node-path="${escapeHtml(item.path)}" data-reactive-content="${escapeHtml(item.path)}">
                 ${icon(isBranch ? "folder" : "document")}
                 <span>
                     <strong>${escapeHtml(item.label)}</strong>
@@ -11817,7 +13354,7 @@ class MemoryView extends HTMLElement {
             </div>
             <div class="domain-grid scroll-list">
                 ${this.#treeProjector().topDomains().map(domain => `
-                    <button class="domain-tile ${domain === this.#selectedDomain ? "is-active" : ""}" data-action="select-domain" data-node-path="${escapeHtml(domain)}">
+                    <button class="domain-tile ${domain === this.#selectedDomain ? "is-active" : ""}" data-action="select-domain" data-node-path="${escapeHtml(domain)}" data-reactive-content="${escapeHtml(domain)}">
                         ${icon("database")}
                         <strong>${escapeHtml(domain)}</strong>
                         <span>${escapeHtml(String(this.#treeProjector().leafPathsUnder(domain).length))} entries</span>
@@ -12095,7 +13632,7 @@ class MemoryView extends HTMLElement {
 customElements.define(MemoryView.selector, MemoryView);
 
 cache=(()=>{return { MemoryView: MemoryView };})();return cache;};})();
-const __brainExplorerModule41=(()=>{let cache;return()=>{if(cache)return cache;
+const __brainExplorerModule45=(()=>{let cache;return()=>{if(cache)return cache;
 
 /**
  * Navigation and tree projection contracts for the Memory presentation feature.
@@ -12129,7 +13666,7 @@ function memoryTarget(value) {
 }
 
 cache=(()=>{return { memoryTarget: memoryTarget };})();return cache;};})();
-const __brainExplorerModule42=(()=>{let cache;return()=>{if(cache)return cache;
+const __brainExplorerModule46=(()=>{let cache;return()=>{if(cache)return cache;
 
 /**
  * Builds and queries the presentation tree derived from dot-notated memory paths.
@@ -12291,8 +13828,8 @@ class MemoryTreeProjector {
 }
 
 cache=(()=>{return { MemoryTreeProjector: MemoryTreeProjector };})();return cache;};})();
-const __brainExplorerModule43=(()=>{let cache;return()=>{if(cache)return cache;
-const { escapeHtml } = __brainExplorerModule4();
+const __brainExplorerModule47=(()=>{let cache;return()=>{if(cache)return cache;
+const { escapeHtml } = __brainExplorerModule6();
 /**
  * Render the inert loading placeholder used by Memory content operations.
  *
@@ -12313,11 +13850,11 @@ function renderMemoryLoadingState(label) {
 
 
 cache=(()=>{return { renderMemoryLoadingState: renderMemoryLoadingState };})();return cache;};})();
-const __brainExplorerModule44=(()=>{let cache;return()=>{if(cache)return cache;
-const { StructureTree } = __brainExplorerModule9();
-const { treeActionDetail, treeSelectDetail } = __brainExplorerModule39();
-const { escapeHtml, renderMarkdown } = __brainExplorerModule4();
-const { icon } = __brainExplorerModule5();
+const __brainExplorerModule48=(()=>{let cache;return()=>{if(cache)return cache;
+const { StructureTree } = __brainExplorerModule11();
+const { treeActionDetail, treeSelectDetail } = __brainExplorerModule43();
+const { escapeHtml, filterRenderedContent, renderMarkdown } = __brainExplorerModule6();
+const { icon } = __brainExplorerModule7();
 /**
  * @author Yoel David <yoeldcd@gmail.com>
  * @see https://x.com/SAY6267
@@ -12326,6 +13863,9 @@ const { icon } = __brainExplorerModule5();
 
 
 
+const VOICE_STATUS_ACTIVE_INTERVAL_MS = 1_500;
+const VOICE_STATUS_IDLE_INTERVAL_MS = 10_000;
+const VOICE_STATUS_HIDDEN_INTERVAL_MS = 60_000;
 /**
  * Browse, inspect, copy, download, and replay persisted voice messages.
  */
@@ -12404,6 +13944,11 @@ class MessagesView extends HTMLElement {
      */
     #statusTimer = null;
     /**
+     * Prevents overlapping voice-status requests when visibility or playback changes.
+     * @type {boolean}
+     */
+    #statusPollInFlight = false;
+    /**
      * Maintains the unique identifier of the currently active speaking entity within the messages view.
      *
      * @type {string}
@@ -12421,6 +13966,10 @@ class MessagesView extends HTMLElement {
      * @type {Set<string>}
      */
     #expandedIds = new Set();
+    /** Message identifiers expanded exclusively to reveal reactive-search matches. */
+    #reactiveExpandedIds = new Set();
+    /** Current global-shell query applied to the mounted message list. */
+    #reactiveQuery = "";
     /**
      * Maintains a unique collection of active path identifiers for expanded nodes within the messages tree view.
      *
@@ -12446,21 +13995,61 @@ class MessagesView extends HTMLElement {
      */
     #pendingTarget = null;
     /**
+     * Resumes status synchronization immediately when the Messages layout becomes visible.
+     * @type {() => void}
+     */
+    #onVisibilityChange = () => {
+        if (!document.hidden)
+            void this.#pollVoiceStatus();
+    };
+    /**
      * Assigns the component context to initialize API and state references, resolves the route target, and triggers initial message loading and voice status polling.
      * @param {ComponentContext} context The component context providing access to the API and state management.
      */
     set context(context) {
         this.#api = context.api;
         this.#state = context.state;
-        this.#pendingTarget = this.#state?.consumeRouteTarget?.("messages") || null;
+        this.#pendingTarget = null;
         void this.#loadMessages();
         void this.#pollVoiceStatus();
     }
     /**
      * Triggers the initial rendering of the component when it is attached to the document DOM.
      */
+    applyReactiveContentFilter(query) {
+        this.#reactiveQuery = query.trim();
+        this.#refreshMessageList();
+    }
+    /**
+     * Focus a canonical message target after session and history data are ready.
+     *
+     * @param {Readonly<Record<string, unknown>>} target - Session and message identifiers.
+     * @returns {Promise<void>} Resolves after the target message is expanded and focused.
+     */
+    async focusTarget(target) {
+        await this.#loadMessages(true);
+        const sessionId = String(target.sessionId || "").trim();
+        const chatId = String(target.chatId || "").trim();
+        const date = String(target.date || "").trim();
+        const messageId = String(target.messageId || "").trim();
+        const targetSession = this.#sessions.find((candidate) => candidate.id === sessionId || (candidate.chatId === chatId && candidate.date === date));
+        if (targetSession && targetSession.id !== this.#selectedSessionId) {
+            this.#selectedSessionId = targetSession.id;
+            this.#expandSessionPath(targetSession);
+            await this.#loadMessages(true);
+        }
+        if (!messageId || !this.#history.some(record => record.id === messageId))
+            return;
+        this.#expandedIds.clear();
+        this.#expandedIds.add(messageId);
+        this.#refreshMessageList();
+        await new Promise(resolve => requestAnimationFrame(() => resolve()));
+        await new Promise(resolve => requestAnimationFrame(() => resolve()));
+        this.#focusMessage(messageId, true);
+    }
     connectedCallback() {
         this.#render();
+        document.addEventListener("visibilitychange", this.#onVisibilityChange);
     }
     /**
      * Performs cleanup by stopping audio playback and clearing active refresh and status timers when the component is removed from the DOM.
@@ -12471,21 +14060,23 @@ class MessagesView extends HTMLElement {
             window.clearTimeout(this.#refreshTimer);
         if (this.#statusTimer !== null)
             window.clearTimeout(this.#statusTimer);
+        document.removeEventListener("visibilitychange", this.#onVisibilityChange);
     }
     /**
      * Synchronize playback controls exclusively from the daemon's latest status.
      */
     async #pollVoiceStatus() {
-        if (!this.#api)
+        if (!this.#api || this.#statusPollInFlight)
             return;
         if (this.#statusTimer !== null)
             window.clearTimeout(this.#statusTimer);
         this.#statusTimer = null;
+        this.#statusPollInFlight = true;
         try {
             const response = await this.#api.getVoiceStatus({ forceRefresh: true, silent: true });
             const activeSpeakId = response.data?.activeSpeakId ?? "";
             const serviceState = response.data?.state ?? "stopped";
-            const playbackActive = ["preparing", "speaking", "muted_replay"].includes(serviceState);
+            const playbackActive = response.data?.playbackActive === true;
             const playingName = playbackActive
                 ? this.#messages.find(message => message.speakId === activeSpeakId)?.name ?? ""
                 : "";
@@ -12495,12 +14086,17 @@ class MessagesView extends HTMLElement {
                 this.#activeSpeakId = activeSpeakId;
                 this.#serviceState = serviceState;
                 this.#playingName = playingName;
-                this.#render();
+                this.#refreshMessageList();
             }
         }
         finally {
+            this.#statusPollInFlight = false;
             if (this.isConnected) {
-                this.#statusTimer = window.setTimeout(() => void this.#pollVoiceStatus(), 750);
+                const playbackActive = ["preparing", "speaking"].includes(this.#serviceState);
+                const interval = document.hidden
+                    ? VOICE_STATUS_HIDDEN_INTERVAL_MS
+                    : (playbackActive ? VOICE_STATUS_ACTIVE_INTERVAL_MS : VOICE_STATUS_IDLE_INTERVAL_MS);
+                this.#statusTimer = window.setTimeout(() => void this.#pollVoiceStatus(), interval);
             }
         }
     }
@@ -12514,17 +14110,16 @@ class MessagesView extends HTMLElement {
         if (this.#refreshTimer !== null)
             window.clearTimeout(this.#refreshTimer);
         this.#refreshTimer = null;
-        if (!silent) {
-            this.#loading = true;
-            this.#render();
-        }
+        this.#loading = !silent;
+        const previousSignature = this.#messageListSignature();
+        let focusLatestId = "";
         try {
             const selected = this.#sessions.find(session => session.id === this.#selectedSessionId);
             const params = selected ? { date: selected.date, chatId: selected.chatId } : {};
             const response = await this.#api.getVoiceMessages(params, { forceRefresh: true, silent });
             this.#messages = response.data?.messages ?? [];
             this.#speaks = response.data?.speaks ?? [];
-            this.#history = response.data?.history ?? [];
+            this.#history = [...(response.data?.history ?? [])].sort(this.#compareMessagesNewestFirst);
             this.#sessions = response.data?.sessions ?? [];
             if (this.#pendingTarget && this.#sessions.length) {
                 const target = this.#pendingTarget;
@@ -12547,11 +14142,29 @@ class MessagesView extends HTMLElement {
                 await this.#loadMessages(true);
                 return;
             }
+            const availableIds = new Set(this.#history.map(record => record.id));
+            this.#expandedIds = new Set([...this.#expandedIds].filter(id => availableIds.has(id)));
+            const latestMessage = this.#history[0];
+            if (!this.#expandedIds.size && latestMessage) {
+                this.#expandedIds.add(latestMessage.id);
+                focusLatestId = latestMessage.id;
+            }
             this.#state?.setLastResult(response);
         }
         finally {
             this.#loading = false;
-            this.#render();
+            if (silent && this.#messageListSignature() !== previousSignature) {
+                this.#refreshMessageList();
+                this.#configureTree();
+                this.#refreshMessageHeader();
+            }
+            else if (!silent) {
+                this.#refreshMessageList();
+                this.#configureTree();
+                this.#refreshMessageHeader();
+            }
+            if (focusLatestId)
+                requestAnimationFrame(() => this.#focusMessage(focusLatestId, true));
             if (this.isConnected)
                 this.#refreshTimer = window.setTimeout(() => void this.#loadMessages(true), 60_000);
         }
@@ -12577,27 +14190,194 @@ class MessagesView extends HTMLElement {
                     </main>
                 </div>
             </section>
+            <dialog id="message-session-name-dialog" class="message-session-name-dialog">
+                <form method="dialog" class="message-session-name-card">
+                    <header class="message-session-name-header">
+                        <span class="message-session-name-icon">${icon("messageCircle")}</span>
+                        <div>
+                            <strong data-role="session-name-title">Rename session</strong>
+                            <small>Create a concise identity for this conversation</small>
+                        </div>
+                        <button class="icon-action" value="cancel" title="Close" aria-label="Close">${icon("close")}</button>
+                    </header>
+                    <label class="message-session-name-field"><span>Canonical name</span>
+                        <input data-role="session-name-input" maxlength="120" autocomplete="off" spellcheck="true">
+                    </label>
+                    <p class="message-session-name-status" data-role="session-name-status" aria-live="polite"></p>
+                    <footer class="message-session-name-actions">
+                        <button class="ghost-action" value="cancel">Cancel</button>
+                        <button class="primary-action" type="button" data-action="save-session-name">Save name</button>
+                    </footer>
+                </form>
+            </dialog>
         `;
-        this.querySelectorAll("[data-action='play-message']").forEach(button => {
-            button.addEventListener("click", () => void this.#toggleMessage(button.getAttribute("data-name") || ""));
-        });
-        this.querySelectorAll(".voice-message-item").forEach(item => {
-            item.addEventListener("click", event => {
-                const target = event.target instanceof Element ? event.target : null;
-                if (target?.closest(".voice-message-actions, .voice-message-leading-action"))
-                    return;
-                this.#toggleExpandedMessage(item.getAttribute("data-message-id") || "");
-            });
-        });
-        this.querySelectorAll("[data-action='copy-message']").forEach(button => {
-            button.addEventListener("click", () => void this.#copyMessage(button));
-        });
-        this.querySelectorAll("[data-action='generate-message-audio']").forEach(button => {
-            button.addEventListener("click", () => {
-                void this.#generateMessageAudio(button.getAttribute("data-message-id") || "");
-            });
+        this.#bindMessageEvents(this);
+        this.querySelector("[data-action='save-session-name']")?.addEventListener("click", () => {
+            void this.#saveSessionName();
         });
         this.#configureTree();
+    }
+    /**
+     * Bind message interactions inside a full or partial render host.
+     * @param {ParentNode} host Full view or partially refreshed message-list host.
+     * @returns {void} Nothing.
+     */
+    #bindMessageEvents(host) {
+        const container = host instanceof Element && host.matches(".voice-message-list")
+            ? host
+            : host.querySelector(".voice-message-list");
+        if (!(container instanceof HTMLElement) || container.dataset.eventsBound === "true")
+            return;
+        container.dataset.eventsBound = "true";
+        container.addEventListener("click", event => this.#handleMessageListClick(event));
+    }
+    /**
+     * Route message-list gestures through one stable delegated listener.
+     * @param {MouseEvent} event Click emitted by a message descendant.
+     * @returns {void} Nothing.
+     */
+    #handleMessageListClick(event) {
+        const target = event.target instanceof Element ? event.target : null;
+        const action = target?.closest("[data-action]");
+        if (action?.dataset.action === "play-message") {
+            void this.#toggleMessage(action.dataset.name || "");
+            return;
+        }
+        if (action?.dataset.action === "copy-message") {
+            void this.#copyMessage(action);
+            return;
+        }
+        if (action?.dataset.action === "generate-message-audio") {
+            void this.#generateMessageAudio(action.dataset.messageId || "");
+            return;
+        }
+        if (action?.dataset.action === "expand-message" || action?.dataset.action === "collapse-message") {
+            this.#toggleExpandedMessage(action.dataset.messageId || "");
+        }
+    }
+    /**
+     * Reconcile keyed message cards without replacing stable focused DOM nodes.
+     * @returns {void} Nothing.
+     */
+    #refreshMessageList() {
+        this.#syncReactiveExpandedMessages();
+        const container = this.querySelector(".voice-message-list");
+        if (!container)
+            return;
+        const template = document.createElement("template");
+        template.innerHTML = this.#renderMessages();
+        const desiredItems = Array.from(template.content.children);
+        const existingItems = new Map(Array.from(container.querySelectorAll(":scope > [data-message-id]"))
+            .map(item => [item.dataset.messageId || "", item]));
+        desiredItems.forEach((desired, index) => {
+            const id = desired instanceof HTMLElement ? desired.dataset.messageId || "" : "";
+            const existing = id ? existingItems.get(id) : null;
+            if (existing && desired instanceof HTMLElement) {
+                this.#patchElement(existing, desired);
+                container.insertBefore(existing, container.children[index] || null);
+                existingItems.delete(id);
+                return;
+            }
+            container.insertBefore(desired, container.children[index] || null);
+        });
+        existingItems.forEach(item => item.remove());
+        if (!desiredItems.some(item => item instanceof HTMLElement && item.dataset.messageId)) {
+            container.replaceChildren(...desiredItems);
+        }
+        filterRenderedContent(this, this.#reactiveQuery, ".voice-message-item", ".message-list");
+    }
+    /**
+     * Reconcile search-owned expansions without disturbing cards opened manually.
+     */
+    #syncReactiveExpandedMessages() {
+        this.#reactiveExpandedIds.forEach(id => this.#expandedIds.delete(id));
+        this.#reactiveExpandedIds.clear();
+        const needle = this.#reactiveQuery.toLocaleLowerCase();
+        if (!needle)
+            return;
+        this.#history.forEach(record => {
+            const speak = this.#speaks.find(candidate => candidate.id === record.id) ?? null;
+            const generatedSpeakId = this.#generatedAudioSpeakIds.get(record.id);
+            const message = this.#messages.find(candidate => candidate.speakId === record.id || candidate.speakId === generatedSpeakId);
+            if (!this.#messageReactiveContent(record, speak, message).toLocaleLowerCase().includes(needle))
+                return;
+            if (!this.#expandedIds.has(record.id))
+                this.#reactiveExpandedIds.add(record.id);
+            this.#expandedIds.add(record.id);
+        });
+    }
+    /**
+     * Synchronize attributes and descendants while retaining the current element identity.
+     * @param {HTMLElement} current Live element retained by keyed reconciliation.
+     * @param {HTMLElement} desired Detached element describing the next state.
+     * @returns {void} Nothing.
+     */
+    #patchElement(current, desired) {
+        Array.from(current.attributes).forEach(attribute => {
+            if (!desired.hasAttribute(attribute.name))
+                current.removeAttribute(attribute.name);
+        });
+        Array.from(desired.attributes).forEach(attribute => current.setAttribute(attribute.name, attribute.value));
+        const desiredChildren = Array.from(desired.childNodes);
+        desiredChildren.forEach((desiredChild, index) => {
+            const liveChild = current.childNodes[index];
+            if (!liveChild) {
+                current.append(desiredChild.cloneNode(true));
+                return;
+            }
+            if (liveChild.nodeType !== desiredChild.nodeType) {
+                liveChild.replaceWith(desiredChild.cloneNode(true));
+                return;
+            }
+            if (liveChild instanceof HTMLElement && desiredChild instanceof HTMLElement) {
+                if (liveChild.tagName !== desiredChild.tagName || liveChild.dataset.messageControl !== desiredChild.dataset.messageControl) {
+                    liveChild.replaceWith(desiredChild.cloneNode(true));
+                }
+                else
+                    this.#patchElement(liveChild, desiredChild);
+                return;
+            }
+            if (liveChild.textContent !== desiredChild.textContent)
+                liveChild.textContent = desiredChild.textContent;
+        });
+        while (current.childNodes.length > desiredChildren.length)
+            current.lastChild?.remove();
+    }
+    /**
+     * Compare canonical timestamps newest-first with a stable identifier tie-breaker.
+     * @param {AvatarMessageRecord} left Left message record.
+     * @param {AvatarMessageRecord} right Right message record.
+     * @returns {number} Negative when the left record must render first.
+     */
+    #compareMessagesNewestFirst(left, right) {
+        const leftTime = Date.parse(left.created_at);
+        const rightTime = Date.parse(right.created_at);
+        const timeDifference = (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0);
+        return timeDifference || right.id.localeCompare(left.id);
+    }
+    /**
+     * Return a compact signature for list-visible message, speech, and audio state.
+     * @returns {string} Stable signature for the currently visible message state.
+     */
+    #messageListSignature() {
+        return [
+            ...this.#history.map(record => `${record.id}:${record.created_at}:${record.text}`),
+            ...this.#speaks.map(speak => `${speak.id}:${speak.status}:${speak.error}`),
+            ...this.#messages.map(message => `${message.speakId}:${message.name}:${message.sizeBytes}`),
+        ].join("|");
+    }
+    /**
+     * Update session heading text without replacing the surrounding layout.
+     * @returns {void} Nothing.
+     */
+    #refreshMessageHeader() {
+        const header = this.querySelector(".structure-content > .content-head");
+        const title = header?.querySelector("strong");
+        const count = header?.querySelector("span");
+        if (title)
+            title.textContent = this.#selectedSessionLabel();
+        if (count)
+            count.textContent = this.#selectedSessionId && this.#history.length ? `${this.#history.length} messages` : "";
     }
     /**
      * Generates an HTML string representing the message history list or an empty state view based on the current session selection and history availability.
@@ -12667,9 +14447,14 @@ class MessagesView extends HTMLElement {
                     children: sessions.map(session => ({
                         id: session.id,
                         path: session.id,
-                        label: session.chatId ? session.label : `Session ${this.#formatTime(session.startedAt)}`,
+                        label: this.#truncateTreeTitle(session.chatId ? session.label : `Session ${this.#formatTime(session.startedAt)}`),
+                        title: session.chatId ? session.label : `Session ${this.#formatTime(session.startedAt)}`,
                         icon: "messageCircle",
-                        count: session.messageCount
+                        count: session.messageCount,
+                        actions: [
+                            { id: "rename-session", label: "RENAME", icon: "edit" },
+                            { id: "autoname-session", label: "AUTONAME", icon: "pulse" }
+                        ]
                     }))
                 }))
             }))
@@ -12706,6 +14491,89 @@ class MessagesView extends HTMLElement {
             if (detail?.action === "refresh")
                 void this.#loadMessages();
         });
+        tree.addEventListener("brain-tree-action", event => {
+            if (!(event instanceof CustomEvent))
+                return;
+            const action = String(event.detail.action || "");
+            const sessionId = String(event.detail.node?.path || "");
+            if (action === "rename-session" || action === "autoname-session") {
+                void this.#openSessionNameDialog(sessionId, action === "autoname-session" ? "autoname" : "rename");
+            }
+        });
+    }
+    /**
+     * Open the shared custom prompt flow for rename or generated naming.
+     * @param {string} sessionId Canonical session identifier.
+     * @param {"rename" | "autoname"} action Requested manual or automatic naming flow.
+     * @returns {Promise<void>} A promise that settles after the dialog is ready.
+     */
+    async #openSessionNameDialog(sessionId, action) {
+        const session = this.#sessions.find(candidate => candidate.id === sessionId);
+        const dialog = this.querySelector("#message-session-name-dialog");
+        const input = this.querySelector("[data-role='session-name-input']");
+        const title = this.querySelector("[data-role='session-name-title']");
+        const status = this.querySelector("[data-role='session-name-status']");
+        const save = this.querySelector("[data-action='save-session-name']");
+        if (!session || !dialog || !input || !title || !status || !save || !this.#api)
+            return;
+        dialog.dataset.sessionId = session.id;
+        title.textContent = action === "autoname" ? "Autoname session" : "Rename session";
+        input.value = action === "rename" ? session.label : "";
+        input.disabled = action === "autoname";
+        save.disabled = action === "autoname";
+        status.textContent = action === "autoname" ? "Generating a concise proposal…" : "Use at most 10 words.";
+        dialog.showModal();
+        if (action === "rename") {
+            input.focus();
+            input.select();
+            return;
+        }
+        try {
+            const result = await this.#api.updateVoiceSessionName({
+                action: "autoname",
+                date: session.date,
+                chatId: session.chatId,
+            });
+            /**
+             * Naming proposal payload.
+             * @type {Record<string, unknown> | undefined}
+             */
+            const resultData = result.data;
+            input.value = String(resultData?.["proposedName"] || "");
+            status.textContent = "Review the proposal, then save or cancel.";
+        }
+        finally {
+            input.disabled = false;
+            save.disabled = false;
+            input.focus();
+            input.select();
+        }
+    }
+    /**
+     * Persist the reviewed canonical name from the custom prompt dialog.
+     * @returns {Promise<void>} A promise that settles after the name is saved.
+     */
+    async #saveSessionName() {
+        const dialog = this.querySelector("#message-session-name-dialog");
+        const input = this.querySelector("[data-role='session-name-input']");
+        const status = this.querySelector("[data-role='session-name-status']");
+        const session = this.#sessions.find(candidate => candidate.id === dialog?.dataset.sessionId);
+        if (!dialog || !input || !status || !session || !this.#api)
+            return;
+        const name = input.value.trim();
+        if (!name || name.split(/\s+/).length > 10) {
+            status.textContent = "Enter a name containing 1 to 10 words.";
+            return;
+        }
+        status.textContent = "Saving canonical name…";
+        await this.#api.updateVoiceSessionName({
+            action: "rename",
+            date: session.date,
+            chatId: session.chatId,
+            name,
+        });
+        dialog.close();
+        await this.#loadMessages();
     }
     /**
      * Expand the ancestors of the active session in the shared tree.
@@ -12726,6 +14594,15 @@ class MessagesView extends HTMLElement {
         if (!session)
             return "Select a session";
         return session.chatId ? session.label : `Session on ${session.date} at ${this.#formatTime(session.startedAt)}`;
+    }
+    /**
+     * Limit one visible session title to twenty characters with a literal ellipsis.
+     * @param {string} title Complete session title.
+     * @returns {string} Bounded label for the tree row.
+     */
+    #truncateTreeTitle(title) {
+        const normalized = title.trim();
+        return normalized.length > 20 ? `${normalized.slice(0, 17)}...` : normalized;
     }
     /**
      * Select a durable session and request only its messages.
@@ -12760,16 +14637,22 @@ class MessagesView extends HTMLElement {
             ? `${record.source_command}:${record.source_phase || "output"}`
             : record.emotion || "speak";
         return `
-            <article class="voice-message-item ${name === this.#playingName ? "is-playing" : ""} ${expanded ? "is-expanded" : ""}" data-message-id="${escapeHtml(id)}">
+            <article class="voice-message-item ${name && name === this.#playingName ? "is-playing" : ""} ${expanded ? "is-expanded" : ""}" data-message-id="${escapeHtml(id)}" data-reactive-content="${escapeHtml(this.#messageReactiveContent(record, speak, message))}">
                 <div class="voice-message-header">
                     ${expanded
-            ? `<span class="voice-message-leading-placeholder" aria-hidden="true"></span>`
+            ? `<button class="voice-icon-action voice-message-collapse-action" data-message-control="collapse" data-action="collapse-message" data-message-id="${escapeHtml(id)}" title="Collapse message" aria-label="Collapse message">${icon("chevronDown")}</button>`
             : this.#renderLeadingAudioAction(id, name, generatingAudio)}
-                    <button class="voice-message-summary" data-action="toggle-message-details" data-id="${escapeHtml(id)}" aria-expanded="${expanded}">
-                        ${expanded ? `<span class="voice-message-spacer"></span>` : `<span class="voice-message-preview">${escapeHtml(text)}</span>`}
-                        <span class="voice-speak-status is-${status.toLowerCase()}">${escapeHtml(sourceLabel)}</span>
-                        <time class="voice-message-time" datetime="${escapeHtml(createdAt)}">${escapeHtml(this.#formatTime(createdAt))}</time>
-                    </button>
+                    ${expanded
+            ? `<div class="voice-message-summary" aria-expanded="true">
+                            <span class="voice-message-spacer"></span>
+                            <span class="voice-speak-status is-${status.toLowerCase()}">${escapeHtml(sourceLabel)}</span>
+                            <time class="voice-message-time" datetime="${escapeHtml(createdAt)}">${escapeHtml(this.#formatTime(createdAt))}</time>
+                        </div>`
+            : `<button class="voice-message-summary" data-action="expand-message" data-message-id="${escapeHtml(id)}" aria-expanded="false">
+                            <span class="voice-message-preview">${escapeHtml(text)}</span>
+                            <span class="voice-speak-status is-${status.toLowerCase()}">${escapeHtml(sourceLabel)}</span>
+                            <time class="voice-message-time" datetime="${escapeHtml(createdAt)}">${escapeHtml(this.#formatTime(createdAt))}</time>
+                        </button>`}
                 </div>
                 ${expanded ? `
                     <div class="voice-message-detail">
@@ -12790,6 +14673,32 @@ class MessagesView extends HTMLElement {
         `;
     }
     /**
+     * Build the complete searchable corpus for one message, including collapsed details.
+     *
+     * @param {AvatarMessageRecord} record Persisted transcript item.
+     * @param {VoiceSpeakRecord | null} speak Speech state associated with the transcript.
+     * @param {VoiceMessageRecord | undefined} message Retained audio metadata.
+     * @returns {string} Normalized searchable content without presentation truncation.
+     */
+    #messageReactiveContent(record, speak, message) {
+        return [
+            record.text,
+            record.created_at,
+            record.date,
+            record.time,
+            record.emotion,
+            record.language,
+            record.source_type,
+            record.source_command,
+            record.source_phase,
+            speak?.status || "DONE",
+            speak?.error || "",
+            message?.name || "",
+            message?.text || "",
+            message?.source || "",
+        ].join(" ");
+    }
+    /**
      * Render the primary list action as replay or on-demand audio generation.
      * @param {string} id The unique identifier of the message used for audio generation requests.
      * @param {string} name The identifier of the audio file to play, or a falsy value if audio must be generated.
@@ -12799,9 +14708,9 @@ class MessagesView extends HTMLElement {
     #renderLeadingAudioAction(id, name, generatingAudio) {
         if (name) {
             const playing = name === this.#playingName;
-            return `<button class="voice-icon-action voice-message-leading-action" data-action="play-message" data-name="${escapeHtml(name)}" title="${playing ? "Pause message" : "Play message"}" aria-label="${playing ? "Pause message" : "Play message"}">${icon(playing ? "pause" : "play")}</button>`;
+            return `<button class="voice-icon-action voice-message-leading-action" data-message-control="audio" data-action="play-message" data-name="${escapeHtml(name)}" title="${playing ? "Pause message" : "Play message"}" aria-label="${playing ? "Pause message" : "Play message"}">${icon(playing ? "pause" : "play")}</button>`;
         }
-        return `<button class="voice-icon-action voice-message-leading-action" data-action="generate-message-audio" data-message-id="${escapeHtml(id)}" ${generatingAudio ? "disabled" : ""} title="Generate and play audio" aria-label="Generate and play audio">${icon("play")}</button>`;
+        return `<button class="voice-icon-action voice-message-leading-action" data-message-control="audio" data-action="generate-message-audio" data-message-id="${escapeHtml(id)}" ${generatingAudio ? "disabled" : ""} title="Generate and play audio" aria-label="Generate and play audio">${icon("play")}</button>`;
     }
     /**
      * Copies the text content from a button's data attribute to the system clipboard and updates the button's tooltip title.
@@ -12819,7 +14728,7 @@ class MessagesView extends HTMLElement {
         if (!this.#api || !id || this.#generatingAudioIds.has(id))
             return;
         this.#generatingAudioIds.add(id);
-        this.#render();
+        this.#refreshMessageList();
         try {
             const result = await this.#api.synthesizeVoiceMessage(id);
             this.#state?.setLastResult(result);
@@ -12831,7 +14740,7 @@ class MessagesView extends HTMLElement {
         }
         finally {
             this.#generatingAudioIds.delete(id);
-            this.#render();
+            this.#refreshMessageList();
         }
     }
     /**
@@ -12854,11 +14763,13 @@ class MessagesView extends HTMLElement {
         if (!id)
             return;
         const willExpand = !this.#expandedIds.has(id);
-        if (willExpand)
+        if (willExpand) {
+            this.#expandedIds.clear();
             this.#expandedIds.add(id);
+        }
         else
             this.#expandedIds.delete(id);
-        this.#render();
+        this.#refreshMessageList();
         requestAnimationFrame(() => this.#focusMessage(id, willExpand));
     }
     /**
@@ -12868,14 +14779,19 @@ class MessagesView extends HTMLElement {
      */
     #focusMessage(id, expanded) {
         const summary = Array.from(this.querySelectorAll(".voice-message-summary"))
-            .find(candidate => candidate.getAttribute("data-id") === id);
-        summary?.focus({ preventScroll: true });
+            .find(candidate => candidate.dataset.messageId === id);
+        const collapseAction = this.querySelector(`[data-action="collapse-message"][data-message-id="${id}"]`);
+        (expanded ? collapseAction : summary)?.focus({ preventScroll: true });
         if (!expanded)
             return;
-        const article = summary?.closest(".voice-message-item");
+        const article = (collapseAction || summary)?.closest(".voice-message-item");
         const container = article?.closest(".voice-message-list");
         if (!article || !container)
             return;
+        if (article === container.firstElementChild) {
+            container.scrollTop = 0;
+            return;
+        }
         const articleBounds = article.getBoundingClientRect();
         const containerBounds = container.getBoundingClientRect();
         if (articleBounds.top < containerBounds.top) {
@@ -12892,12 +14808,14 @@ class MessagesView extends HTMLElement {
     async #toggleMessage(name) {
         if (!this.#api || !name)
             return;
-        if (this.#playingName === name && ["preparing", "speaking", "muted_replay"].includes(this.#serviceState)) {
+        if (this.#playingName === name && ["preparing", "speaking"].includes(this.#serviceState)) {
             await this.#api.pauseVoiceReplay();
+            void this.#pollVoiceStatus();
             return;
         }
         try {
             await this.#api.replayVoiceMessage(name);
+            void this.#pollVoiceStatus();
         }
         catch {
             return;
@@ -12938,15 +14856,17 @@ class MessagesView extends HTMLElement {
 customElements.define(MessagesView.selector, MessagesView);
 
 cache=(()=>{return { MessagesView: MessagesView };})();return cache;};})();
-const __brainExplorerModule45=(()=>{let cache;return()=>{if(cache)return cache;
-const { escapeHtml } = __brainExplorerModule4();
-const { icon } = __brainExplorerModule5();
-const { renderDescriptionCard } = __brainExplorerModule27();
-const { StructureTree } = __brainExplorerModule9();
-const { PictureDomainTreeProjector } = __brainExplorerModule46();
+const __brainExplorerModule49=(()=>{let cache;return()=>{if(cache)return cache;
+const { escapeHtml, filterRenderedContent } = __brainExplorerModule6();
+const { icon } = __brainExplorerModule7();
+const { renderDescriptionCard } = __brainExplorerModule30();
+const { StructureTree } = __brainExplorerModule11();
+const { treeActionDetail, treeSelectDetail } = __brainExplorerModule43();
+const { PictureDomainTreeProjector } = __brainExplorerModule50();
 /**
  * Modern registry-backed picture browser and carousel.
  */
+
 
 
 
@@ -13125,10 +15045,30 @@ class PicturesView extends HTMLElement {
     set context(context) {
         this.#api = context.api;
         this.#state = context.state;
-        const target = this.#state?.consumeRouteTarget?.("pictures") || null;
-        this.#selectedId = String(target?.pictureId || "");
         this.#render();
         void this.#loadStructure();
+    }
+    /**
+     * Focus a canonical picture target after registry or domain data is available.
+     *
+     * @param {Readonly<Record<string, unknown>>} target - Canonical route target containing pictureId.
+     * @returns {Promise<void>} Resolves after the owning domain, carousel, thumbnail, and inspector are synchronized.
+     */
+    async focusTarget(target) {
+        const pictureId = String(target.pictureId || "").trim();
+        if (!pictureId)
+            return;
+        this.#selectedId = pictureId;
+        const registryPicture = this.#pictureById(pictureId);
+        if (registryPicture) {
+            this.#domain = registryPicture.domain;
+            this.#domainFocused = true;
+            await this.#loadDomain(registryPicture.domain, false, pictureId);
+        }
+        else {
+            await this.#loadPictureTarget(pictureId);
+        }
+        this.#focusSelectedThumbnail();
     }
     /**
      * Registers a global keyboard event listener and triggers the initial component rendering when the element is added to the DOM.
@@ -13256,6 +15196,9 @@ class PicturesView extends HTMLElement {
     /**
      * Updates the component's innerHTML to render the pictures gallery interface, including the domain tree, image carousel, and inspector panel, based on the current selection and loading state.
      */
+    applyReactiveContentFilter(query) {
+        filterRenderedContent(this, query, ".pictures-stage .picture-thumbnails [data-picture-id]", ".pictures-stage");
+    }
     #render() {
         const selected = this.#selected();
         const selectedIndex = selected ? this.#pictures.findIndex(picture => picture.id === selected.id) : -1;
@@ -13265,13 +15208,14 @@ class PicturesView extends HTMLElement {
                     <aside class="structure-tree pictures-domains" aria-label="Picture domains">
                         <div class="tree-list scroll-list">
                             <brain-structure-tree data-role="pictures-domain-tree"></brain-structure-tree>
+                            <input data-role="picture-import-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp" multiple hidden>
                         </div>
                     </aside>
                     <main class="pictures-stage">
                     ${this.#loading ? `<div class="loading-state"><span></span><strong>Syncing pictures...</strong></div>` : selected ? `
                         <section class="picture-carousel" aria-label="Picture carousel">
                             <header>
-                                <div><span class="status-pill" data-role="picture-domain">${escapeHtml(selected.domain)}</span><strong data-role="picture-filename">${escapeHtml(selected.filename)}</strong></div>
+                                <div><span class="status-pill" data-role="picture-domain">${escapeHtml(selected.domain)}</span><a class="picture-download-link" data-role="picture-filename" href="${this.#api?.pictureUrl(selected.id) ?? ""}" download="${escapeHtml(selected.filename)}" title="Download ${escapeHtml(selected.filename)}">${escapeHtml(selected.filename)}</a></div>
                                 <span data-role="picture-position">${selectedIndex + 1} / ${this.#pictures.length}</span>
                             </header>
                             <div class="picture-viewport">
@@ -13285,7 +15229,18 @@ class PicturesView extends HTMLElement {
                             </div>
                             <div class="picture-thumbnails" role="listbox" aria-label="Thumbnails">
                                 ${this.#pictures.map(picture => `
-                                    <button role="option" aria-selected="${picture.id === selected.id}" data-picture-id="${escapeHtml(picture.id)}" title="${escapeHtml(picture.filename)}">
+                                    <button role="option" aria-selected="${picture.id === selected.id}" data-picture-id="${escapeHtml(picture.id)}" data-reactive-content="${escapeHtml([
+            picture.filename,
+            picture.relative_path,
+            picture.absolute_path,
+            picture.domain,
+            picture.extension,
+            picture.mime_type,
+            picture.description,
+            picture.description_source,
+            picture.described_at,
+            `${picture.width} ${picture.height}`,
+        ].join(" "))}" title="${escapeHtml(picture.filename)}">
                                         <img src="${this.#api?.pictureUrl(picture.id) ?? ""}" alt="" loading="lazy" decoding="async" fetchpriority="low">
                                     </button>
                                 `).join("")}
@@ -13333,7 +15288,13 @@ class PicturesView extends HTMLElement {
     #hydrateSelection(picture) {
         const position = this.#pictures.findIndex(candidate => candidate.id === picture.id) + 1;
         this.#setText("picture-domain", picture.domain);
-        this.#setText("picture-filename", picture.filename);
+        const filenameLink = this.querySelector("[data-role='picture-filename']");
+        if (filenameLink) {
+            filenameLink.textContent = picture.filename;
+            filenameLink.href = this.#api?.pictureUrl(picture.id) ?? "";
+            filenameLink.download = picture.filename;
+            filenameLink.title = `Download ${picture.filename}`;
+        }
         this.#setText("picture-position", `${position} / ${this.#pictures.length}`);
         this.#setText("picture-dimensions", `${picture.width} × ${picture.height}`);
         this.#setText("picture-path", picture.relative_path);
@@ -13527,7 +15488,52 @@ class PicturesView extends HTMLElement {
      * @returns {import("D:/.agents/@Angi/core/brain_explorer/src/presentation/shared/view_models/structure-tree-view-model").StructureTreeNode[]} The result of the projection process from the PictureDomainTreeProjector.
      */
     #domainTreeNodes() {
-        return new PictureDomainTreeProjector(this.#domains).project();
+        return new PictureDomainTreeProjector(this.#domains, this.#picturesByDomain).project();
+    }
+    /** Find one hydrated picture by its stable tree leaf identity. */
+    #pictureById(pictureId) {
+        for (const pictures of this.#picturesByDomain.values()) {
+            const picture = pictures.find(candidate => candidate.id === pictureId);
+            if (picture)
+                return picture;
+        }
+        return null;
+    }
+    /** Ask the browser for images that will be imported into the selected folder. */
+    #choosePicturesForImport(domain) {
+        const input = this.querySelector("[data-role='picture-import-input']");
+        if (!input)
+            return;
+        input.dataset.domain = domain;
+        input.value = "";
+        input.click();
+    }
+    /** Import every selected image and then refresh the affected folder. */
+    async #importSelectedPictures(input) {
+        const files = Array.from(input.files || []);
+        const domain = input.dataset.domain || "";
+        input.value = "";
+        if (!this.#api || !files.length)
+            return;
+        for (const file of files) {
+            const response = await this.#api.importPicture(domain, file);
+            this.#state?.setLastResult(response);
+            if (!response.ok)
+                return;
+        }
+        await this.#loadStructure(true);
+        await this.#loadDomain(domain, true);
+    }
+    /** Start a safe attachment download without navigating away from Explorer. */
+    #downloadPicture(picture) {
+        if (!this.#api)
+            return;
+        const link = document.createElement("a");
+        link.href = this.#api.pictureUrl(picture.id);
+        link.download = picture.filename;
+        document.body.append(link);
+        link.click();
+        link.remove();
     }
     /**
      * Configure Pictures with the standardized structural tree component.
@@ -13552,11 +15558,28 @@ class PicturesView extends HTMLElement {
         tree.addEventListener("brain-tree-select", event => {
             if (!(event instanceof CustomEvent))
                 return;
-            if (event.detail.clickedCaret)
+            const detail = treeSelectDetail(event.detail);
+            if (!detail || detail.clickedCaret)
                 return;
-            this.#domain = String(event.detail.path || "");
+            this.#domain = detail.path;
             this.#domainFocused = true;
             void this.#loadDomain(this.#domain);
+        });
+        tree.addEventListener("brain-tree-action", event => {
+            if (!(event instanceof CustomEvent))
+                return;
+            const detail = treeActionDetail(event.detail);
+            if (!detail?.node)
+                return;
+            if (detail.action === "import-picture") {
+                this.#choosePicturesForImport(detail.node.path);
+                return;
+            }
+            if (detail.action === "download-picture") {
+                const picture = this.#pictureById(detail.node.id.replace(/^picture:/, ""));
+                if (picture)
+                    this.#downloadPicture(picture);
+            }
         });
         tree.addEventListener("brain-tree-toolbar-action", event => {
             if (event instanceof CustomEvent && event.detail.action === "refresh")
@@ -13577,6 +15600,10 @@ class PicturesView extends HTMLElement {
             this.#selectPicture(button.getAttribute("data-picture-id") || "");
         }));
         this.#bindDescriptionEvents();
+        this.querySelector("[data-role='picture-import-input']")?.addEventListener("change", event => {
+            if (event.currentTarget instanceof HTMLInputElement)
+                void this.#importSelectedPictures(event.currentTarget);
+        });
         this.querySelector("[data-action='copy-picture-path']")?.addEventListener("click", event => {
             if (event.currentTarget instanceof HTMLButtonElement)
                 void this.#copyPicturePath(event.currentTarget);
@@ -13781,7 +15808,7 @@ class PicturesView extends HTMLElement {
 customElements.define(PicturesView.selector, PicturesView);
 
 cache=(()=>{return { PicturesView: PicturesView };})();return cache;};})();
-const __brainExplorerModule46=(()=>{let cache;return()=>{if(cache)return cache;
+const __brainExplorerModule50=(()=>{let cache;return()=>{if(cache)return cache;
 
 /**
  * @author Yoel David <yoeldcd@gmail.com>
@@ -13797,13 +15824,17 @@ class PictureDomainTreeProjector {
      * @type {Readonly<Record<string, number>>}
      */
     #domainCounts;
+    /** Pictures loaded for a domain and exposed as actionable leaf nodes. */
+    #picturesByDomain;
     /**
      * Create a projector for one picture registry snapshot.
      *
      * @param {Readonly<Record<string, number>>} domainCounts Canonical domain-to-direct-count mapping from the API.
+     * @param {ReadonlyMap<string, readonly PictureRecord[]>} picturesByDomain Hydrated pictures keyed by their direct domain.
      */
-    constructor(domainCounts) {
+    constructor(domainCounts, picturesByDomain = new Map()) {
         this.#domainCounts = domainCounts;
+        this.#picturesByDomain = picturesByDomain;
     }
     /**
      * Build the single-root recursive structure consumed by `StructureTree`.
@@ -13842,6 +15873,15 @@ class PictureDomainTreeProjector {
      */
     #projectNode(node) {
         const children = [...node.children.values()].map(child => this.#projectNode(child));
+        const pictures = this.#picturesByDomain.get(node.path) || [];
+        const pictureNodes = pictures.map(picture => ({
+            id: `picture:${picture.id}`,
+            path: node.path,
+            label: picture.filename,
+            title: picture.relative_path,
+            icon: "camera",
+            actions: [{ id: "download-picture", label: "Download", icon: "download" }],
+        }));
         const descendantCount = children.reduce((total, child) => total + Number(child.count || 0), 0);
         return {
             id: `pictures:${node.path || "all"}`,
@@ -13849,15 +15889,16 @@ class PictureDomainTreeProjector {
             label: node.label,
             icon: "folder",
             count: node.ownCount + descendantCount,
-            children,
+            actions: [{ id: "import-picture", label: "Import", icon: "folderPlus" }],
+            children: [...children, ...pictureNodes],
         };
     }
 }
 
 cache=(()=>{return { PictureDomainTreeProjector: PictureDomainTreeProjector };})();return cache;};})();
-const __brainExplorerModule47=(()=>{let cache;return()=>{if(cache)return cache;
-const { escapeHtml, renderMarkdown } = __brainExplorerModule4();
-const { icon } = __brainExplorerModule5();
+const __brainExplorerModule51=(()=>{let cache;return()=>{if(cache)return cache;
+const { escapeHtml, renderMarkdown } = __brainExplorerModule6();
+const { icon } = __brainExplorerModule7();
 /**
  * @author Yoel David <yoeldcd@gmail.com>
  * @see https://x.com/SAY6267
@@ -13890,7 +15931,7 @@ class ProfilesView extends HTMLElement {
     /**
      * Maintains a private collection of profile identifiers used within the ProfilesView component.
      *
-     * @type {string[]}
+     * @type {ProfileSummary[]}
      */
     #profiles = [];
     /**
@@ -13967,14 +16008,14 @@ class ProfilesView extends HTMLElement {
         }
         const result = await this.#api.profiles({ forceRefresh });
         this.#state?.setLastResult(result);
-        this.#profiles = Array.isArray(result.data?.profiles) ? result.data.profiles : Array.isArray(result.data) ? result.data : [];
+        this.#profiles = Array.isArray(result.data?.profiles) ? result.data.profiles : [];
         const target = this.#pendingTarget || this.#state?.consumeRouteTarget?.("profiles");
         this.#pendingTarget = null;
         const targetProfile = typeof target?.profile === "string" ? target.profile : "";
         if (targetProfile && targetProfile !== this.#selectedProfile) {
             this.#profileText = "";
         }
-        this.#selectedProfile = targetProfile || this.#selectedProfile || this.#profiles[0] || "";
+        this.#selectedProfile = targetProfile || this.#selectedProfile || this.#profiles[0]?.name || "";
         this.#render();
         if (this.#selectedProfile && !this.#profileText) {
             await this.#readProfile(this.#selectedProfile, forceRefresh);
@@ -14081,11 +16122,11 @@ class ProfilesView extends HTMLElement {
             return `<p class="empty-state">No profiles.</p>`;
         }
         return this.#profiles.map(profile => `
-            <button class="profile-row ${profile === this.#selectedProfile ? "is-active" : ""}" data-profile="${escapeHtml(profile)}">
+            <button class="profile-row ${profile.name === this.#selectedProfile ? "is-active" : ""}" data-profile="${escapeHtml(profile.name)}" title="${escapeHtml(profile.use_when)}">
                 ${icon("users")}
                 <span>
-                    <strong>${escapeHtml(profile)}</strong>
-                    <small>read-profile ${escapeHtml(profile)}</small>
+                    <strong>${escapeHtml(profile.name)}</strong>
+                    <small>${escapeHtml(profile.use_when)}</small>
                 </span>
             </button>
         `).join("");
@@ -14149,284 +16190,569 @@ class ProfilesView extends HTMLElement {
 customElements.define(ProfilesView.selector, ProfilesView);
 
 cache=(()=>{return { ProfilesView: ProfilesView };})();return cache;};})();
-const __brainExplorerModule48=(()=>{let cache;return()=>{if(cache)return cache;
-const { escapeHtml, renderMarkdown } = __brainExplorerModule4();
-const { icon } = __brainExplorerModule5();
+const __brainExplorerModule52=(()=>{let cache;return()=>{if(cache)return cache;
+const { escapeHtml } = __brainExplorerModule6();
+const { icon } = __brainExplorerModule7();
+const { resolveQueryResultRenderer } = __brainExplorerModule53();
+const { mapQueryResponse } = __brainExplorerModule60();
 /**
- * @author Yoel David <yoeldcd@gmail.com>
- * @see https://x.com/SAY6267
+ * Query presentation layout for global search answers and traceable evidence.
+ *
+ * @module presentation/query/layouts/query-view
  */
 
 
-const DEFAULT_SOURCES = ["memory", "knowledge", "messages", "pictures"];
+
+
+const DEFAULT_SOURCES = ["memory", "knowledge", "pictures", "logs", "messages", "backlog"];
 const DEFAULT_MECHANISMS = ["graph", "vector", "text"];
-/**
- * Render global search answers and grouped, traceable source results.
- */
+const PAGE_SIZES = [10, 25, 50, 100];
+/** Render query answers, source-specific evidence sections, and pagination. */
 class QueryView extends HTMLElement {
-    /**
-     * Provides the unique CSS selector string used to identify the QueryView component in the DOM.
-     * @returns {string} The string identifier 'brain-query-view'.
-     */
+    /** Custom-element selector registered by the shell. */
     static get selector() {
         return "brain-query-view";
     }
-    /**
-     * Holds a reference to the BrainApiClient instance used for making API requests within the QueryView component.
-     *
-     * @type {BrainApiClient | null}
-     */
     #api = null;
-    /**
-     * Holds the current application state for the query view or remains null if the state is not yet initialized.
-     *
-     * @type {AppState | null}
-     */
     #state = null;
-    /**
-     * Initializes a private collection of data sources by cloning the default source configuration.
-     *
-     * @type {string[]}
-     */
     #sources = [...DEFAULT_SOURCES];
-    /**
-     * Initializes a private collection of query mechanisms by cloning the default mechanism set.
-     *
-     * @type {string[]}
-     */
     #mechanisms = [...DEFAULT_MECHANISMS];
-    /**
-     * Defines the default visibility or filtering scope for the query view, initialized to all records.
-     *
-     * @type {string}
-     */
     #scope = "all";
-    /**
-     * Stores the domain identifier associated with the current query view.
-     *
-     * @type {string}
-     */
     #domain = "";
-    /**
-     * Stores the current search query string used for filtering or retrieving data within the view.
-     *
-     * @type {string}
-     */
     #query = "";
-    /**
-     * Stores the outcome of a query execution or remains null if no result has been retrieved.
-     *
-     * @type {QueryResult | null}
-     */
     #result = null;
-    /**
-     * Initializes the view's API, state, and query configuration from the provided component context and triggers an immediate render or query execution if a pending query exists.
-     * @param {ComponentContext} context The component context containing the API and state required to configure the view's data sources and mechanisms.
-     */
+    #response = null;
+    #page = 1;
+    #pageSize = 25;
+    #activeSource = "";
+    #reactiveQuery = "";
+    #requestToken = 0;
+    #globalCounts = {};
+    /** Attach application dependencies and execute any pending query. */
     set context(context) {
         this.#api = context.api;
         this.#state = context.state;
-        const pendingQuery = this.#state?.consumePendingQuery?.() || "";
-        const options = this.#state?.consumePendingQueryOptions?.() || {};
-        this.#sources = options.sources?.length ? options.sources : [...DEFAULT_SOURCES];
-        this.#mechanisms = options.mechanisms?.length ? options.mechanisms : [...DEFAULT_MECHANISMS];
+        const pendingQuery = this.#state.consumePendingQuery?.() || "";
+        const options = this.#state.consumePendingQueryOptions?.() || {};
+        this.#sources = options.sources?.length
+            ? [...options.sources]
+            : [...DEFAULT_SOURCES];
+        this.#mechanisms = options.mechanisms?.length
+            ? [...options.mechanisms]
+            : [...DEFAULT_MECHANISMS];
+        this.#query = pendingQuery;
+        this.#render();
         if (pendingQuery) {
-            this.#query = pendingQuery;
-            this.#render();
-            queueMicrotask(() => this.#runQuery());
-            return;
+            queueMicrotask(() => void this.#runQuery());
         }
+    }
+    /** Narrow the exhaustive cached result set from the shell searchbar without refetching. */
+    applyReactiveContentFilter(query) {
+        this.#reactiveQuery = query.trim();
+        this.#page = 1;
         this.#render();
     }
-    /**
-     * Triggers the initial rendering of the component when it is attached to the document DOM.
-     */
+    /** Render the empty state when connected. */
     connectedCallback() {
         this.#render();
     }
-    /**
-     * Executes a global API query based on current view state, filters the resulting evidence by selected sources and mechanisms, and updates the internal result state to trigger a re-render.
-     */
+    /** Execute one exhaustive server query; filtering and pagination remain local. */
     async #runQuery() {
         const query = this.#query.trim();
         const api = this.#api;
         if (!query || !api)
             return;
+        const requestToken = ++this.#requestToken;
+        const indexedSources = this.#sources.filter((source) => source !== "backlog");
+        const source = indexedSources.length === 1 ? indexedSources[0] || "all" : "all";
+        const mechanism = this.#mechanisms.length === 1 ? this.#mechanisms[0] || "all" : "all";
         this.#query = query;
         this.#result = { loading: true };
         this.#render();
-        const source = this.#sources.length === 1 ? this.#sources[0] ?? "all" : "all";
-        const mechanism = this.#mechanisms.length === 1 ? this.#mechanisms[0] ?? "all" : "all";
-        const response = await api.globalQuery({
-            q: query,
-            domain: this.#domain,
-            source,
-            mechanism,
-            knowledgeScope: this.#scope,
-            limit: "10",
-            explain: "true",
-            deep: "false"
-        });
-        const responseData = !Array.isArray(response.data) ? response.data ?? {} : {};
-        const rawResults = Array.isArray(response.data)
-            ? response.data
-            : responseData.results || responseData.matches || [];
-        const results = rawResults.filter(item => item.source !== undefined && item.mechanism !== undefined
-            && this.#sources.includes(item.source) && this.#mechanisms.includes(item.mechanism));
-        this.#result = {
-            ok: response.ok,
-            data: { response: responseData.response || "", results: this.#deduplicate(results) },
-            stderr: response.stderr || response.error || ""
-        };
-        this.#state?.setLastResult(response);
-        this.#render();
+        try {
+            const rawResponse = await api.globalQuery({
+                q: query,
+                domain: this.#domain,
+                source,
+                mechanism,
+                knowledgeScope: this.#scope,
+                page: "1",
+                pageSize: "0",
+                explain: "false",
+                deep: "false",
+            });
+            if (requestToken !== this.#requestToken)
+                return;
+            const envelope = rawResponse;
+            const data = this.#queryData(envelope.data);
+            this.#response = mapQueryResponse(data);
+            this.#globalCounts = this.#response.countsBySource;
+            const presentSources = this.#presentSources(this.#response);
+            this.#activeSource = presentSources.includes(this.#activeSource) ? this.#activeSource : presentSources[0] || "";
+            this.#result = { ok: envelope.ok ?? true, data, stderr: envelope.stderr || envelope.error || "" };
+            this.#state?.setLastResult(rawResponse);
+        }
+        catch (error) {
+            if (requestToken === this.#requestToken) {
+                const message = error instanceof Error ? error.message : "Query failed.";
+                this.#response = null;
+                this.#result = { ok: false, stderr: message };
+            }
+        }
+        finally {
+            if (requestToken === this.#requestToken)
+                this.#render();
+        }
     }
-    /**
-     * Filters a list of query evidence to remove duplicate entries based on a composite key of source, mechanism, path, title, text, and excerpt.
-     * @param {QueryEvidence[]} results The collection of query evidence items to be deduplicated.
-     * @returns {QueryEvidence[]} An array containing only the first occurrence of each unique evidence item.
-     */
-    #deduplicate(results) {
-        const unique = new Map();
-        results.forEach(result => {
-            const key = [result.source, result.mechanism, result.path, result.title, result.text, result.excerpt].join("|");
-            if (!unique.has(key))
-                unique.set(key, result);
-        });
-        return [...unique.values()];
+    /** Normalize the object or array response payload for the mapper. */
+    #queryData(data) {
+        if (Array.isArray(data)) {
+            return { items: data };
+        }
+        if (!data || typeof data !== "object") {
+            return {};
+        }
+        return data;
     }
-    /**
-     * Updates the component's inner HTML with the search results layout and attaches click event listeners to picture-opening buttons to update the state route target.
-     */
+    /** Compose markup and attach local interaction handlers. */
     #render() {
-        this.innerHTML = `
-            <section class="page-surface search-console">
-                <main class="search-results-column scroll-area">${this.#renderResult()}</main>
-            </section>
-        `;
-        this.querySelectorAll("[data-open-picture]").forEach(button => {
-            button.addEventListener("click", () => {
-                this.#state?.setRouteTarget("pictures", { pictureId: button.getAttribute("data-open-picture") || "" });
+        this.innerHTML = `<section class="page-surface search-console">
+            <main class="search-results-column scroll-area">${this.#renderResult()}</main>
+        </section>`;
+        this.#highlightQueryMatches();
+        this.querySelectorAll("[data-source-tab]").forEach((tab) => {
+            tab.addEventListener("click", () => {
+                this.#activeSource = tab.dataset.sourceTab || "";
+                this.#page = 1;
+                this.#render();
+            });
+        });
+        this.querySelector("[data-page-size]")?.addEventListener("change", (event) => {
+            const selector = event.target;
+            this.#pageSize = Number(selector.value);
+            this.#page = 1;
+            this.#render();
+        });
+        this.querySelectorAll("[data-route]").forEach((button) => {
+            button.addEventListener("click", (event) => {
+                event.stopPropagation();
+                const route = button.dataset.route;
+                if (route) {
+                    const serializedTarget = button.dataset.routeTarget || "{}";
+                    const target = JSON.parse(serializedTarget);
+                    this.#state?.setRouteTarget(route, target);
+                }
+            });
+        });
+        this.querySelectorAll(".query-result-card[role=\"link\"]").forEach((card) => {
+            card.addEventListener("keydown", (event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    card.click();
+                }
+            });
+        });
+        this.querySelectorAll("[data-page-action]").forEach((button) => {
+            button.addEventListener("click", (event) => {
+                event.stopPropagation();
+                const action = button.dataset.pageAction || "";
+                this.#page += action === "previous" ? -1 : 1;
+                this.#render();
             });
         });
     }
-    /**
-     * Generates an HTML string representing the query result state, handling loading, empty, and data-populated views.
-     * @returns {string} An HTML string containing the rendered result interface or a status placeholder.
-     */
-    #renderResult() {
-        if (this.#result?.loading) {
-            return `<div class="loading-state search-loading"><span></span><strong>Searching memory, knowledge, and messages</strong><small>Preparing results...</small></div>`;
-        }
-        if (!this.#result) {
-            return `<section class="search-empty">${icon("search")}<h2>Results</h2><p>Enter a query in the header search box to begin.</p></section>`;
-        }
-        const text = this.#result.data?.response || this.#firstResultText() || this.#result.stderr || "No readable output.";
-        return `
-            <article class="answer-sheet">
-                <header><span class="${this.#result.ok ? "status-pill success" : "status-pill danger"}">${this.#result.ok ? "Response" : "Error"}</span></header>
-                <h2>${escapeHtml(this.#query || "Consulta")}</h2>
-                <div>${renderMarkdown(String(text).slice(0, 2200))}</div>
-            </article>
-            ${this.#renderResultGroups()}
-        `;
-    }
-    /**
-     * Retrieves the most representative text string from the first available search result.
-     * @returns {string} The text, excerpt, or title of the first result, or an empty string if no result or valid text field exists.
-     */
-    #firstResultText() {
-        const first = this.#results()[0];
-        return first?.text || first?.excerpt || first?.title || "";
-    }
-    /**
-     * Retrieves a normalized list of query evidence by extracting results or matches from the internal result state.
-     * @returns {QueryEvidence[]} An array of QueryEvidence objects derived from the current result data, or an empty array if no valid results are found.
-     */
-    #results() {
-        const results = this.#result?.data?.results || this.#result?.data?.matches || [];
-        return Array.isArray(results) ? results : [];
-    }
-    /**
-     * Groups query results by source and mechanism to generate an HTML representation of the search evidence section.
-     * @returns {string} An HTML string containing the grouped results and their metadata, or an empty string if no results exist.
-     */
-    #renderResultGroups() {
-        const groups = new Map();
-        this.#results().forEach(item => {
-            const source = item.source || "unknown";
-            const mechanism = item.mechanism || "unknown";
-            const key = `${source}:${mechanism}`;
-            if (!groups.has(key))
-                groups.set(key, { source, mechanism, items: [] });
-            groups.get(key)?.items.push(item);
+    /** Highlight literal query phrases and meaningful terms in rendered result text nodes. */
+    #highlightQueryMatches() {
+        const query = (this.#reactiveQuery || this.#query).trim();
+        if (!query)
+            return;
+        const candidates = [query, ...query.split(/\s+/u).filter((term) => term.length > 2)];
+        const terms = [...new Set(candidates.map((term) => term.trim()).filter(Boolean))]
+            .sort((left, right) => right.length - left.length);
+        if (!terms.length)
+            return;
+        const escapedTerms = terms.map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+        const pattern = new RegExp(escapedTerms.join("|"), "giu");
+        const textNodes = [];
+        this.querySelectorAll(".query-result-card").forEach((card) => {
+            const walker = document.createTreeWalker(card, NodeFilter.SHOW_TEXT);
+            let currentNode = walker.nextNode();
+            while (currentNode) {
+                const parentElement = currentNode.parentElement;
+                if (parentElement && !parentElement.closest("script, style, mark"))
+                    textNodes.push(currentNode);
+                currentNode = walker.nextNode();
+            }
         });
-        if (!groups.size)
-            return "";
-        return `
-            <section class="search-evidence" aria-label="Response sources">
-                <header><h3>Sources consulted</h3><span>${this.#results().length} results</span></header>
-                ${[...groups.values()].map(group => `
-                    <section class="result-group">
-                        <header><h4>${escapeHtml(this.#sourceLabel(group.source))}</h4><span>${escapeHtml(this.#mechanismLabel(group.mechanism))}</span></header>
-                        <ol>
-                            ${group.items.map(item => `
-                                <li>
-                                    <span class="result-order" aria-hidden="true"></span>
-                                    <div class="result-copy">
-                                        <strong>${escapeHtml(item.title || item.path || item.kind || "Result")}</strong>
-                                        <p>${escapeHtml(item.excerpt || item.content?.excerpt || item.data?.excerpt || item.text || item.description || "No excerpt available")}</p>
-                                        <small>${escapeHtml(this.#resultOrigin(item))}</small>
-                                    </div>
-                                    ${item.rank !== undefined ? `<span class="result-rank" title="Relevancia">${Number(item.rank).toFixed(2)}</span>` : ""}
-                                    ${item.source === "pictures" && item.data?.id ? `<button class="result-open-button" data-open-picture="${escapeHtml(item.data.id)}">Open</button>` : ""}
-                                </li>
-                            `).join("")}
-                        </ol>
-                    </section>
-                `).join("")}
-            </section>
-        `;
+        textNodes.forEach((textNode) => {
+            const value = textNode.nodeValue || "";
+            pattern.lastIndex = 0;
+            if (!pattern.test(value))
+                return;
+            pattern.lastIndex = 0;
+            const fragment = document.createDocumentFragment();
+            let offset = 0;
+            value.replace(pattern, (match, ...args) => {
+                const index = Number(args[args.length - 2]);
+                fragment.append(value.slice(offset, index));
+                const mark = document.createElement("mark");
+                mark.className = "query-match-highlight";
+                mark.textContent = match;
+                fragment.append(mark);
+                offset = index + match.length;
+                return match;
+            });
+            fragment.append(value.slice(offset));
+            textNode.replaceWith(fragment);
+        });
     }
-    /**
-     * Resolves a human-readable origin string from a QueryEvidence object by checking multiple fallback path and identity properties.
-     * @param {QueryEvidence} item The evidence object containing potential source references, paths, or domain identifiers.
-     * @returns {string} The first available path or identifier found in the evidence hierarchy, or a default fallback string if none exist.
-     */
-    #resultOrigin(item) {
-        return item.sourceRef?.path || item.source_ref?.path || item.path || item.domain || item.kind || "Origen no especificado";
+    /** Render loading, empty, or completed query state. */
+    #renderResult() {
+        if (this.#result?.loading)
+            return `<div class="loading-state search-loading"><strong>Searching all indexed sources</strong></div>`;
+        if (!this.#result)
+            return `<section class="search-empty"><h2>Results</h2><p>Enter a query in the header search box to begin.</p></section>`;
+        const response = this.#response;
+        if (!response)
+            return `<p class="query-error">${escapeHtml(this.#result.stderr || "Query failed.")}</p>`;
+        const visibleResponse = this.#localResponse(response);
+        const sources = this.#presentSources(response);
+        const tabs = sources.map((source) => this.#renderSourceTab(source, response)).join("");
+        const visibleSources = this.#activeSource ? [this.#activeSource] : [];
+        const content = visibleResponse.items.length
+            ? visibleSources.map((source) => this.#renderSourceSection(source, visibleResponse.items)).join("")
+            : this.#renderEmptyResults();
+        const sourceCount = sources.length;
+        return `<article class="query-results" aria-live="polite">
+            <header class="query-results-header">
+                <div class="query-header-primary"><div class="query-title-lockup"><span class="query-title-icon">${icon("search")}</span><div><h1>${escapeHtml(this.#query)}</h1><p class="query-summary">${response.totalItems.toLocaleString()} matches across ${sourceCount} sources</p></div></div></div>
+                <div class="query-header-controls">
+                    <nav class="query-source-tabs" role="tablist" aria-label="Filter results by source">${tabs}</nav>
+                    <div class="query-results-toolbar-region">${this.#renderResultsToolbar(visibleResponse)}</div>
+                </div>
+            </header>
+            <section id="query-results-panel" class="query-results-panel" role="tabpanel" aria-labelledby="query-tab-${escapeHtml(this.#activeSource)}" aria-live="polite">${content}</section>
+        </article>`;
     }
-    /**
-     * Maps a technical source identifier to its corresponding human-readable display label.
-     * @param {string} source The technical identifier of the data source to be labeled.
-     * @returns {string} The localized string representation of the source, defaulting to 'Other results' for unrecognized inputs.
-     */
-    #sourceLabel(source) {
-        if (source === "memory")
-            return "Memory";
-        if (source === "knowledge")
-            return "Knowledge";
-        if (source === "messages")
-            return "Messages";
-        if (source === "pictures")
-            return "Pictures";
-        return "Other results";
+    /** Project the exhaustive response into the active source and local page. */
+    #localResponse(response) {
+        const sourceItems = response.items.filter((item) => item.source === this.#activeSource);
+        const needle = this.#reactiveQuery.toLocaleLowerCase();
+        const filtered = needle
+            ? sourceItems.filter((item) => `${item.title} ${item.markdown} ${item.origin.domain} ${item.navigation.path} ${item.resourceId}`.toLocaleLowerCase().includes(needle))
+            : sourceItems;
+        const totalItems = filtered.length;
+        const totalPages = Math.max(1, Math.ceil(totalItems / this.#pageSize));
+        const page = Math.min(Math.max(1, this.#page), totalPages);
+        const start = (page - 1) * this.#pageSize;
+        this.#page = page;
+        return { ...response, items: filtered.slice(start, start + this.#pageSize), page, pageSize: this.#pageSize, totalItems, totalPages, hasPrevious: page > 1, hasNext: page < totalPages };
     }
-    /**
-     * Maps a mechanism identifier to its corresponding localized display label.
-     * @param {string} mechanism The technical identifier of the mechanism to be translated.
-     * @returns {string} The localized string representation of the mechanism, or the original identifier if no mapping exists.
-     */
-    #mechanismLabel(mechanism) {
-        return mechanism === "graph" ? "Grafo" : mechanism === "vector" ? "Vectorial" : mechanism === "text" ? "Texto" : mechanism;
+    /** Return sources represented by global counts or current-page evidence. */
+    #presentSources(response) {
+        const counts = Object.keys(this.#globalCounts).length
+            ? this.#globalCounts
+            : response.countsBySource;
+        const countedSources = Object.entries(counts)
+            .filter(([, count]) => count > 0)
+            .map(([source]) => source);
+        const itemSources = response.items.map((item) => item.source);
+        return [...new Set([...countedSources, ...itemSources])];
+    }
+    /** Render one source-filter tab with its stable global count. */
+    #renderSourceTab(source, response) {
+        const active = this.#activeSource === source;
+        const counts = Object.keys(this.#globalCounts).length
+            ? this.#globalCounts
+            : response.countsBySource;
+        const count = counts[source] || 0;
+        const label = source.charAt(0).toUpperCase() + source.slice(1);
+        return `<button
+            type="button"
+            class="query-source-tab is-source-${escapeHtml(source)}${active ? " active" : ""}"
+            data-source-tab="${escapeHtml(source)}"
+            role="tab"
+            id="query-tab-${escapeHtml(source)}"
+            aria-controls="query-results-panel"
+            aria-selected="${active}"
+            tabindex="${active ? "0" : "-1"}"
+        >${icon(source === "memory" ? "book" : source === "knowledge" ? "graph" : source === "pictures" ? "camera" : source === "logs" ? "document" : source === "messages" ? "messageCircle" : "clock")}<span>${escapeHtml(label)}</span> <span>${count}</span></button>`;
+    }
+    /** Registry renderers own query-result-row, query-result-main, and query-result-meta markup. */
+    #renderSourceSection(source, items) {
+        const sourceItems = items.filter((item) => item.source === source);
+        const renderedItems = sourceItems
+            .map((item) => resolveQueryResultRenderer(item.source)(item))
+            .join("");
+        const label = source.charAt(0).toUpperCase() + source.slice(1);
+        return `<section class="query-source-section is-source-${escapeHtml(source)}">
+            <header>
+                <h3>${escapeHtml(label)}</h3>
+                <span class="query-count-badge">${sourceItems.length} on this page</span>
+            </header>
+            <ol class="query-source-list is-source-${escapeHtml(source)}">${renderedItems}</ol>
+        </section>`;
+    }
+    /** Render compact local pagination controls for the active result projection. */
+    #renderResultsToolbar(response) {
+        if (!response.items.length || response.totalItems === 0)
+            return `<nav class="query-pagination" aria-label="Query result pages"><span class="query-page-status">0/0</span></nav>`;
+        const options = PAGE_SIZES.map((size) => `<option value="${size}"${size === this.#pageSize ? " selected" : ""}>${size}</option>`).join("");
+        return `<nav class="query-pagination" aria-label="Query result pages">
+            <select class="query-page-size" data-page-size aria-label="Results per page">${options}</select>
+            <button class="query-page-action" data-page-action="previous" ${response.hasPrevious ? "" : "disabled"} aria-label="Previous page" title="Previous page">${icon("chevronLeft")}</button>
+            <span class="query-page-status">${response.page}/${response.totalPages}</span>
+            <button class="query-page-action" data-page-action="next" ${response.hasNext ? "" : "disabled"} aria-label="Next page" title="Next page">${icon("chevronRight")}</button>
+        </nav>`;
+    }
+    /** Render an actionable empty state for the current source selection. */
+    #renderEmptyResults() {
+        return `<section class="query-empty-state">
+            <h2>No ${escapeHtml(this.#activeSource || "source")} results found</h2>
+            <p>${this.#reactiveQuery ? "Clear or change the reactive filter." : "Try a different query."}</p>
+        </section>`;
     }
 }
 customElements.define(QueryView.selector, QueryView);
 
 cache=(()=>{return { QueryView: QueryView };})();return cache;};})();
-const __brainExplorerModule49=(()=>{let cache;return()=>{if(cache)return cache;
-const { escapeHtml } = __brainExplorerModule4();
-const { icon } = __brainExplorerModule5();
+const __brainExplorerModule53=(()=>{let cache;return()=>{if(cache)return cache;
+const { escapeHtml, renderMarkdown } = __brainExplorerModule6();
+const { icon } = __brainExplorerModule7();
+const { renderBacklogResult } = __brainExplorerModule54();
+const { renderKnowledgeResult } = __brainExplorerModule55();
+const { renderLogResult } = __brainExplorerModule56();
+const { renderMemoryResult } = __brainExplorerModule57();
+const { renderMessageResult } = __brainExplorerModule58();
+const { renderPictureResult } = __brainExplorerModule59();
+/** Query source renderer registry contracts. */
+
+
+
+
+
+
+
+
+/** Render evidence whose source has no specialized renderer. */
+const fallbackQueryResultRenderer = (item) => `<li class="query-result-card generic-result-card"><article>
+    <header class="query-card-header"><span class="query-card-icon">${icon("document")}</span><div><div class="query-card-badges"><span class="query-badge">${escapeHtml(item.source)}</span><span class="query-badge">${escapeHtml(item.mechanism)}</span></div><h3>${escapeHtml(item.title)}</h3></div></header>
+    <div class="query-card-body">${renderMarkdown(item.markdown)}</div>
+</article></li>`;
+/** Immutable mapping from canonical source names to specialized renderers. */
+const queryResultRenderers = {
+    memory: renderMemoryResult, knowledge: renderKnowledgeResult, messages: renderMessageResult,
+    pictures: renderPictureResult, backlog: renderBacklogResult, logs: renderLogResult,
+};
+/** Resolve the specialized renderer for a source or the safe fallback. */
+function resolveQueryResultRenderer(source, registry = queryResultRenderers) {
+    return registry[source] ?? fallbackQueryResultRenderer;
+}
+
+cache=(()=>{return { resolveQueryResultRenderer: resolveQueryResultRenderer, fallbackQueryResultRenderer: fallbackQueryResultRenderer, queryResultRenderers: queryResultRenderers };})();return cache;};})();
+const __brainExplorerModule54=(()=>{let cache;return()=>{if(cache)return cache;
+const { escapeHtml, renderMarkdown } = __brainExplorerModule6();
+const { icon } = __brainExplorerModule7();
+
+
+/** Render one task result as an actionable backlog card. */
+function renderBacklogResult(item) {
+    const identifier = escapeHtml(item.resourceId);
+    return `<li class="query-result-card backlog-result-card" role="link" tabindex="0" data-route="backlog" data-target-id="${escapeHtml(item.resourceId)}" data-route-target="${escapeHtml(JSON.stringify(item.target))}"><article>
+        <header class="query-card-header"><span class="query-card-icon">${icon("checkSquare")}</span><div><div class="query-card-badges"><span class="query-badge is-identity">${identifier}</span><span class="query-badge">Task</span></div><h3>${escapeHtml(item.title)}</h3></div></header>
+        <div class="query-card-body">${renderMarkdown(item.markdown)}</div>
+        <footer class="query-card-footer"><span>${escapeHtml(item.mechanism)} match</span><button type="button" class="query-card-open" data-route="backlog" data-target-id="${identifier}" data-route-target="${escapeHtml(JSON.stringify(item.target))}"><span>Open</span>${icon("chevronRight")}</button></footer>
+    </article></li>`;
+}
+
+cache=(()=>{return { renderBacklogResult: renderBacklogResult };})();return cache;};})();
+const __brainExplorerModule55=(()=>{let cache;return()=>{if(cache)return cache;
+const { escapeHtml, renderMarkdown } = __brainExplorerModule6();
+const { icon } = __brainExplorerModule7();
+
+
+/** Render one graph-backed result as a knowledge entity card. */
+function renderKnowledgeResult(item) {
+    const scope = escapeHtml(item.origin.scope || "all");
+    return `<li class="query-result-card knowledge-result-card" role="link" tabindex="0" data-route="knowledge" data-target-id="${escapeHtml(item.resourceId)}" data-route-target="${escapeHtml(JSON.stringify(item.target))}"><article>
+        <header class="query-card-header"><span class="query-card-icon">${icon("graph")}</span><div><div class="query-card-badges"><span class="query-badge is-scope">${scope}</span><span class="query-badge">Knowledge</span></div><h3>${escapeHtml(item.title)}</h3></div></header>
+        <div class="query-card-body">${renderMarkdown(item.markdown)}</div>
+        <footer class="query-card-footer"><span>${escapeHtml(item.mechanism)} relation</span><button type="button" class="query-card-open" data-route="knowledge" data-target-id="${escapeHtml(item.resourceId)}" data-route-target="${escapeHtml(JSON.stringify(item.target))}"><span>Open</span>${icon("chevronRight")}</button></footer>
+    </article></li>`;
+}
+
+cache=(()=>{return { renderKnowledgeResult: renderKnowledgeResult };})();return cache;};})();
+const __brainExplorerModule56=(()=>{let cache;return()=>{if(cache)return cache;
+const { escapeHtml, renderMarkdown } = __brainExplorerModule6();
+const { icon } = __brainExplorerModule7();
+
+
+/** Render one journal entry as a chronological log card. */
+function renderLogResult(item) {
+    const date = escapeHtml(item.date?.display || "Undated");
+    return `<li class="query-result-card log-result-card" role="link" tabindex="0" data-route="logs" data-target-id="${escapeHtml(item.resourceId)}" data-route-target="${escapeHtml(JSON.stringify(item.target))}"><article>
+        <header class="query-card-header"><span class="query-card-icon">${icon("clock")}</span><div><div class="query-card-badges"><span class="query-badge">Log</span></div><h3>${escapeHtml(item.title)}</h3></div><time class="query-card-date" datetime="${escapeHtml(item.date?.comparable || "")}">${date}</time></header>
+        <div class="query-card-body">${renderMarkdown(item.markdown)}</div>
+        <footer class="query-card-footer"><span>${escapeHtml(item.mechanism)} match</span><button type="button" class="query-card-open" data-route="logs" data-target-id="${escapeHtml(item.resourceId)}" data-route-target="${escapeHtml(JSON.stringify(item.target))}"><span>Open</span>${icon("chevronRight")}</button></footer>
+    </article></li>`;
+}
+
+cache=(()=>{return { renderLogResult: renderLogResult };})();return cache;};})();
+const __brainExplorerModule57=(()=>{let cache;return()=>{if(cache)return cache;
+const { escapeHtml, renderMarkdown } = __brainExplorerModule6();
+const { icon } = __brainExplorerModule7();
+
+
+/** Render one durable-memory result without exposing storage implementation details. */
+function renderMemoryResult(item) {
+    const scope = escapeHtml(item.origin.scope || "global");
+    const isDiary = item.origin.sourceType === "diary";
+    const typeLabel = isDiary ? "Diary" : "Memory";
+    const dateBadge = isDiary && item.date
+        ? `<time class="query-card-date" datetime="${escapeHtml(item.date.comparable)}">${escapeHtml(item.date.display)}</time>`
+        : "";
+    return `<li class="query-result-card memory-result-card" role="link" tabindex="0" data-route="memory" data-target-id="${escapeHtml(item.resourceId)}" data-route-target="${escapeHtml(JSON.stringify(item.target))}"><article>
+        <header class="query-card-header"><span class="query-card-icon">${icon("book")}</span><div><div class="query-card-badges"><span class="query-badge is-scope">${scope}</span><span class="query-badge">${typeLabel}</span></div><h3>${escapeHtml(item.title)}</h3></div>${dateBadge}</header>
+        <div class="query-card-body">${renderMarkdown(item.markdown)}</div>
+        <footer class="query-card-footer"><span>${escapeHtml(item.mechanism)} match</span><button type="button" class="query-card-open" data-route="memory" data-target-id="${escapeHtml(item.resourceId)}" data-route-target="${escapeHtml(JSON.stringify(item.target))}"><span>Open</span>${icon("chevronRight")}</button></footer>
+    </article></li>`;
+}
+
+cache=(()=>{return { renderMemoryResult: renderMemoryResult };})();return cache;};})();
+const __brainExplorerModule58=(()=>{let cache;return()=>{if(cache)return cache;
+const { escapeHtml, renderMarkdown } = __brainExplorerModule6();
+const { icon } = __brainExplorerModule7();
+
+
+/** Render one conversation result as a message transcript card. */
+function renderMessageResult(item) {
+    const date = escapeHtml(item.date?.display || "Undated");
+    const dateTime = escapeHtml(item.date?.comparable || "");
+    return `<li class="query-result-card message-result-card" role="link" tabindex="0" data-route="messages" data-target-id="${escapeHtml(item.resourceId)}" data-route-target="${escapeHtml(JSON.stringify(item.target))}"><article>
+        <header class="query-card-header"><span class="query-card-icon">${icon("messageCircle")}</span><div><div class="query-card-badges"><span class="query-badge">Message</span></div><h3>${escapeHtml(item.title)}</h3></div><time class="query-card-date"${dateTime ? ` datetime="${dateTime}"` : ""}>${date}</time></header>
+        <blockquote class="query-card-body message-result-excerpt">${renderMarkdown(item.markdown)}</blockquote>
+        <footer class="query-card-footer"><span>${escapeHtml(item.mechanism)} match</span><button type="button" class="query-card-open" data-route="messages" data-target-id="${escapeHtml(item.resourceId)}" data-route-target="${escapeHtml(JSON.stringify(item.target))}"><span>Open</span>${icon("chevronRight")}</button></footer>
+    </article></li>`;
+}
+
+cache=(()=>{return { renderMessageResult: renderMessageResult };})();return cache;};})();
+const __brainExplorerModule59=(()=>{let cache;return()=>{if(cache)return cache;
+const { escapeHtml } = __brainExplorerModule6();
+const { renderDescriptionCard } = __brainExplorerModule30();
+
+
+/** Render one image result as a navigable square tile with structured analysis on focus. */
+function renderPictureResult(item) {
+    const resourceId = escapeHtml(item.resourceId);
+    const title = escapeHtml(item.title);
+    const imageUrl = `/api/pictures/file?id=${encodeURIComponent(item.resourceId)}`;
+    return `<li class="query-result-card picture-result-card" role="link" tabindex="0" data-route="pictures" data-target-id="${resourceId}" data-route-target="${escapeHtml(JSON.stringify(item.target))}" aria-label="Open ${title}">
+        <img src="${escapeHtml(imageUrl)}" alt="" loading="lazy" decoding="async">
+        <span class="picture-result-title">${title}</span>
+        <div class="picture-result-description">${renderDescriptionCard(item.markdown, { title: "Image analysis", openAll: true })}</div>
+    </li>`;
+}
+
+cache=(()=>{return { renderPictureResult: renderPictureResult };})();return cache;};})();
+const __brainExplorerModule60=(()=>{let cache;return()=>{if(cache)return cache;
+
+/** Map canonical items and pagination metadata, retaining nested aliases safely. */
+function mapQueryResponse(data) {
+    const payload = Array.isArray(data) ? { items: data } : data;
+    const rawItems = payload.items ?? payload.results ?? payload.matches ?? [];
+    const pageSize = payload.pageSize ?? 25;
+    const totalItems = payload.totalItems ?? rawItems.length;
+    const totalPages = payload.totalPages ?? Math.max(1, Math.ceil(totalItems / pageSize));
+    const page = payload.page ?? 1;
+    const items = rawItems.map((item, index) => {
+        const content = item.content ?? {};
+        const data = item.data ?? {};
+        const nested = item.content ?? item.data ?? {};
+        const reference = item.sourceRef ?? item.source_ref ?? {};
+        const source = item.source ?? item.source_type ?? item.sourceType ?? reference.source_type ?? reference.sourceType ?? "unknown";
+        const id = item.id ?? data.id ?? content.id ?? `${item.path ?? reference.path ?? source}:${index}`;
+        const dataRecord = data;
+        const sourceType = String(item.source_type ?? item.sourceType ?? reference.source_type ?? source);
+        const rawTitle = String(item.title ?? nested.title ?? reference.title ?? item.path ?? item.kind ?? "Result");
+        const title = normalizedEvidenceTitle(rawTitle, sourceType);
+        const rawMarkdown = String(item.body ?? item.excerpt ?? item.text ?? nested.body ?? nested.excerpt ?? item.description ?? "No excerpt available");
+        const rawDate = evidenceDate(item, dataRecord, nested, sourceType);
+        const parsedDate = parseEvidenceDate(rawDate);
+        const markdown = stripDuplicatedDateHeading(rawMarkdown, sourceType);
+        const resourceId = String(id);
+        const target = queryTarget(source, data, reference, resourceId, title, String(rawDate || ""));
+        return { id: `${source}:${id}`, resourceId, target, source, mechanism: item.mechanism ?? "unknown", title, markdown, origin: { source, mechanism: item.mechanism ?? "unknown", scope: item.scope ?? reference.scope ?? "", sourceType, domain: item.domain ?? reference.domain ?? "", title }, navigation: { path: item.path ?? reference.path ?? item.location ?? nested.location ?? "", readCommand: reference.read_command ?? reference.readCommand ?? "", structure: reference.structure ?? [], lineNumber: reference.line_number ?? reference.lineNumber ?? null }, date: parsedDate ? { comparable: parsedDate.toISOString(), display: parsedDate.toLocaleString() } : null, rank: item.rank ?? null, order: index };
+    });
+    return { response: payload.response ?? "", items, page, pageSize, totalItems, totalPages, hasPrevious: payload.hasPrevious ?? page > 1, hasNext: payload.hasNext ?? page < totalPages, countsBySource: payload.countsBySource ?? {} };
+}
+/** Normalize timestamps embedded by source adapters into localizable Date values. */
+function parseEvidenceDate(rawDate) {
+    if (!rawDate)
+        return null;
+    const direct = Date.parse(rawDate);
+    if (!Number.isNaN(direct))
+        return new Date(direct);
+    const dayFirst = rawDate.match(/^(\d{2})-(\d{2})-(\d{4})(?:\s+(.+))?$/);
+    if (!dayFirst)
+        return null;
+    const [, day, month, year, time = "00:00"] = dayFirst;
+    const normalized = `${year}-${month}-${day} ${time}`;
+    const parsed = Date.parse(normalized);
+    return Number.isNaN(parsed) ? null : new Date(parsed);
+}
+/** Select the canonical date fields exposed by message, log, and diary payloads. */
+function evidenceDate(item, data, nested, sourceType) {
+    if (sourceType === "diary") {
+        const date = String(data.date || "");
+        const time = String(data.time || "");
+        return `${date} ${time}`.trim();
+    }
+    return String(item.date ?? item.timestamp ?? item.created_at ?? item.createdAt ?? item.updated_at ?? item.updatedAt ?? data.created_at ?? data.createdAt ?? data.timestamp ?? nested?.date ?? nested?.timestamp ?? "");
+}
+/** Remove transport timestamps from human-facing evidence titles. */
+function normalizedEvidenceTitle(rawTitle, sourceType) {
+    if (sourceType === "messages") {
+        return rawTitle.replace(/\s+at\s+\d{4}-\d{2}-\d{2}[T ][^\s]+$/i, "").trim() || "Avatar message";
+    }
+    if (sourceType === "diary" || sourceType === "logs") {
+        return rawTitle.replace(/^\s*\d{2}-\d{2}-\d{4}(?:\s+\d{1,2}:\d{2}(?::\d{2})?\s*(?:am|pm)?)?\s*[-–—:]?\s*/i, "").trim() || (sourceType === "diary" ? "Diary entry" : "Log entry");
+    }
+    return rawTitle;
+}
+/** Avoid repeating a log or diary timestamp already promoted to the header badge. */
+function stripDuplicatedDateHeading(markdown, sourceType) {
+    if (sourceType !== "diary" && sourceType !== "logs")
+        return markdown;
+    return markdown.replace(/^\s*(?:#{1,6}\s*)?\d{2}-\d{2}-\d{4}(?:\s+\d{1,2}:\d{2}(?::\d{2})?\s*(?:am|pm)?)?\s*(?:\r?\n|$)/i, "").trimStart();
+}
+/** Build a canonical semantic target owned and interpreted by the destination layout. */
+function queryTarget(source, data, reference, id, title, rawDate) {
+    if (source === "memory") {
+        const rawPath = String(data.path || reference.domain || "");
+        return { path: rawPath.replace(/^memory\//, "").replace(/\.md$/, "").replaceAll("/", "."), domain: String(reference.domain || "") };
+    }
+    if (source === "knowledge")
+        return { nodeId: String(data.entity_id || data.record_id || ""), relationId: String(data.relation_id || ""), entityLabel: title };
+    if (source === "messages") {
+        const timestamp = String(data.created_at || data.timestamp || rawDate || "");
+        return { messageId: String(data.id || id), sessionId: String(data.session_id || ""), chatId: String(data.chat_id || ""), date: timestamp.slice(0, 10) };
+    }
+    if (source === "pictures")
+        return { pictureId: String(data.id || id) };
+    if (source === "logs") {
+        const timestamp = String(data.timestamp || rawDate || "");
+        const [date = "", ...timeParts] = timestamp.split(" ");
+        return { domain: String(reference.domain || data.domain || ""), date, time: timeParts.join(" ") };
+    }
+    if (source === "backlog")
+        return { taskId: String(data.id || id || title.match(/t\d+/i)?.[0] || "") };
+    return { id };
+}
+
+cache=(()=>{return { mapQueryResponse: mapQueryResponse };})();return cache;};})();
+const __brainExplorerModule61=(()=>{let cache;return()=>{if(cache)return cache;
+const { escapeHtml } = __brainExplorerModule6();
+const { icon } = __brainExplorerModule7();
 /**
  * @author Yoel David <yoeldcd@gmail.com>
  * @see https://x.com/SAY6267
@@ -14487,9 +16813,14 @@ class SettingsView extends HTMLElement {
         if (!this.#api) {
             return;
         }
-        const result = await this.#api.health({ forceRefresh: true });
-        this.#state?.setLastResult(result);
-        this.#health = result.data ?? null;
+        try {
+            const result = await this.#api.health({ forceRefresh: true });
+            this.#state?.setLastResult(result);
+            this.#health = result.ok ? result.data ?? null : null;
+        }
+        catch {
+            this.#health = null;
+        }
         this.#render();
     }
     /**
@@ -14501,44 +16832,64 @@ class SettingsView extends HTMLElement {
         this.innerHTML = `
             <section class="page-surface settings-console">
                 <main class="settings-layout">
-                    <button class="settings-tile settings-action-tile" data-action="refresh-health">
-                        <span>${escapeHtml("Accion")}</span>
-                        <strong>${icon("refresh")}Refresh runtime</strong>
-                        <small>health local</small>
-                    </button>
-                    ${this.#tile("Server", this.#health?.ok ? "OK" : "Pending", "brain_explorer")}
-                    ${this.#tile("Dist", this.#health?.distDir || "No cargado", "runtime estatico")}
-                    ${this.#tile("Workspace", this.#health?.workspaceRoot || "Not loaded", "active root")}
-                    ${this.#tile("Agent home", this.#health?.agentHome || "Not loaded", "shared memory")}
+                    <header class="settings-header">
+                        <h1>Settings</h1>
+                        <div class="settings-actions">
+                            <button class="settings-refresh-action" data-action="refresh-health">${icon("refresh")}<span>Refresh</span></button>
+                            <button class="settings-secondary-action" data-action="clear-api-cache">${icon("trash")}<span>Clear cache</span></button>
+                        </div>
+                    </header>
+                    <section class="settings-section" aria-labelledby="settings-workspace-title">
+                        <h2 id="settings-workspace-title">Workspace</h2>
+                        <dl class="settings-path-list">
+                            ${this.#pathRow("Project root", this.#health?.workspaceRoot || "Not loaded", "")}
+                            ${this.#pathRow("Agent home", this.#health?.agentHome || "Not loaded", "")}
+                        </dl>
+                    </section>
                 </main>
             </section>
         `;
         this.querySelector("[data-action='refresh-health']")?.addEventListener("click", () => this.#loadHealth());
+        this.querySelector("[data-action='clear-api-cache']")?.addEventListener("click", event => {
+            this.#api?.clearCache();
+            if (event.currentTarget instanceof HTMLButtonElement) {
+                event.currentTarget.title = "Cache cleared";
+                event.currentTarget.blur();
+            }
+        });
+        this.querySelectorAll("[data-action='copy-setting']").forEach(button => {
+            button.addEventListener("click", () => {
+                const value = button.dataset.value || "";
+                if (!value)
+                    return;
+                void navigator.clipboard.writeText(value);
+                button.title = "Copied";
+            });
+        });
     }
     /**
-     * Render one settings tile.
+     * Render a copyable local runtime path.
      *
-     * @param {string} label Tile label.
-     * @param {string} value Tile value.
-     * @param {string} caption Tile caption.
+     * @param {string} label User-facing path name.
+     * @param {string} value Absolute local path.
+     * @param {string} description Operational purpose of the path.
      * @returns {string} HTML.
      */
-    #tile(label, value, caption) {
+    #pathRow(label, value, description) {
         return `
-            <article class="settings-tile">
-                <span>${escapeHtml(label)}</span>
-                <strong>${escapeHtml(String(value))}</strong>
-                <small>${escapeHtml(caption)}</small>
-            </article>
+            <div class="settings-path-row">
+                <dt><strong>${escapeHtml(label)}</strong>${description ? `<small>${escapeHtml(description)}</small>` : ""}</dt>
+                <dd><code>${escapeHtml(value)}</code><button class="settings-copy-action" data-action="copy-setting" data-value="${escapeHtml(value)}" title="Copy ${escapeHtml(label)}" aria-label="Copy ${escapeHtml(label)}">${icon("copy")}</button></dd>
+            </div>
         `;
     }
 }
 customElements.define(SettingsView.selector, SettingsView);
 
 cache=(()=>{return { SettingsView: SettingsView };})();return cache;};})();
-const __brainExplorerModule50=(()=>{let cache;return()=>{if(cache)return cache;
-const { escapeHtml } = __brainExplorerModule4();
-const { icon } = __brainExplorerModule5();
+const __brainExplorerModule62=(()=>{let cache;return()=>{if(cache)return cache;
+const { escapeHtml } = __brainExplorerModule6();
+const { icon } = __brainExplorerModule7();
 /**
  * @author Yoel David <yoeldcd@gmail.com>
  * @see https://x.com/SAY6267
@@ -14575,6 +16926,8 @@ class WikisView extends HTMLElement {
      * @type {WikiRecord[]}
      */
     #wikis = [];
+    /** Active workspace root associated with the loaded wiki registry. */
+    #workspaceRoot = "";
     /**
      * Tracks the asynchronous loading state of the WikisView component.
      *
@@ -14623,8 +16976,9 @@ class WikisView extends HTMLElement {
         this.#loading = true;
         this.#render();
         try {
-            const res = await this.#api.getWikis();
+            const res = await this.#api.getWikis({ forceRefresh: true });
             this.#wikis = res.data?.wikis ?? [];
+            this.#workspaceRoot = res.data?.workspaceRoot ?? localStorage.getItem("active_project_path") ?? "";
             this.#state?.setLastResult(res);
         }
         catch (err) {
@@ -14648,10 +17002,7 @@ class WikisView extends HTMLElement {
         this.innerHTML = `
             <section class="page-surface settings-console wiki-console ${this.#loading ? "is-loading" : (this.#wikis.length ? "has-items" : "is-empty")}">
                 <header class="view-header" style="display: flex; justify-content: space-between; align-items: center; padding-bottom: var(--spacing-md); border-bottom: 1px solid var(--border); margin-bottom: var(--spacing-lg);">
-                    <div>
-                        <h2 style="margin: 0; font-size: var(--font-size-xl); color: var(--text-strong);">Subproject Wikis</h2>
-                        <small style="color: var(--text-muted);">Interactive documentation available in the active path</small>
-                    </div>
+                    <h2 class="wiki-console-title">Subproject Wikis</h2>
                     <button data-action="refresh-wikis" class="primary-action compact-action" title="Find wikis">${icon("refresh")}</button>
                 </header>
 
@@ -14666,9 +17017,7 @@ class WikisView extends HTMLElement {
         this.querySelector("[data-action='refresh-wikis']")?.addEventListener("click", () => this.#loadWikis());
         this.querySelectorAll("[data-action='view-wiki']").forEach(btn => {
             btn.addEventListener("click", () => {
-                this.#activeWikiName = btn.getAttribute("data-name");
-                this.#wikiLoading = true;
-                this.#render();
+                void this.#openWiki(btn.getAttribute("data-name") || "");
             });
             btn.addEventListener("keydown", (event) => {
                 if (!(event instanceof KeyboardEvent))
@@ -14680,6 +17029,36 @@ class WikisView extends HTMLElement {
                 }
             });
         });
+    }
+    /**
+     * Open a selected wiki while keeping its frame hidden until its response is valid.
+     *
+     * @param {string} name Selected wiki name.
+     * @returns {void} Nothing.
+     */
+    async #openWiki(name) {
+        if (!this.#api || !name)
+            return;
+        try {
+            const result = await this.#api.getWikis({ forceRefresh: true, commandLabel: "Refresh wikis" });
+            this.#state?.setLastResult(result);
+            this.#wikis = result.data?.wikis ?? [];
+            this.#workspaceRoot = result.data?.workspaceRoot ?? localStorage.getItem("active_project_path") ?? "";
+            const currentWiki = this.#wikis.find(wiki => wiki.name === name);
+            if (!result.ok || !currentWiki) {
+                const failure = this.#api.reportClientFailure("Open wiki", "Wiki list changed. Select the refreshed entry.");
+                this.#state?.setLastResult(failure);
+                this.#render();
+                return;
+            }
+            this.#activeWikiName = currentWiki.name;
+            this.#wikiLoading = true;
+            this.#render();
+        }
+        catch {
+            const failure = this.#api.reportClientFailure("Open wiki", "Could not refresh the wiki list.");
+            this.#state?.setLastResult(failure);
+        }
     }
     /**
      * Render wikis as compact horizontal list items.
@@ -14705,7 +17084,7 @@ class WikisView extends HTMLElement {
                             <div class="wiki-list-heading">
                                 <strong>${escapeHtml(wiki.name)}</strong>
                                 <span style="font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: 600; background: ${wiki.hasWiki ? "rgba(16, 185, 129, 0.15); color: #10b981;" : "rgba(156, 163, 175, 0.15); color: #9ca3af;"};">
-                                    ${wiki.hasWiki ? "Available" : "Not built"}
+                                    ${wiki.hasWiki ? "Available" : "No Markdown"}
                                 </span>
                             </div>
                             <span class="wiki-list-path">
@@ -14718,7 +17097,7 @@ class WikisView extends HTMLElement {
                                     ${icon("book")} Ver Wiki
                                 </button>
                             ` : `
-                                <span style="font-size: var(--font-size-sm); color: var(--text-muted); padding: 6px 0;">Run <code>generate</code> to enable</span>
+                                <span style="font-size: var(--font-size-sm); color: var(--text-muted); padding: 6px 0;">No documentation pages</span>
                             `}
                         </div>
                     </article>
@@ -14732,14 +17111,15 @@ class WikisView extends HTMLElement {
      * @returns {void}
      */
     #renderIframeView() {
+        const activeWikiName = this.#activeWikiName ?? "";
         this.innerHTML = `
             <div class="wiki-frame-view">
                 <header class="wiki-frame-toolbar">
                     <div style="display: flex; align-items: center; gap: 12px;">
                         <button data-action="close-wiki" class="secondary-action compact-action" style="min-height: 32px; display: flex; align-items: center; gap: 4px;">
-                            ${icon("chevronRight")} Back
+                            ${icon("chevronLeft")} Back
                         </button>
-                        <h2 style="margin: 0; font-size: var(--font-size-lg); color: var(--text-strong);">Wiki ~ ${escapeHtml(this.#activeWikiName)}</h2>
+                        <h2 style="margin: 0; font-size: var(--font-size-lg); color: var(--text-strong);">Wiki ~ ${escapeHtml(activeWikiName)}</h2>
                     </div>
                 </header>
                 <div class="wiki-frame-container">
@@ -14747,7 +17127,7 @@ class WikisView extends HTMLElement {
                         <span class="loading-spinner" aria-hidden="true"></span>
                         <strong>Resolviendo wiki...</strong>
                     </div>
-                    <iframe src="/wiki/${this.#activeWikiName}/wiki/index.html" scrolling="yes" style="width: 100%; height: 100%; border: none;" title="Wiki Frame"></iframe>
+                    <iframe hidden src="/wiki/workspace/${encodeURIComponent(this.#workspaceRoot)}/${encodeURIComponent(activeWikiName)}/wiki/index.html" scrolling="yes" style="width: 100%; height: 100%; border: none;" title="Wiki Frame"></iframe>
                 </div>
             </div>
         `;
@@ -14756,11 +17136,40 @@ class WikisView extends HTMLElement {
             this.#render();
         });
         this.querySelector("iframe")?.addEventListener("load", event => {
-            this.#wikiLoading = false;
-            this.querySelector(".wiki-frame-loading")?.setAttribute("hidden", "");
             if (event.currentTarget instanceof HTMLIFrameElement)
-                this.#hideIframeScrollbar(event.currentTarget);
+                this.#handleWikiFrameLoad(event.currentTarget);
         });
+    }
+    /**
+     * Reject JSON error documents before they become visible inside the wiki frame.
+     *
+     * @param {HTMLIFrameElement} iframe Loaded same-origin wiki frame.
+     * @returns {void} Nothing.
+     */
+    #handleWikiFrameLoad(iframe) {
+        const text = iframe.contentDocument?.body?.textContent?.trim() || "";
+        let error = "";
+        try {
+            const payload = JSON.parse(text);
+            if (typeof payload === "object" && payload !== null && "ok" in payload && payload.ok === false) {
+                error = "error" in payload && typeof payload.error === "string" ? payload.error : "Could not open wiki.";
+            }
+        }
+        catch {
+            // A rendered wiki is HTML, not a JSON error document.
+        }
+        if (error) {
+            this.#activeWikiName = null;
+            this.#wikiLoading = false;
+            const result = this.#api?.reportClientFailure("Open wiki", error) ?? null;
+            this.#state?.setLastResult(result);
+            void this.#loadWikis();
+            return;
+        }
+        this.#wikiLoading = false;
+        iframe.hidden = false;
+        this.querySelector(".wiki-frame-loading")?.setAttribute("hidden", "");
+        this.#hideIframeScrollbar(iframe);
     }
     /**
      * Hide the same-origin wiki scrollbar while preserving wheel, keyboard,
@@ -14795,7 +17204,7 @@ class WikisView extends HTMLElement {
 customElements.define(WikisView.selector, WikisView);
 
 cache=(()=>{return { WikisView: WikisView };})();return cache;};})();
-const __brainExplorerModule51=(()=>{let cache;return()=>{if(cache)return cache;
+const __brainExplorerModule63=(()=>{let cache;return()=>{if(cache)return cache;
 
 /**
  * Handles global keyboard interactions owned by the persistent application shell.
@@ -14822,10 +17231,10 @@ function handleShellSearchShortcut(host, event) {
 }
 
 cache=(()=>{return { handleShellSearchShortcut: handleShellSearchShortcut };})();return cache;};})();
-const __brainExplorerModule52=(()=>{let cache;return()=>{if(cache)return cache;
-const { escapeHtml } = __brainExplorerModule4();
-const { icon } = __brainExplorerModule5();
-const { SHELL_ROUTES } = __brainExplorerModule7();
+const __brainExplorerModule64=(()=>{let cache;return()=>{if(cache)return cache;
+const { escapeHtml } = __brainExplorerModule6();
+const { icon } = __brainExplorerModule7();
+const { SHELL_ROUTES } = __brainExplorerModule9();
 /**
  * Inert HTML renderer for the persistent shell navigation registry.
  *
@@ -14840,8 +17249,14 @@ const { SHELL_ROUTES } = __brainExplorerModule7();
  * @param {RouteId} activeRouteId Route identity currently owned by the shell state store.
  * @returns {string} Inert navigation-button markup in canonical registry order.
  */
-function renderShellNavigation(activeRouteId) {
-    return SHELL_ROUTES.filter(route => route.nav !== false).map(route => `
+function renderShellNavigation(activeRouteId, hasPreservedQuery = false) {
+    const returnToResultsButton = `
+        <button class="side-nav-item side-nav-return-results" ${hasPreservedQuery && activeRouteId !== "query" ? "" : "hidden"} data-action="return-to-results" data-tooltip="Search Results" aria-label="Search Results">
+            ${icon("search")}
+            <span class="nav-label">Search Results</span>
+        </button>
+    `;
+    return returnToResultsButton + SHELL_ROUTES.filter(route => route.nav !== false).map(route => `
         <button class="side-nav-item ${route.id === activeRouteId ? "is-active" : ""}" data-route="${route.id}" data-tooltip="${escapeHtml(route.label)}" aria-label="${escapeHtml(route.label)}">
             ${icon(route.icon)}
             <span class="nav-label">${escapeHtml(route.label)}</span>

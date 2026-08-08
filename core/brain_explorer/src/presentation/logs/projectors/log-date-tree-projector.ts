@@ -8,7 +8,6 @@
  */
 
 import type { LogEntryPayload } from "../../../application/logs/dtos/responses/logs-response.ts";
-import { logClockMinute } from "../formatters/log-entry-parser.ts";
 import type { LogDateGroup } from "../view_models/logs-view-model.ts";
 import type { StructureTreeNode } from "../../shared/view_models/structure-tree-view-model.ts";
 
@@ -31,7 +30,7 @@ const LOG_MONTH_LABELS: readonly string[] = [
  */
 export function projectLogDateTree(entries: readonly LogEntryPayload[]): StructureTreeNode[] {
     const years = new Map<string, LogDateGroup>();
-    entries.forEach((entry, index) => appendDateEntry(years, entry, index));
+    entries.forEach(entry => appendDateEntry(years, entry));
     return Array.from(years.values())
         .sort((left, right) => right.id.localeCompare(left.id))
         .map(projectDateGroup);
@@ -42,16 +41,14 @@ export function projectLogDateTree(entries: readonly LogEntryPayload[]): Structu
  *
  * @param {Map<string, LogDateGroup>} years Mutable top-level accumulator map owned by one projection call.
  * @param {LogEntryPayload} entry Structured log-index entry to classify.
- * @param {number} index Stable source position used to disambiguate render identities.
  */
-function appendDateEntry(years: Map<string, LogDateGroup>, entry: LogEntryPayload, index: number): void {
-    const [date = "", ...timeParts] = String(entry.timestamp || "").split(" ");
+function appendDateEntry(years: Map<string, LogDateGroup>, entry: LogEntryPayload): void {
+    const [date = ""] = String(entry.timestamp || "").split(" ");
     const match = date.match(/^(\d{2})-(\d{2})-(\d{4})$/);
     if (!match) return;
     const day = match[1] ?? "";
     const month = match[2] ?? "";
     const year = match[3] ?? "";
-    const time = timeParts.join(" ");
     const monthLabel = LOG_MONTH_LABELS[Number(month)] || month;
     const yearNode = ensureDateGroup(years, `logs-date:${year}`, year, "folder");
     const monthNode = ensureDateGroup(yearNode.children, `logs-date:${year}-${month}`, monthLabel, "folder");
@@ -61,19 +58,7 @@ function appendDateEntry(years: Map<string, LogDateGroup>, entry: LogEntryPayloa
         `${day} ${monthLabel}`,
         "clock"
     );
-    dayNode.entries.push({
-        id: `logs-date-entry:${index}:${date}:${time}:${entry.domain || "logs"}`,
-        path: `logs-date-entry:${date}:${time}:${entry.domain || "logs"}`,
-        label: entry.title || "Log entry",
-        timestamp: time,
-        sortKey: String(logClockMinute(time)).padStart(4, "0"),
-        detail: entry.domain || "logs",
-        presentation: "log",
-        domain: entry.domain || "",
-        date,
-        time,
-        children: []
-    });
+    dayNode.entryCount += 1;
 }
 
 /**
@@ -93,7 +78,7 @@ function ensureDateGroup(
 ): LogDateGroup {
     const existing = groups.get(id);
     if (existing) return existing;
-    const created: LogDateGroup = { id, label, icon, children: new Map(), entries: [] };
+    const created: LogDateGroup = { id, label, icon, children: new Map(), entryCount: 0 };
     groups.set(id, created);
     return created;
 }
@@ -108,7 +93,6 @@ function projectDateGroup(group: LogDateGroup): StructureTreeNode {
     const groups = Array.from(group.children.values())
         .sort((left, right) => right.id.localeCompare(left.id))
         .map(projectDateGroup);
-    const entries = [...group.entries].sort((left, right) => right.timestamp.localeCompare(left.timestamp));
     return {
         id: group.id,
         path: group.id,
@@ -117,7 +101,8 @@ function projectDateGroup(group: LogDateGroup): StructureTreeNode {
         icon: group.icon,
         count: countDateEntries(group),
         sortDirection: "desc",
-        children: [...groups, ...entries]
+        folder: groups.length > 0,
+        children: groups
     };
 }
 
@@ -128,6 +113,6 @@ function projectDateGroup(group: LogDateGroup): StructureTreeNode {
  * @returns {number} Total number of terminal entries owned by the group hierarchy.
  */
 function countDateEntries(group: LogDateGroup): number {
-    return group.entries.length + Array.from(group.children.values())
+    return group.entryCount + Array.from(group.children.values())
         .reduce((total, child) => total + countDateEntries(child), 0);
 }

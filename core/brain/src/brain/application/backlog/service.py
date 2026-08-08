@@ -42,18 +42,28 @@ class BacklogTaskDeletionError(ValueError):
 
 @dataclass(slots=True, frozen=True)
 class BacklogMigrationReport:
-    """Counts resulting from an idempotent legacy Markdown import."""
+    """Counts resulting from an idempotent legacy Markdown import.
+
+    Attributes:
+        imported: `int`. The number of tasks successfully imported into the database.
+        existing: `int`. The number of tasks already present in the database.
+    """
 
     imported: int
     existing: int
 
 
 def migrate_legacy_backlog(workspace_root: Path) -> BacklogMigrationReport:
-    """
-    Import task IDs missing from the legacy backlog Markdown source.
+    """Import task IDs missing from the legacy backlog Markdown source.
 
     SQLite is authoritative after a task has been imported. Re-running this
     function never overwrites task fields or state that have changed in the DB.
+
+    Args:
+        workspace_root: `Path`. The root directory of the workspace containing the legacy backlog source.
+
+    Returns:
+        BacklogMigrationReport: A report containing the counts of imported and existing tasks.
     """
     legacy_path = get_backlog_path(workspace_root=workspace_root)
     if not legacy_path.exists():
@@ -73,9 +83,38 @@ def migrate_legacy_backlog(workspace_root: Path) -> BacklogMigrationReport:
 
 
 def list_backlog_tasks(workspace_root: Path, domain: str | None = None, show_all: bool = False) -> list[BacklogTask]:
-    """Migrate legacy tasks when needed, then return DB-backed backlog tasks."""
+    """Migrate legacy tasks when needed, then return DB-backed backlog tasks.
+
+    Args:
+        workspace_root: `Path`. The root directory of the workspace.
+        domain: `str | None`. Optional dot-notated domain to filter the tasks.
+        show_all: `bool`. Whether to include all tasks regardless of status.
+
+    Returns:
+        list[BacklogTask]: A list of persistent backlog task records.
+    """
     migrate_legacy_backlog(workspace_root=workspace_root)
     return list_tasks(workspace_root=workspace_root, domain=domain, show_all=show_all)
+
+
+def get_backlog_task(workspace_root: Path, task_id: str) -> BacklogTask:
+    """Return one durable backlog task by identifier.
+
+    Args:
+        workspace_root: `Path`. The root directory of the workspace.
+        task_id: `str`. The persistent task identifier in ``tN`` or numeric form.
+
+    Returns:
+        BacklogTask: The matching persistent task record.
+
+    Raises:
+        BacklogTaskNotFoundError: Raised when the requested task does not exist.
+    """
+    migrate_legacy_backlog(workspace_root=workspace_root)
+    task = get_task(workspace_root=workspace_root, task_id=task_id)
+    if task is None:
+        raise BacklogTaskNotFoundError(f"Task with ID '{normalize_task_id(task_id)}' not found.")
+    return task
 
 
 def create_backlog_task(
@@ -85,7 +124,21 @@ def create_backlog_task(
     description: str,
     priority: str = "LOW",
 ) -> BacklogTask:
-    """Create one working task after importing any legacy source task IDs."""
+    """Create one working task after importing any legacy source task IDs.
+
+    Args:
+        workspace_root: `Path`. The root directory of the workspace.
+        domain: `str`. The dot-notated domain for the task.
+        title: `str`. The title of the task.
+        description: `str`. The detailed description of the task.
+        priority: `str`. The priority level of the task, defaulting to LOW.
+
+    Returns:
+        BacklogTask: The created persistent backlog task record.
+
+    Raises:
+        ValueError: Raised if the task title is empty or the priority is invalid.
+    """
     normalized_domain = _normalize_domain(domain=domain)
     normalized_title = title.strip()
     if not normalized_title:
@@ -102,7 +155,20 @@ def create_backlog_task(
 
 
 def set_backlog_task_status(workspace_root: Path, task_id: str, status: str) -> BacklogTask:
-    """Set one task to `WORKING` or `DONE` and return its persistent record."""
+    """Set one task to `WORKING` or `DONE` and return its persistent record.
+
+    Args:
+        workspace_root: `Path`. The root directory of the workspace.
+        task_id: `str`. The persistent identifier of the task.
+        status: `str`. The new status to assign to the task.
+
+    Returns:
+        BacklogTask: The updated persistent backlog task record.
+
+    Raises:
+        ValueError: Raised if the provided status is not WORKING or DONE.
+        BacklogTaskNotFoundError: Raised if the specified task ID does not exist.
+    """
     normalized_status = str(status).upper().strip()
     if normalized_status not in TASK_STATUSES:
         raise ValueError("Task status must be WORKING or DONE.")
@@ -125,19 +191,39 @@ def edit_backlog_task(
     title: str | None = None,
     description: str | None = None,
     priority: str | None = None,
+    domain: str | None = None,
 ) -> BacklogTask:
-    """Edit supplied fields while preserving the task's current status."""
+    """
+    Edit supplied task fields while preserving the current workflow status.
+
+    Args:
+        workspace_root: Workspace containing the canonical backlog database.
+        task_id: Persistent task identifier in `tN` or numeric form.
+        title: Optional replacement title.
+        description: Optional replacement description.
+        priority: Optional replacement priority.
+        domain: Optional replacement dot-notated domain.
+
+    Returns:
+        BacklogTask: Updated persistent task record.
+
+    Raises:
+        BacklogTaskNotFoundError: The requested task does not exist.
+        ValueError: A supplied field does not satisfy its contract.
+    """
     migrate_legacy_backlog(workspace_root=workspace_root)
     normalized_title = title.strip() if title is not None else None
     if normalized_title is not None and not normalized_title:
         raise ValueError("Task title must not be empty.")
     normalized_priority = _normalize_priority(priority) if priority is not None else None
+    normalized_domain = _normalize_domain(domain) if domain is not None else None
     task = edit_task_record(
         workspace_root=workspace_root,
         task_id=task_id,
         title=normalized_title,
         description=description.strip() if description is not None else None,
         priority=normalized_priority,
+        domain=normalized_domain,
     )
     if task is None:
         raise BacklogTaskNotFoundError(f"Task with ID '{normalize_task_id(task_id)}' not found.")
@@ -145,7 +231,17 @@ def edit_backlog_task(
 
 
 def remove_backlog_task(workspace_root: Path, task_id: str, force: bool = False) -> None:
-    """Delete a completed task, or explicitly override the guard with force."""
+    """Delete a completed task, or explicitly override the guard with force.
+
+    Args:
+        workspace_root: `Path`. The root directory of the workspace.
+        task_id: `str`. The persistent identifier of the task to remove.
+        force: `bool`. Whether to override the completion guard and delete a WORKING task.
+
+    Raises:
+        BacklogTaskNotFoundError: Raised if the specified task ID does not exist.
+        BacklogTaskDeletionError: Raised if a WORKING task is deleted without the force flag.
+    """
     migrate_legacy_backlog(workspace_root=workspace_root)
     task = get_task(workspace_root=workspace_root, task_id=task_id)
     if task is None:
@@ -158,7 +254,14 @@ def remove_backlog_task(workspace_root: Path, task_id: str, force: bool = False)
 
 
 def build_task_tree(tasks: list[BacklogTask]) -> TaskNode:
-    """Build the presentation tree from the durable flat task projection."""
+    """Build the presentation tree from the durable flat task projection.
+
+    Args:
+        tasks: `list[BacklogTask]`. A list of backlog tasks to be organized into a tree.
+
+    Returns:
+        TaskNode: The root node of the constructed task tree.
+    """
     root = TaskNode("", 0)
     for task in tasks:
         current = root
@@ -171,7 +274,14 @@ def build_task_tree(tasks: list[BacklogTask]) -> TaskNode:
 
 
 def get_next_task_id(root: TaskNode) -> str:
-    """Walk a legacy tree and return the next `tN` identifier."""
+    """Walk a legacy tree and return the next `tN` identifier.
+
+    Args:
+        root: `TaskNode`. The root node of the task tree to analyze.
+
+    Returns:
+        str: The next sequential task identifier in tN format.
+    """
     max_num = 0
     for task in _walk_node_tasks(root=root):
         task_match = re.match(r"^t(\d+)$", str(task["id"]))
@@ -185,6 +295,12 @@ def _walk_legacy_tasks(root: TaskNode) -> list[BacklogTask]:
     tasks: list[BacklogTask] = []
 
     def walk(node: TaskNode, path: list[str]) -> None:
+        """Recursively traverse a task tree to convert parsed legacy nodes into normalized migration records.
+
+        Args:
+            node: `TaskNode`. The current node being visited in the tree.
+            path: `list[str]`. The accumulated domain path from the root to the current node.
+        """
         current_path = path if node.level == 0 else [*path, node.name]
         for task in node.tasks:
             status = str(task.get("status", "DONE" if task.get("checked") else "TODO"))

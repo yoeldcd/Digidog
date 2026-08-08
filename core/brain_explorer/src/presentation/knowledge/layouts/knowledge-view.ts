@@ -13,7 +13,7 @@ import { knowledgeNodeId } from "../formatters/knowledge-graph-formatter.ts";
 import { KnowledgeTreeInteractionController } from "../controllers/knowledge-tree-interaction-controller.ts";
 import type { AvatarMessageRecord } from "../../../application/messages/dtos/responses/messages-response.ts";
 import type { PictureRecord } from "../../../application/pictures/dtos/responses/pictures-response.ts";
-import type { ComponentContext } from "../../shared/view_models/component-context-view-model.ts";
+import type { ComponentContext, TargetFocusableLayout } from "../../shared/view_models/component-context-view-model.ts";
 import type {
     KnowledgeGraphEdge,
     KnowledgeGraphCollection,
@@ -32,7 +32,7 @@ void StructureTree;
  * KnowledgeView renders a canvas-based explorer for graph records returned by the CLI facade.
  * Entities/classes become draggable nodes. Relations become selectable edges.
  */
-export class KnowledgeView extends KnowledgeTreeInteractionController {
+export class KnowledgeView extends KnowledgeTreeInteractionController implements TargetFocusableLayout {
     /**
      * Projects persistence-backed source records into the shared navigation tree.
      * @type {KnowledgeSourceTreeProjector}
@@ -64,11 +64,8 @@ export class KnowledgeView extends KnowledgeTreeInteractionController {
     set context(context: ComponentContext) {
         this.api = context.api;
         this.state = context.state;
-        const target = this.state?.consumeRouteTarget?.("knowledge") || null;
-        this.pendingEntityLabel = String(target?.entityLabel || "").trim();
         this.render();
         this.scheduleInitialLoad();
-        if (this.output) queueMicrotask(() => this.resolvePendingEntity());
     }
     /**
      * Initialize component DOM.
@@ -127,13 +124,19 @@ export class KnowledgeView extends KnowledgeTreeInteractionController {
             .map(input => input.value)
             .filter((mode): mode is "entities" | "classes" => mode === "entities" || mode === "classes");
         this.mode = selectedModes.length === 1 ? (selectedModes[0] ?? "all") : "all";
-        this.query = this.querySelector<HTMLInputElement>("[data-role='kg-query']")?.value.trim() || "";
     }
     /**
      * Render view markup.
      *
      * @returns {void}
      */
+    applyReactiveContentFilter(query: string): void {
+        this.query = query.trim();
+        this.needsViewportFit = true;
+        this.prepareGraph();
+        this.drawCanvas();
+    }
+
     protected render() {
         this.innerHTML = `
             <section class="page-surface knowledge-console">
@@ -145,7 +148,6 @@ export class KnowledgeView extends KnowledgeTreeInteractionController {
                     </aside>
                     <main class="structure-content knowledge-content">
                         <div class="content-head graph-toolbar">
-                            <input class="graph-search-input" aria-label="Search graph" data-role="kg-query" value="${escapeHtml(this.query)}" placeholder="Filter or search graph">
                             <details class="action-menu filter-menu knowledge-filter-menu" ${this.filtersOpen ? "open" : ""}>
                                 <summary class="compact-action">${icon("filter")}<span>Filters</span></summary>
                                 <div class="action-menu-panel filter-menu-panel">
@@ -291,6 +293,7 @@ export class KnowledgeView extends KnowledgeTreeInteractionController {
     protected renderDomainTree(): string {
         this.domainTreeNodes = this.sourceTreeProjector.project({
             selectedScopes: this.selectedScopes,
+            rootPath: this.treeFilterActive ? this.selectedTreePath : "",
             memoryPaths: this.memoryPaths,
             pictures: this.pictures,
             messages: this.messages,
@@ -308,11 +311,18 @@ export class KnowledgeView extends KnowledgeTreeInteractionController {
      * @returns {string} An HTML string representing the rendered inspector details.
      */
     protected renderDetails(): string {
+        const focus = this.focusGraph();
+        const projectedNodes = focus
+            ? this.nodes.filter(node => focus.nodeIds.has(node.id))
+            : this.nodes;
+        const projectedEdges = focus
+            ? this.edges.filter(edge => focus.edgeIds.has(edge.id))
+            : this.edges;
         const proxiedInspector = this.inspectorRenderer.render({
-            nodes: this.nodes,
-            edges: this.edges,
-            selectedNodeId: this.selectedNodeId,
-            selectedRelationId: this.selectedRelationId,
+            nodes: projectedNodes,
+            edges: projectedEdges,
+            selectedNodeId: this.hoveredNodeId || this.selectedNodeId,
+            selectedRelationId: this.hoveredRelationId || this.selectedRelationId,
             importantNodes: this.importantNodes(),
             pictureForNode: node => this.pictureForNode(node),
             messageForNode: node => this.messageForNode(node),
@@ -727,6 +737,7 @@ export class KnowledgeView extends KnowledgeTreeInteractionController {
             this.readControls();
             if (this.treeScope !== "all" && !this.selectedScopes.has(this.treeScope)) {
                 this.selectedTreePath = "";
+                this.treeFilterActive = false;
                 this.treeScope = "all";
                 this.domain = "all";
                 this.sourceKind = "";
@@ -747,9 +758,26 @@ export class KnowledgeView extends KnowledgeTreeInteractionController {
         this.beginGraphBusy("Focusing graph source");
         await this.waitForGraphPaint();
         try {
-            this.resetGraphRegion();
-            this.needsViewportFit = true;
-            this.prepareGraph();
+            this.treeHighlightNodeIds = new Set(this.nodes
+                .filter(node => this.recordMatchesTreeSelection(
+                    node,
+                    this.highlightDomain,
+                    this.highlightScope,
+                    this.highlightSourceKind,
+                    this.highlightSourcePath,
+                    this.highlightVisualType,
+                ))
+                .map(node => node.id));
+            this.treeHighlightEdgeIds = new Set(this.edges
+                .filter(edge => this.recordMatchesTreeSelection(
+                    edge,
+                    this.highlightDomain,
+                    this.highlightScope,
+                    this.highlightSourceKind,
+                    this.highlightSourcePath,
+                    this.highlightVisualType,
+                ))
+                .map(edge => edge.id));
             this.syncDomainTreeSelection();
             this.drawCanvas();
             this.renderInspector();
@@ -768,6 +796,46 @@ export class KnowledgeView extends KnowledgeTreeInteractionController {
             button.closest("[role='treeitem']")?.setAttribute("aria-selected", String(selected));
         });
     }
+    /**
+     * Focus a canonical Knowledge graph target after graph data is ready.
+     *
+     * @param {Readonly<Record<string, unknown>>} target - Canonical target identity.
+     * @returns {Promise<void>} Resolves after selection and canvas navigation complete.
+     */
+    public async focusTarget(target: Readonly<Record<string, unknown>>): Promise<void> {
+        const nodeId = String(target.nodeId || "").trim();
+        const relationId = String(target.relationId || "").trim();
+        const entityLabel = String(target.entityLabel || "").trim();
+        const readinessDeadline = Date.now() + 5000;
+
+        while (!this.output && Date.now() < readinessDeadline) {
+            await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+        }
+
+        if (relationId && this.edges.some(edge => edge.id === relationId)) {
+            this.selectRelation(relationId);
+            return;
+        }
+
+        if (nodeId && this.nodes.some(node => node.id === nodeId)) {
+            this.focusNode(nodeId);
+            return;
+        }
+
+        if (entityLabel) {
+            this.focusEntityByLabel(entityLabel);
+        }
+    }
+
+    /**
+     * Route targets are focused through the shared public contract.
+     *
+     * @returns {void} No-op retained for the controller lifecycle contract.
+     */
+    protected override resolvePendingEntity(): void {
+        return;
+    }
+
     /**
      * Bind DOM events.
      *

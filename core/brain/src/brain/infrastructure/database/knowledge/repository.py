@@ -17,14 +17,14 @@ from brain.application.knowledge.runtime.scopes import get_knowledge_root, get_s
 from brain.infrastructure.database.knowledge.schema.bootstrap import initialize_schema
 from brain.infrastructure.database.knowledge.schema.connection import connect_database
 from brain.infrastructure.database.knowledge.repositories.deltas import KnowledgeDeltaRepositoryMixin
-from brain.infrastructure.database.knowledge.repositories.entity_aliases import KnowledgeEntityAliasRepositoryMixin
-from brain.infrastructure.database.knowledge.repositories.entity_classes import KnowledgeEntityClassRepositoryMixin
-from brain.infrastructure.database.knowledge.repositories.entity_lookup import KnowledgeEntityLookupRepositoryMixin
-from brain.infrastructure.database.knowledge.repositories.entity_records import KnowledgeEntityRecordsRepositoryMixin
-from brain.infrastructure.database.knowledge.repositories.entity_type_assertions import (
+from brain.infrastructure.database.knowledge.entities.entity_aliases import KnowledgeEntityAliasRepositoryMixin
+from brain.infrastructure.database.knowledge.entities.entity_classes import KnowledgeEntityClassRepositoryMixin
+from brain.infrastructure.database.knowledge.entities.entity_lookup import KnowledgeEntityLookupRepositoryMixin
+from brain.infrastructure.database.knowledge.entities.entity_records import KnowledgeEntityRecordsRepositoryMixin
+from brain.infrastructure.database.knowledge.entities.entity_type_assertions import (
     KnowledgeEntityTypeAssertionRepositoryMixin,
 )
-from brain.infrastructure.database.knowledge.repositories.entity_views import KnowledgeEntityViewRepositoryMixin
+from brain.infrastructure.database.knowledge.entities.entity_views import KnowledgeEntityViewRepositoryMixin
 from brain.infrastructure.database.knowledge.repositories.ontology import KnowledgeOntologyRepositoryMixin
 from brain.infrastructure.database.knowledge.repositories.query import KnowledgeQueryRepositoryMixin
 from brain.infrastructure.database.knowledge.repositories.relations import KnowledgeRelationRepositoryMixin
@@ -44,7 +44,12 @@ class KnowledgeRepository(
     KnowledgeOntologyRepositoryMixin,
     KnowledgeQueryRepositoryMixin,
 ):
-    """Persistence boundary for the private knowledge graph."""
+    """Persistence boundary for the private knowledge graph.
+
+    Attributes:
+        db_path (Path): SQLite database path for the selected scope.
+        scope (str): Canonical knowledge scope owned by the repository.
+    """
 
     db_path: Path
     """SQLite database path."""

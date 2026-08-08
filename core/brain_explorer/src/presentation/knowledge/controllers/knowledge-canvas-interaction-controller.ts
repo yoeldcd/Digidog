@@ -233,11 +233,52 @@ export abstract class KnowledgeCanvasInteractionController extends KnowledgeCanv
             return;
         }
         if (!this.panState) {
+            this.previewCanvasGeometry(event, canvas);
             return;
         }
+        this.clearCanvasHover();
         this.viewport.x = this.panState.startX + (event.clientX - this.panState.clientX);
         this.viewport.y = this.panState.startY + (event.clientY - this.panState.clientY);
         this.drawCanvas();
+    }
+
+    /**
+     * Preview the graph entity whose rendered geometry contains the pointer.
+     *
+     * @param {PointerEvent} event Pointer event.
+     * @param {HTMLCanvasElement} canvas Bound Knowledge canvas.
+     * @returns {void}
+     */
+    protected previewCanvasGeometry(event: PointerEvent, canvas: HTMLCanvasElement): void {
+        const point = this.canvasPoint(event, canvas);
+        const node = this.hitTestNode(point.x, point.y);
+        const edge = this.hitTestEdge(point.x, point.y);
+        const hoveredNodeId = node && (!edge || this.nodeOwnsPoint(node, point.x, point.y)) ? node.id : "";
+        const hoveredRelationId = hoveredNodeId ? "" : edge?.id || "";
+        if (hoveredNodeId === this.hoveredNodeId && hoveredRelationId === this.hoveredRelationId) {
+            return;
+        }
+        this.hoveredNodeId = hoveredNodeId;
+        this.hoveredRelationId = hoveredRelationId;
+        canvas.style.cursor = hoveredNodeId || hoveredRelationId ? "pointer" : "default";
+        this.drawCanvas();
+        this.renderInspector();
+    }
+
+    /**
+     * Clear transient canvas hover while preserving the persistent click selection.
+     *
+     * @returns {void}
+     */
+    protected clearCanvasHover(): void {
+        const hadHover = Boolean(this.hoveredNodeId || this.hoveredRelationId);
+        this.hoveredNodeId = "";
+        this.hoveredRelationId = "";
+        const canvas = this.querySelector<HTMLCanvasElement>("[data-role='knowledge-canvas']");
+        if (canvas) canvas.style.cursor = "default";
+        if (!hadHover) return;
+        this.drawCanvas();
+        this.renderInspector();
     }
 
     /**
@@ -489,18 +530,6 @@ export abstract class KnowledgeCanvasInteractionController extends KnowledgeCanv
                 }
                 this.applyFilters();
             });
-        });
-        this.querySelector("[data-role='kg-query']")?.addEventListener("input", () => {
-            this.readControls();
-            this.needsViewportFit = true;
-            this.prepareGraph();
-            this.drawCanvas();
-            this.renderInspector();
-        });
-        this.querySelector("[data-role='kg-query']")?.addEventListener("keydown", event => {
-            if (event instanceof KeyboardEvent && event.key === "Enter") {
-                this.queryRecords();
-            }
         });
         this.querySelectorAll("[data-filter-kind='kg-scope']").forEach(input => {
             input.addEventListener("change", () => this.applyFilters());

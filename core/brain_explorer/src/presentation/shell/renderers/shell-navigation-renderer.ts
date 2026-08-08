@@ -15,8 +15,14 @@ import { SHELL_ROUTES } from "../config/shell-routes.ts";
  * @param {RouteId} activeRouteId Route identity currently owned by the shell state store.
  * @returns {string} Inert navigation-button markup in canonical registry order.
  */
-export function renderShellNavigation(activeRouteId: RouteId): string {
-    return SHELL_ROUTES.filter(route => route.nav !== false).map(route => `
+export function renderShellNavigation(activeRouteId: RouteId, hasPreservedQuery: boolean = false): string {
+    const returnToResultsButton = `
+        <button class="side-nav-item side-nav-return-results" ${hasPreservedQuery && activeRouteId !== "query" ? "" : "hidden"} data-action="return-to-results" data-tooltip="Search Results" aria-label="Search Results">
+            ${icon("search")}
+            <span class="nav-label">Search Results</span>
+        </button>
+    `;
+    return returnToResultsButton + SHELL_ROUTES.filter(route => route.nav !== false).map(route => `
         <button class="side-nav-item ${route.id === activeRouteId ? "is-active" : ""}" data-route="${route.id}" data-tooltip="${escapeHtml(route.label)}" aria-label="${escapeHtml(route.label)}">
             ${icon(route.icon)}
             <span class="nav-label">${escapeHtml(route.label)}</span>

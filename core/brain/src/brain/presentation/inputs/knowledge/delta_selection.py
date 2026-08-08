@@ -10,7 +10,7 @@ import sys
 from typing import Any
 
 # Application Modules Imports
-from brain.application.knowledge.pipeline.delta_status import is_delta_applicable
+from brain.application.knowledge.pipeline.deltas.delta_status import is_delta_applicable
 from brain.presentation.terminal import render_placeholders
 
 

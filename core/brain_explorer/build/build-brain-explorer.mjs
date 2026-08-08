@@ -14,6 +14,7 @@ const DIST_DIR = resolve(ROOT, "dist");
 const ENTRY_TS = resolve(SRC_DIR, "app.ts");
 const ENTRY_CSS = resolve(SRC_DIR, "styles", "brain-explorer.css");
 const ENTRY_HTML = resolve(SRC_DIR, "index.html");
+const ENTRY_FAVICON = resolve(SRC_DIR, "brain-explorer-favicon.png");
 
 const modules = new Map();
 /**
@@ -26,6 +27,7 @@ await mkdir(DIST_DIR, { recursive: true });
 await writeFile(resolve(DIST_DIR, "brain-explorer.js"), await bundleEntry(ENTRY_TS), "utf8");
 await writeFile(resolve(DIST_DIR, "brain-explorer.css"), compactCss(await bundleCss(ENTRY_CSS)), "utf8");
 await copyFile(ENTRY_HTML, resolve(DIST_DIR, "index.html"));
+await copyFile(ENTRY_FAVICON, resolve(DIST_DIR, "brain-explorer-favicon.png"));
 await writeFile(resolve(DIST_DIR, "brain-explorer.bundle.json"), `${JSON.stringify(bundleManifest(), null, 2)}\n`, "utf8");
 
 async function bundleEntry(path) {
@@ -159,7 +161,8 @@ function bundleManifest() {
         entrypoints: {
             html: "index.html",
             script: "brain-explorer.js",
-            stylesheet: "brain-explorer.css"
+            stylesheet: "brain-explorer.css",
+            favicon: "brain-explorer-favicon.png"
         },
         generatedBy: "build/build-brain-explorer.mjs",
         sourceEntry: "src/app.ts"

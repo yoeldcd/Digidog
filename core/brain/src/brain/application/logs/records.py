@@ -19,16 +19,17 @@ class LogEntryRecord:
     """Application record for one structured workspace log entry.
 
     Attributes:
-        timestamp: Canonical entry timestamp.
-        domain: Affected changelog domain.
-        title: Reader-facing change title.
-        change_type: Normalized change type.
-        why: Change reason.
-        description: Change description.
-        impact: Change impact.
-        source_path: Stable source path used when imported from Markdown.
-        source_mtime: Source modification time used for incremental consumers.
-        source_size: Source size in bytes used for diagnostics.
+        timestamp (str): Canonical entry timestamp.
+        domain (str): Affected changelog domain.
+        title (str): Reader-facing change title.
+        change_type (str): Normalized change type.
+        why (str): Change reason.
+        description (str): Change description.
+        impact (str): Change impact.
+        source_path (str): Stable source path used when imported from Markdown.
+        source_mtime (float): Source modification time used for incremental consumers.
+        source_size (int): Source size in bytes used for diagnostics.
+        record_id (int): SQLite identifier, or zero before persistence.
     """
 
     timestamp: str
@@ -185,7 +186,14 @@ def render_log_file(date_text: str, entries: list[LogEntryRecord]) -> str:
 
 
 def normalize_imported_log_type(change_type: str) -> str:
-    """Normalize an imported log type without rejecting historical entries."""
+    """Normalize an imported log type without rejecting historical entries.
+
+    Args:
+        change_type (str): Change classification read from an imported entry.
+
+    Returns:
+        str: Canonical change type with a conservative historical fallback.
+    """
     try:
         return normalize_log_type(change_type=change_type)
     except ValueError:

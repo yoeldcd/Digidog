@@ -21,7 +21,16 @@ WORKSPACE_ROOT = Path(os.environ.get("WORKSPACE_ROOT", "."))
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Render the latest-entry log index from SQLite."""
+    """Render the latest-entry SQLite log index, optionally by domain prefix.
+
+    Args:
+        args (argparse.Namespace): Parsed command options selecting the optional
+            section and output settings.
+
+    Returns:
+        int: Zero when the index is rendered; otherwise one after reporting an
+            error.
+    """
     color_enabled = getattr(args, "color", False)
     try:
         log_step(args, "Reading DB-backed logs index...")

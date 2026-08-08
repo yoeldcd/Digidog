@@ -24,7 +24,17 @@ class AppendLogError(ValueError):
 
 @dataclass(frozen=True)
 class AppendLogRequest:
-    """Input contract for appending one workspace log entry."""
+    """Input contract for appending one workspace log entry.
+
+    Attributes:
+        log_domain (str): Dot-separated domain assigned to the entry.
+        title (str): Concise entry title.
+        change_type (str): Canonical change classification.
+        why (str): Motivation for the recorded change.
+        description (str): Detailed change description.
+        impact (str): Observable effect of the change.
+        timestamp (str | None): Optional canonical timestamp override.
+    """
 
     log_domain: str
     title: str
@@ -37,7 +47,13 @@ class AppendLogRequest:
 
 @dataclass(frozen=True)
 class AppendLogResult:
-    """Result contract for appending one workspace log entry."""
+    """Result contract for appending one workspace log entry.
+
+    Attributes:
+        log_file (Path): Compatibility source path associated with the entry date.
+        timestamp (str): Canonical timestamp of the inserted entry.
+        read_command (str): CLI command that reads the inserted entry.
+    """
 
     log_file: Path
     timestamp: str

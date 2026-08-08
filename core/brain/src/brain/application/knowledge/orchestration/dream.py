@@ -27,7 +27,7 @@ from brain.application.knowledge.orchestration.dream_delta_rules import delta_ha
 from brain.application.knowledge.pipeline.extraction import attach_source_id, merge_deltas
 from brain.application.knowledge.llm.framing import build_knowledge_frame, render_knowledge_frame_for_llm
 from brain.application.knowledge.llm.events import LLMEventCallback
-from brain.application.knowledge.llm.stage_sequence import generate_multistage_deltas
+from brain.application.knowledge.llm.stages.stage_sequence import generate_multistage_deltas
 from brain.infrastructure.database.knowledge.repository import KnowledgeRepository
 from brain.application.knowledge.sources.freshness import mark_source_processed
 from brain.application.knowledge.sources.ingestion import ingest_sources
@@ -57,6 +57,7 @@ class DreamRunner:
     def run(
         self,
         domain: str = "all",
+        source_paths: list[str] | None = None,
         limit: int | None = None,
         dry_run: bool = True,
         use_llm: bool = True,
@@ -70,6 +71,7 @@ class DreamRunner:
 
         Args:
             domain (str): Source domain filter.
+            source_paths (list[str] | None): Optional exact source paths selected by a container action.
             limit (int | None): Optional source limit.
             dry_run (bool): Whether to avoid applying valid deltas.
             use_llm (bool): Whether to allow model-backed proposals. LLM-only dream skips sources when false.
@@ -99,6 +101,7 @@ class DreamRunner:
         ingestion_result: dict = ingest_sources(
             repository=self.repository,
             domain=domain,
+            source_paths=source_paths,
             limit=limit,
             source_scope=self.repository.scope,
             force_all=force_all,

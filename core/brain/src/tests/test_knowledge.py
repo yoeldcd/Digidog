@@ -79,7 +79,7 @@ from brain.application.logs.store import (
     log_database_summary,
     rendered_logs_index,
 )
-from brain.infrastructure.runtime.migration_service import migrate_brain_runtime_stores
+from brain.infrastructure.runtime.migrations.migration_service import migrate_brain_runtime_stores
 from brain.infrastructure.vectorstores.chunking import log_entry_body_text, normalized_entry_time
 from brain.infrastructure.vectorstores.manager import VectorStoreManager
 

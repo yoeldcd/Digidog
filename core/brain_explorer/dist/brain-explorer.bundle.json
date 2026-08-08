@@ -4,7 +4,8 @@
   "entrypoints": {
     "html": "index.html",
     "script": "brain-explorer.js",
-    "stylesheet": "brain-explorer.css"
+    "stylesheet": "brain-explorer.css",
+    "favicon": "brain-explorer-favicon.png"
   },
   "generatedBy": "build/build-brain-explorer.mjs",
   "sourceEntry": "src/app.ts"

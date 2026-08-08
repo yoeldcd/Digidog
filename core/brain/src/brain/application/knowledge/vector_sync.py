@@ -27,6 +27,9 @@ def sync_all_knowledge_vectorstores(vectorstore_path: Path | None = None) -> tup
     """
     Synchronize knowledge vectors for all configured graph scopes.
 
+    Args:
+        vectorstore_path (Path | None): Optional vectorstore directory override shared by every scope.
+
     Returns:
         tuple[list[dict[str, Any]], list[str]]: Sync stats and non-blocking warnings.
     """
@@ -54,6 +57,7 @@ def safe_sync_knowledge_vectors(
 
     Args:
         repository (KnowledgeRepository): Knowledge repository.
+        vectorstore_path (Path | None): Optional vectorstore directory override.
 
     Returns:
         tuple[dict[str, Any], str]: Sync stats and warning text.
@@ -73,6 +77,7 @@ def sync_knowledge_vectors(
 
     Args:
         repository (KnowledgeRepository): Knowledge repository.
+        vectorstore_path (Path | None): Optional vectorstore directory override.
 
     Returns:
         dict[str, Any]: Sync statistics.
@@ -147,7 +152,15 @@ def hydrate_knowledge_vector_match(
     repository: KnowledgeRepository,
     match: dict[str, Any],
 ) -> dict[str, Any]:
-    """Hydrate a reference-only knowledge vector from canonical SQLite rows."""
+    """Hydrate a reference-only knowledge vector from canonical SQLite rows.
+
+    Args:
+        repository (KnowledgeRepository): Canonical knowledge repository for the selected scope.
+        match (dict[str, Any]): Vector match containing reference metadata.
+
+    Returns:
+        dict[str, Any]: Match enriched with canonical text and metadata when its row exists.
+    """
     metadata: dict[str, Any] = dict(match.get("metadata") or {})
     kind: str = str(metadata.get("knowledge_kind") or "")
     record_id: int = int(metadata.get("record_id") or 0)
@@ -177,7 +190,15 @@ def hydrated_entity_vector_metadata(
     reference_metadata: dict[str, Any],
     entity_row: dict[str, Any],
 ) -> dict[str, Any]:
-    """Expand an entity reference for query presentation without persisting payload copies."""
+    """Expand an entity reference for query presentation without persisting payload copies.
+
+    Args:
+        reference_metadata (dict[str, Any]): Reference-only metadata stored with the vector.
+        entity_row (dict[str, Any]): Canonical entity row loaded from SQLite.
+
+    Returns:
+        dict[str, Any]: Presentation metadata combining the reference and canonical entity fields.
+    """
     assertions: list[dict[str, Any]] = [
         assertion
         for assertion in entity_row.get("type_assertions", [])
@@ -200,7 +221,15 @@ def hydrated_relation_vector_metadata(
     reference_metadata: dict[str, Any],
     relation_row: dict[str, Any],
 ) -> dict[str, Any]:
-    """Expand a relation reference for query presentation without persisting payload copies."""
+    """Expand a relation reference for query presentation without persisting payload copies.
+
+    Args:
+        reference_metadata (dict[str, Any]): Reference-only metadata stored with the vector.
+        relation_row (dict[str, Any]): Canonical relation row loaded from SQLite.
+
+    Returns:
+        dict[str, Any]: Presentation metadata combining the reference and canonical relation fields.
+    """
     return {
         **reference_metadata,
         "relation_id": int(relation_row["id"]),
@@ -225,6 +254,9 @@ def open_knowledge_vectorstore(scope: str, create: bool = True) -> VectorStoreMa
 
     Returns:
         VectorStoreManager: Manager for the knowledge collection.
+
+    Raises:
+        RuntimeError: The scoped vectorstore is missing when creation is disabled.
     """
     if create:
         vectorstore_path: Path = get_vectorstore_dir(scope=scope)
@@ -250,12 +282,28 @@ def ensure_embedding_config_available() -> None:
 
 
 def knowledge_doc_id(scope: str, kind: str, record_id: int) -> str:
-    """Return a stable vector document ID."""
+    """Return a stable vector document ID.
+
+    Args:
+        scope (str): Knowledge scope that owns the record.
+        kind (str): Knowledge record kind, such as entity or relation.
+        record_id (int): Canonical database identifier.
+
+    Returns:
+        str: Stable scope-qualified vector document identifier.
+    """
     return f"{scope}:knowledge:{kind}:{record_id}"
 
 
 def entity_vector_text(entity_row: dict[str, Any]) -> str:
-    """Build vector text for one entity row."""
+    """Build vector text for one entity row.
+
+    Args:
+        entity_row (dict[str, Any]): Canonical entity row and its type assertions.
+
+    Returns:
+        str: Searchable text assembled from entity identity, description, and provenance.
+    """
     assertion_text: str = " ".join(
         " ".join(
             (
@@ -282,7 +330,14 @@ def entity_vector_text(entity_row: dict[str, Any]) -> str:
 
 
 def relation_vector_text(relation_row: dict[str, Any]) -> str:
-    """Build vector text for one relation row."""
+    """Build vector text for one relation row.
+
+    Args:
+        relation_row (dict[str, Any]): Canonical relation row with endpoint metadata.
+
+    Returns:
+        str: Searchable text assembled from the relation and its endpoints.
+    """
     return " ".join(
         str(value or "")
         for value in (
@@ -298,7 +353,15 @@ def relation_vector_text(relation_row: dict[str, Any]) -> str:
 
 
 def entity_vector_metadata(scope: str, entity_row: dict[str, Any]) -> dict[str, Any]:
-    """Build Chroma metadata for one entity row."""
+    """Build Chroma metadata for one entity row.
+
+    Args:
+        scope (str): Knowledge scope that owns the entity.
+        entity_row (dict[str, Any]): Canonical entity row.
+
+    Returns:
+        dict[str, Any]: Minimal reference metadata stored beside the vector.
+    """
     return {
         "knowledge_scope": scope,
         "knowledge_kind": "entity",
@@ -307,7 +370,15 @@ def entity_vector_metadata(scope: str, entity_row: dict[str, Any]) -> dict[str, 
 
 
 def relation_vector_metadata(scope: str, relation_row: dict[str, Any]) -> dict[str, Any]:
-    """Build Chroma metadata for one relation row."""
+    """Build Chroma metadata for one relation row.
+
+    Args:
+        scope (str): Knowledge scope that owns the relation.
+        relation_row (dict[str, Any]): Canonical relation row.
+
+    Returns:
+        dict[str, Any]: Minimal reference metadata stored beside the vector.
+    """
     return {
         "knowledge_scope": scope,
         "knowledge_kind": "relation",

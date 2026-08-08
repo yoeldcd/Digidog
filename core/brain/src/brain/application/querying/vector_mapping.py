@@ -53,7 +53,14 @@ def wrap_memory_result(result: dict[str, Any]) -> GlobalQueryResultDTO:
 
 
 def source_ref_from_memory_vector_result(result: dict[str, Any]) -> QuerySourceRefDTO:
-    """Build a source reference for one vector memory result."""
+    """Build a source reference for one vector memory result.
+
+    Args:
+        result (dict[str, Any]): Hydrated memory vector result.
+
+    Returns:
+        QuerySourceRefDTO: Structured reference to the source memory entry.
+    """
     category: str = str(result.get("category") or result.get("metadata", {}).get("category") or "").strip()
     key: str = str(result.get("key") or result.get("metadata", {}).get("key") or "").strip()
     path: str = str(result.get("path") or result.get("metadata", {}).get("path") or "").strip()
@@ -77,7 +84,15 @@ def source_ref_from_memory_vector_result(result: dict[str, Any]) -> QuerySourceR
 
 
 def display_text_from_vector_result(result: dict[str, Any], metadata: dict[str, Any]) -> str:
-    """Return body text for a vector result without repeating navigational metadata."""
+    """Return vector body text without repeating navigational metadata.
+
+    Args:
+        result (dict[str, Any]): Vector result containing optional text.
+        metadata (dict[str, Any]): Vector metadata containing fallback content.
+
+    Returns:
+        str: Best available reader-facing body text.
+    """
     body_text: str = str(metadata.get("body") or "").strip()
     if body_text:
         return body_text
@@ -88,7 +103,15 @@ def display_text_from_vector_result(result: dict[str, Any], metadata: dict[str, 
 
 
 def hydrate_memory_vector_text(result: dict[str, Any], metadata: dict[str, Any]) -> str:
-    """Recover one vector match from its canonical Markdown source."""
+    """Recover one vector match from its canonical Markdown source.
+
+    Args:
+        result (dict[str, Any]): Vector result containing fallback content.
+        metadata (dict[str, Any]): Metadata identifying the memory entry.
+
+    Returns:
+        str: Canonical memory content or the vector fallback.
+    """
     from brain.application.memory.paths import resolve_file_path
     from brain.infrastructure.vectorstores.chunking import chunk_content
 
@@ -108,7 +131,14 @@ def hydrate_memory_vector_text(result: dict[str, Any], metadata: dict[str, Any])
 
 
 def strip_leading_markdown_heading(text: str) -> str:
-    """Remove the first heading line from legacy vector chunks."""
+    """Remove the first heading line from a legacy vector chunk.
+
+    Args:
+        text (str): Markdown chunk to normalize.
+
+    Returns:
+        str: Chunk without its leading heading.
+    """
     lines: list[str] = text.splitlines()
     if lines and lines[0].lstrip().startswith("#"):
         return "\n".join(lines[1:]).strip()

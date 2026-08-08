@@ -6,12 +6,15 @@
 from __future__ import annotations
 
 # Standard Libraries Imports
+import multiprocessing
+from pathlib import Path
+from queue import Empty
 from typing import Any
 
 # Application Modules Imports
 from brain.application.knowledge.runtime.scopes import iter_knowledge_roots
 from brain.application.knowledge.querying.query import query_knowledge
-from brain.application.knowledge.vector_sync import search_knowledge_vectors
+from brain.application.knowledge.vector_sync import search_knowledge_vectors as _search_knowledge_vectors
 from brain.infrastructure.database.knowledge.repository import KnowledgeRepository
 from brain.application.knowledge.sources.freshness import check_source_updates
 from brain.application.querying.dtos import GlobalQueryResultDTO, QueryContentDTO, QueryEntityDTO, QueryRelationDTO
@@ -20,12 +23,74 @@ from brain.application.querying.text_mapping import compact_excerpt
 from brain.application.sources.registry_service import ensure_brain_source_indexes
 
 
+GLOBAL_VECTOR_SEARCH_TIMEOUT_SECONDS = 3
+
+
+def _global_vector_search_worker(
+    result_queue: Any,
+    database_path_value: str,
+    scope_name: str,
+    text: str,
+    limit: int,
+) -> None:
+    """Run one global vector search outside the caller process."""
+    try:
+        repository = KnowledgeRepository(db_path=Path(database_path_value), scope=scope_name)
+        result_queue.put({"matches": _search_knowledge_vectors(repository=repository, text=text, limit=limit)})
+    except Exception as exc:
+        result_queue.put({"error": str(exc)})
+
+
+def _search_global_knowledge_vectors_isolated(
+    repository: KnowledgeRepository,
+    text: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    """Run the unstable global vector search without risking the caller process."""
+    context = multiprocessing.get_context("spawn")
+    result_queue = context.Queue()
+    process = context.Process(
+        target=_global_vector_search_worker,
+        args=(result_queue, str(repository.db_path), repository.scope, text, limit),
+    )
+    process.start()
+    try:
+        payload = result_queue.get(timeout=GLOBAL_VECTOR_SEARCH_TIMEOUT_SECONDS)
+    except Empty as exc:
+        raise RuntimeError("Global knowledge vector search did not return a result.") from exc
+    finally:
+        process.join(timeout=1)
+        if process.is_alive():
+            process.terminate()
+            process.join(timeout=1)
+        result_queue.close()
+
+    if process.exitcode not in (0, None):
+        raise RuntimeError("Global knowledge vector search exited with code {}.".format(process.exitcode))
+    if not isinstance(payload, dict) or payload.get("error"):
+        raise RuntimeError(str(payload.get("error") if isinstance(payload, dict) else "invalid payload"))
+    matches = payload.get("matches")
+    if not isinstance(matches, list):
+        raise RuntimeError("Global knowledge vector search returned invalid matches.")
+    return matches
+
+
+def search_knowledge_vectors(repository: KnowledgeRepository, text: str, limit: int) -> list[dict[str, Any]]:
+    """Search vectors while isolating the known unstable global native backend."""
+    if repository.scope == "global":
+        return _search_global_knowledge_vectors_isolated(repository=repository, text=text, limit=limit)
+    return _search_knowledge_vectors(repository=repository, text=text, limit=limit)
+
+
+from brain.application.querying.language import extract_query_keywords
+
+
 def query_knowledge_backend(text: str, limit: int, knowledge_scope: str) -> list[GlobalQueryResultDTO]:
     """
-    Search the SQLite knowledge graph backend.
+    Search the SQLite knowledge graph backend with broad keyword fallback.
 
     Args:
-        text (str): Query text.
+        text (str): Query text. Falls back to extracted keywords when exact match is empty.
         limit (int): Maximum knowledge graph matches.
         knowledge_scope (str): Knowledge DB selector.
 
@@ -68,6 +133,28 @@ def query_knowledge_backend(text: str, limit: int, knowledge_scope: str) -> list
                 limit=limit,
                 hybrid=False,
             )
+            if not knowledge_matches:
+                keywords = extract_query_keywords(query=text, min_length=3)
+                if keywords:
+                    seen_keys: set[str] = set()
+                    knowledge_matches = []
+                    for keyword in keywords:
+                        kw_matches = query_knowledge(
+                            repository=repository,
+                            text=keyword,
+                            limit=limit,
+                            hybrid=False,
+                        )
+                        for match in kw_matches:
+                            match_key = str(match.get("id") or match.get("name") or match.get("title") or match)
+                            if match_key not in seen_keys:
+                                seen_keys.add(match_key)
+                                knowledge_matches.append(match)
+                                if limit is not None and len(knowledge_matches) >= limit:
+                                    break
+                        if limit is not None and len(knowledge_matches) >= limit:
+                            break
+
         except Exception as exc:
             results.append(
                 GlobalQueryResultDTO(
@@ -201,7 +288,15 @@ def wrap_knowledge_vector_result(match: dict[str, Any], knowledge_scope: str) ->
 
 
 def knowledge_vector_title(metadata: dict[str, Any], kind: str) -> str:
-    """Return the display title for a knowledge vector match."""
+    """Return the display title for a knowledge vector match.
+
+    Args:
+        metadata (dict[str, Any]): Hydrated vector metadata.
+        kind (str): Knowledge record kind.
+
+    Returns:
+        str: Entity name or relation endpoint summary.
+    """
     if kind == "relation":
         return " - ".join(
             value
@@ -216,7 +311,15 @@ def knowledge_vector_title(metadata: dict[str, Any], kind: str) -> str:
 
 
 def knowledge_vector_entities(metadata: dict[str, Any], kind: str) -> list[QueryEntityDTO]:
-    """Return entities attached to one knowledge vector match."""
+    """Return entities attached to one knowledge vector match.
+
+    Args:
+        metadata (dict[str, Any]): Hydrated vector metadata.
+        kind (str): Knowledge record kind.
+
+    Returns:
+        list[QueryEntityDTO]: Entity projection for the match.
+    """
     if kind == "relation":
         return [
             QueryEntityDTO(
@@ -241,7 +344,15 @@ def knowledge_vector_entities(metadata: dict[str, Any], kind: str) -> list[Query
 
 
 def knowledge_vector_relations(metadata: dict[str, Any], kind: str) -> list[QueryRelationDTO]:
-    """Return relations attached to one knowledge vector match."""
+    """Return relations attached to one knowledge vector match.
+
+    Args:
+        metadata (dict[str, Any]): Hydrated vector metadata.
+        kind (str): Knowledge record kind.
+
+    Returns:
+        list[QueryRelationDTO]: Relation projection, empty for non-relation matches.
+    """
     if kind != "relation":
         return []
     entities: list[QueryEntityDTO] = knowledge_vector_entities(metadata=metadata, kind=kind)
@@ -257,7 +368,14 @@ def knowledge_vector_relations(metadata: dict[str, Any], kind: str) -> list[Quer
 
 
 def optional_int(value: Any) -> int | None:
-    """Convert optional vector metadata values into integers."""
+    """Convert an optional vector metadata value into an integer.
+
+    Args:
+        value (Any): Metadata value to convert.
+
+    Returns:
+        int | None: Converted integer, or None when conversion fails.
+    """
     try:
         return int(value)
     except (TypeError, ValueError):

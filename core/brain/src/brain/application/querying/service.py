@@ -12,7 +12,7 @@ from typing import Any
 # Application Modules Imports
 from brain.application.knowledge.runtime.scopes import normalize_knowledge_scope
 from brain.application.querying.context import build_query_context
-from brain.application.querying.dtos import GlobalQueryResultDTO, QueryContentDTO, QueryDeepResponseDTO, QuerySubqueryDTO
+from brain.application.querying.dtos import GlobalQueryResultDTO, QueryContentDTO, QueryDeepResponseDTO, QuerySubqueryDTO, QueryPageDTO
 from brain.application.querying.entity_selection import select_deep_entities
 from brain.application.querying.backends.knowledge import (
     query_knowledge_backend,
@@ -22,6 +22,7 @@ from brain.application.querying.backends.knowledge import (
 from brain.application.querying.backends.memory import query_memory_backend, query_memory_text_backend
 from brain.application.querying.backends.messages import query_messages_backend, query_messages_vector_backend
 from brain.application.querying.backends.pictures import query_pictures_backend, query_pictures_vector_backend
+from brain.application.querying.backends.logs import query_logs_backend, query_logs_text_backend
 from brain.application.querying.planning import plan_deep_subqueries
 from brain.application.querying.ranking import (
     deduplicate_query_results,
@@ -39,7 +40,7 @@ from brain.application.querying.synthesis import synthesize_deep_answer
 def query_global(
     text: str,
     domain: str = "all",
-    limit: int = 5,
+    limit: int | None = 5,
     scope: str = "all",
     source: str | None = None,
     mechanism: str = "all",
@@ -76,7 +77,7 @@ def query_global(
         raise ValueError(f"Unsupported query mechanism `{mechanism}`. Use one of: all, graph, vector, text.")
     normalized_knowledge_scope: str = normalize_knowledge_scope(scope=knowledge_scope, allow_all=True)
 
-    bounded_limit: int = max(1, limit)
+    bounded_limit: int | None = max(1, limit) if limit is not None else None
     results: list[GlobalQueryResultDTO] = []
     if refresh_sources and normalized_scope in ("all", "knowledge"):
         results.extend(run_source_index_fast_pass())
@@ -112,6 +113,10 @@ def query_global(
         results.extend(query_pictures_backend(text=text, domain=domain, limit=bounded_limit))
     if normalized_scope in ("all", "pictures") and normalized_mechanism in ("all", "vector"):
         results.extend(query_pictures_vector_backend(text=text, limit=bounded_limit))
+    if normalized_scope in ("all", "logs") and normalized_mechanism in ("all", "vector"):
+        results.extend(query_logs_backend(text=text, limit=bounded_limit))
+    if normalized_scope in ("all", "logs") and normalized_mechanism in ("all", "text"):
+        results.extend(query_logs_text_backend(text=text, limit=bounded_limit))
 
     if not results and not has_selected_backend(
         source=normalized_scope,
@@ -135,10 +140,40 @@ def query_global(
     return sort_query_results(results=results)
 
 
+def paginate_query_results(results: list[GlobalQueryResultDTO], page: int = 1, page_size: int = 25, explain: bool = False) -> QueryPageDTO:
+    """Deduplicate, sort, and return one stable result page with exhaustive metadata."""
+    normalized_page = max(1, page)
+    normalized_size = page_size if page_size in {0, 10, 25, 50, 100} else 25
+    ordered = sort_query_results(results=deduplicate_query_results(results=results, include_warnings=True))
+    total_items = len(ordered)
+    if normalized_size == 0:
+        total_pages = 1
+        items = ordered
+    else:
+        total_pages = (total_items + normalized_size - 1) // normalized_size
+        start = (normalized_page - 1) * normalized_size
+        items = ordered[start:start + normalized_size]
+    counts: dict[str, int] = {}
+    for result in ordered:
+        counts[result.source] = counts.get(result.source, 0) + 1
+    response = (
+        f"Showing page {normalized_page} of {total_pages} ({len(items)} items) from {total_items} total results."
+        if explain
+        else ""
+    )
+    return QueryPageDTO(response=response, items=items, page=normalized_page, pageSize=normalized_size, totalItems=total_items, totalPages=total_pages, hasPrevious=normalized_page > 1 and total_pages > 0, hasNext=normalized_page < total_pages, countsBySource=counts)
+
+
+def query_global_page(text: str, domain: str = "all", page: int = 1, page_size: int = 25, scope: str = "all", source: str | None = None, mechanism: str = "all", knowledge_scope: str = "all", refresh_sources: bool = True, explain: bool = False) -> QueryPageDTO:
+    """Run exhaustive global retrieval and paginate the complete candidate set."""
+    results = query_global(text=text, domain=domain, limit=None, scope=scope, source=source, mechanism=mechanism, knowledge_scope=knowledge_scope, refresh_sources=refresh_sources)
+    return paginate_query_results(results=results, page=page, page_size=page_size, explain=explain)
+
+
 def query_deep(
     text: str,
     domain: str = "all",
-    limit: int = 5,
+    limit: int | None = 5,
     scope: str = "all",
     source: str | None = None,
     mechanism: str = "all",
@@ -163,7 +198,7 @@ def query_deep(
     Returns:
         QueryDeepResponseDTO: Contextual answer plus subqueries and evidence.
     """
-    bounded_limit: int = max(1, limit)
+    bounded_limit: int | None = max(1, limit) if limit is not None else None
     context = build_query_context(text=text, as_of=as_of)
     planned_subqueries: list[QuerySubqueryDTO] = plan_deep_subqueries(text=text, context=context, as_of=as_of)
     subqueries: list[QuerySubqueryDTO] = []

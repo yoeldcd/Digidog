@@ -16,6 +16,75 @@ from brain.infrastructure.database.knowledge.utils import hash_text
 
 
 class KnowledgeSourceRepositoryMixin:
+    """Manage source records and source-owned graph assertions."""
+    def recompose_source_paths(self, source_paths: list[str]) -> dict[str, int]:
+        """Remove assertions owned by sources while retaining generated proposals.
+
+        Args:
+            source_paths (list[str]): Stable source paths selected for recomposition.
+
+        Returns:
+            dict[str, int]: Counts of removed sources and graph records.
+        """
+        normalized_paths = sorted({str(path).replace("\\", "/").strip() for path in source_paths if str(path).strip()})
+        if not normalized_paths:
+            return {"sources": 0, "relations": 0, "assertions": 0, "evidence": 0, "entities": 0}
+        placeholders = ", ".join("?" for _path in normalized_paths)
+        with self.session() as connection:
+            source_rows = connection.execute(
+                f"SELECT id FROM sources WHERE replace(path, '\\', '/') IN ({placeholders})",
+                tuple(normalized_paths),
+            ).fetchall()
+            source_ids = [int(row["id"]) for row in source_rows]
+            if not source_ids:
+                return {"sources": 0, "relations": 0, "assertions": 0, "evidence": 0, "entities": 0}
+            id_placeholders = ", ".join("?" for _source_id in source_ids)
+            counts = {
+                "sources": len(source_ids),
+                "relations": _count_rows(connection, "relations", id_placeholders, source_ids),
+                "assertions": _count_rows(connection, "entity_type_assertions", id_placeholders, source_ids),
+                "evidence": _count_rows(connection, "evidence", id_placeholders, source_ids),
+                "entities": 0,
+            }
+            connection.execute(f"DELETE FROM relations WHERE source_id IN ({id_placeholders})", source_ids)
+            connection.execute(f"DELETE FROM evidence WHERE source_id IN ({id_placeholders})", source_ids)
+            connection.execute(f"DELETE FROM applied_deltas WHERE source_id IN ({id_placeholders})", source_ids)
+            connection.execute(f"DELETE FROM entity_type_assertions WHERE source_id IN ({id_placeholders})", source_ids)
+            connection.execute(
+                f"""
+                UPDATE entities
+                SET source_id = (
+                    SELECT assertion.source_id
+                    FROM entity_type_assertions AS assertion
+                    WHERE assertion.entity_id = entities.id AND assertion.source_id IS NOT NULL
+                    ORDER BY assertion.confidence DESC, assertion.id ASC
+                    LIMIT 1
+                )
+                WHERE source_id IN ({id_placeholders})
+                """,
+                source_ids,
+            )
+            orphan_rows = connection.execute(
+                """
+                SELECT entity.id
+                FROM entities AS entity
+                LEFT JOIN entity_type_assertions AS assertion ON assertion.entity_id = entity.id
+                LEFT JOIN relations AS subject_relation ON subject_relation.subject_entity_id = entity.id
+                LEFT JOIN relations AS object_relation ON object_relation.object_entity_id = entity.id
+                WHERE assertion.id IS NULL
+                    AND subject_relation.id IS NULL
+                    AND object_relation.id IS NULL
+                """,
+            ).fetchall()
+            orphan_ids = [int(row["id"]) for row in orphan_rows]
+            counts["entities"] = len(orphan_ids)
+            if orphan_ids:
+                orphan_placeholders = ", ".join("?" for _entity_id in orphan_ids)
+                connection.execute(f"DELETE FROM entity_fts WHERE entity_id IN ({orphan_placeholders})", orphan_ids)
+                connection.execute(f"DELETE FROM entities WHERE id IN ({orphan_placeholders})", orphan_ids)
+            connection.commit()
+        return counts
+
     def upsert_source(self, source_dto: SourceDTO) -> int:
         """
         Insert or update a source record.
@@ -98,7 +167,6 @@ class KnowledgeSourceRepositoryMixin:
             self._refresh_evidence_fts(connection=connection, evidence_id=evidence_id)
             connection.commit()
         return evidence_id
-
     def _refresh_evidence_fts(self, connection: sqlite3.Connection, evidence_id: int) -> None:
         """
         Refresh one evidence FTS row.
@@ -115,3 +183,12 @@ class KnowledgeSourceRepositoryMixin:
             "INSERT INTO evidence_fts(evidence_id, quote, location) VALUES(?, ?, ?)",
             (evidence_id, row["quote"], row["location"]),
         )
+
+
+def _count_rows(connection: sqlite3.Connection, table_name: str, placeholders: str, source_ids: list[int]) -> int:
+    """Count rows owned by selected source identifiers inside one transaction."""
+    row = connection.execute(
+        f"SELECT COUNT(*) AS count FROM {table_name} WHERE source_id IN ({placeholders})",
+        source_ids,
+    ).fetchone()
+    return int(row["count"] if row is not None else 0)

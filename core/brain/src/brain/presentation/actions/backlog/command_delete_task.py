@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import sys
+import argparse
 from pathlib import Path
 
 from brain.presentation.terminal import render_placeholders, log_step
@@ -14,7 +15,16 @@ from brain.application.backlog.service import BacklogTaskDeletionError, BacklogT
 
 
 
-def handle(args) -> int:
+def handle(args: argparse.Namespace) -> int:
+    """Delete one backlog task, optionally overriding safety checks.
+
+    Args:
+        args (argparse.Namespace): Parsed command options with the task ID, force
+            flag, and output settings.
+
+    Returns:
+        int: Zero when the task is deleted; otherwise one after reporting an error.
+    """
     workspace_root = Path(os.environ.get("WORKSPACE_ROOT", ".")).resolve()
     color_enabled = getattr(args, "color", False)
 

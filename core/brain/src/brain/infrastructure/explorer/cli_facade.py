@@ -37,6 +37,8 @@ class CliCommandResult:
         duration_ms: Elapsed in-process command duration in milliseconds.
         data: Parsed JSON payload when available.
         error: Optional server-side error message.
+        queue_ms (int): Milliseconds spent waiting for the execution lock.
+        execution_ms (int): Milliseconds spent executing the delegated command.
     """
 
     ok: bool
@@ -118,6 +120,7 @@ class BrainCliFacade:
             arguments (list[str]): Command arguments after the `brain.py` script path.
             stdin_text (str | None): Optional stdin payload.
             expect_json (bool): Whether to parse stdout as JSON.
+            workspace_root (Path | str | None): Optional registered workspace override.
 
         Returns:
             CliCommandResult: Captured command result.
@@ -198,7 +201,14 @@ class BrainCliFacade:
 
     @contextmanager
     def workspace_context(self, workspace_root: Path | str | None = None) -> Iterator[None]:
-        """Apply one idempotent, nestable workspace context for a request."""
+        """Apply one idempotent, nestable workspace context for a request.
+
+        Args:
+            workspace_root (Path | str | None): Optional workspace root to activate.
+
+        Yields:
+            None: Control while the requested workspace environment is active.
+        """
         requested_root = Path(workspace_root) if workspace_root else self.workspace_root
         target_root = get_workspace_root(workspace_root=requested_root)
         with self.execution_lock:

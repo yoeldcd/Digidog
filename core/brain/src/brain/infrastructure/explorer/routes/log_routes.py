@@ -68,3 +68,21 @@ class LogRoutesMixin:
             arguments.append(domain)
         arguments.append("--json")
         return self._run_cli(arguments, expect_json=True).to_payload()
+
+    def _rename_log_domain(self) -> dict[str, Any]:
+        """
+        Rename one log-domain subtree through the canonical CLI contract.
+
+        Returns:
+            dict[str, Any]: Structured CLI mutation payload.
+        """
+        body = self._read_json_body()
+        arguments = [
+            "rename-log-domain",
+            require_value(body=body, key="source"),
+            require_value(body=body, key="target"),
+        ]
+        if body.get("exact") is True:
+            arguments.append("--exact")
+        arguments.append("--json")
+        return self._run_cli(arguments, expect_json=True).to_payload()

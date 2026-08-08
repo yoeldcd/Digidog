@@ -11,7 +11,11 @@ from brain.application.memory import paths
 
 
 def load_ignore_list() -> set[str]:
-    """Load paths to ignore from memory/.ignore file."""
+    """Load paths excluded from memory diagnostics.
+
+    Returns:
+        set[str]: Built-in and configured relative names to ignore.
+    """
     ignored = {".ignore", "index.md", ".gitkeep"}
     ignore_file = paths.MEMORY_ROOT / ".ignore"
     if ignore_file.exists():
@@ -26,7 +30,11 @@ def load_ignore_list() -> set[str]:
 
 
 def doctor_report() -> dict[str, Any]:
-    """Scan MEMORY_ROOT and check for structural compliance, supporting infinite nesting depth."""
+    """Scan the memory root for structural compliance at arbitrary nesting depth.
+
+    Returns:
+        dict[str, Any]: Diagnostic status with accumulated errors and warnings.
+    """
     paths.ensure_memory_root()
     errors: list[str] = []
     warnings: list[str] = []

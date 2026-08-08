@@ -11,7 +11,19 @@ from datetime import datetime
 
 @dataclass(frozen=True, slots=True)
 class MessageWriteDTO:
-    """Validated message accepted by a workspace message repository."""
+    """Validated message accepted by a workspace message repository.
+
+    Attributes:
+        id (str): Immutable message identifier.
+        created_at (str): Canonical creation timestamp.
+        text (str): Persisted message body.
+        emotion (str): Optional avatar emotion.
+        chat_id (str): Optional source chat identifier.
+        language (str): Message language code.
+        source_type (str): Originating message operation type.
+        source_command (str): Originating CLI command.
+        source_phase (str): Originating command lifecycle phase.
+    """
 
     id: str
     created_at: str
@@ -29,7 +41,11 @@ class MessageRecordDTO(MessageWriteDTO):
     """Persisted message projection returned to CLI, Explorer, and search."""
 
     def as_mapping(self) -> dict[str, str]:
-        """Return a JSON-safe mapping with explicit date and time projections."""
+        """Return a JSON-safe mapping with explicit date and time projections.
+
+        Returns:
+            dict[str, str]: Message fields plus derived date and time values.
+        """
         payload: dict[str, str] = asdict(self)
         timestamp: datetime = datetime.fromisoformat(self.created_at)
         payload["date"] = timestamp.date().isoformat()

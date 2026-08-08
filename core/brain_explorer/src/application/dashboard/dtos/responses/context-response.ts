@@ -37,6 +37,27 @@ export interface ContextTarget {
 }
 
 /**
+ * Most recent registered change for one compact log-domain record.
+ */
+export interface ContextLastChange {
+    /**
+     * Command that retrieves the complete change record.
+     * @type {string}
+     */
+    retrieve_command: string;
+    /**
+     * Human-readable change title.
+     * @type {string}
+     */
+    title: string;
+    /**
+     * Canonical changelog category.
+     * @type {string}
+     */
+    type: string;
+}
+
+/**
  * One actionable record contained by a dashboard context section.
  */
 export interface ContextItem {
@@ -64,7 +85,27 @@ export interface ContextItem {
      * Stable record identifier.
      * @type {string | undefined}
      */
-    id?: string;
+    id?: string | number;
+    /**
+     * Most recent change owned by a compact log-domain entry.
+     * @type {ContextLastChange | undefined}
+     */
+    last_change?: ContextLastChange;
+    /**
+     * Profile name used by compact profile entries.
+     * @type {string | undefined}
+     */
+    name?: string;
+    /**
+     * Command that retrieves a compact profile or diary entry.
+     * @type {string | undefined}
+     */
+    retrieve_command?: string;
+    /**
+     * Human-readable diary entry title.
+     * @type {string | undefined}
+     */
+    title?: string;
     /**
      * Human-readable record label.
      * @type {string | undefined}
@@ -90,6 +131,11 @@ export interface ContextItem {
      * @type {string | undefined}
      */
     type?: string;
+    /**
+     * Concise activation guidance sourced from a profile root usage file.
+     * @type {string | undefined}
+     */
+    use_when?: string;
 }
 
 /**

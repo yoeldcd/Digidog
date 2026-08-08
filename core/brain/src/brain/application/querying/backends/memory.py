@@ -15,7 +15,7 @@ from brain.application.querying.text_mapping import build_memory_text_result
 from brain.application.querying.vector_mapping import wrap_memory_result
 
 
-def query_memory_backend(text: str, domain: str, limit: int) -> list[GlobalQueryResultDTO]:
+def query_memory_backend(text: str, domain: str, limit: int | None) -> list[GlobalQueryResultDTO]:
     """
     Search the memory vectorstore backend.
 
@@ -31,7 +31,7 @@ def query_memory_backend(text: str, domain: str, limit: int) -> list[GlobalQuery
         from brain.infrastructure.vectorstores.manager import VectorStoreManager
 
         manager = VectorStoreManager()
-        raw_limit: int = limit * 4 if domain.casefold() != "all" else limit
+        raw_limit: int | None = None if limit is None else (limit * 4 if domain.casefold() != "all" else limit)
         try:
             memory_matches: list[dict[str, Any]] = manager.search(query=text, limit=raw_limit)
         finally:
@@ -57,11 +57,11 @@ def query_memory_backend(text: str, domain: str, limit: int) -> list[GlobalQuery
     )
     return [
         wrap_memory_result(result=result)
-        for result in filtered_matches[:limit]
+        for result in (filtered_matches if limit is None else filtered_matches[:limit])
     ]
 
 
-def query_memory_text_backend(text: str, domain: str, limit: int) -> list[GlobalQueryResultDTO]:
+def query_memory_text_backend(text: str, domain: str, limit: int | None) -> list[GlobalQueryResultDTO]:
     """
     Search memory Markdown files with language-aware direct text matching.
 
@@ -119,13 +119,17 @@ def query_memory_text_backend(text: str, domain: str, limit: int) -> list[Global
         )
         if result is not None:
             text_results.append(result)
-        if len(text_results) >= limit:
+        if limit is not None and len(text_results) >= limit:
             break
     return text_results
 
 
 def get_memory_root() -> Path:
-    """Return the memory root using the current process environment."""
+    """Return the memory root using the current process environment.
+
+    Returns:
+        Path: Agent-owned memory directory.
+    """
     return get_agent_home() / "memory"
 
 
@@ -157,7 +161,15 @@ def resolve_memory_domain(memory_root: Path, domain: str) -> Path:
 
 
 def filter_memory_matches_by_domain(matches: list[dict[str, Any]], domain: str) -> list[dict[str, Any]]:
-    """Filter memory vectorstore matches by category prefix."""
+    """Filter memory vectorstore matches by category prefix.
+
+    Args:
+        matches (list[dict[str, Any]]): Candidate vector matches.
+        domain (str): Requested memory category or `all`.
+
+    Returns:
+        list[dict[str, Any]]: Matches owned by the requested category hierarchy.
+    """
     normalized_domain: str = domain.casefold().strip()
     if normalized_domain == "all":
         return matches
@@ -170,19 +182,30 @@ def filter_memory_matches_by_domain(matches: list[dict[str, Any]], domain: str) 
 
 
 def memory_match_belongs_to_domain(match: dict[str, Any], domain: str) -> bool:
-    """Return whether a memory match belongs to the requested domain."""
+    """Return whether a memory match belongs to a requested domain.
+
+    Args:
+        match (dict[str, Any]): Vector match containing category metadata.
+        domain (str): Normalized category prefix.
+
+    Returns:
+        bool: True when the match is in the domain or a descendant.
+    """
     category: str = str(match.get("category", "")).casefold()
     return category == domain or category.startswith(f"{domain}.")
 
 
+from brain.application.querying.language import extract_query_keywords, find_language_text_matches, language_match_ratio
+
+
 def match_memory_text_file(markdown_path: Path, memory_root: Path, query: str) -> GlobalQueryResultDTO | None:
     """
-    Return a direct text match for one memory Markdown file.
+    Return a direct text match for one memory Markdown file with broad keyword fallback.
 
     Args:
         markdown_path (Path): Markdown file path.
         memory_root (Path): Memory root path.
-        query (str): Query text.
+        query (str): Query text. Falls back to extracted keywords when fuzzy match on full query fails.
 
     Returns:
         GlobalQueryResultDTO | None: Match result when a fuzzy line match exists.
@@ -192,19 +215,27 @@ def match_memory_text_file(markdown_path: Path, memory_root: Path, query: str) -
     except Exception:
         return None
 
-    for line_number, line in enumerate(content.splitlines(), 1):
-        matches: list[tuple[str, int, int]] = find_language_text_matches(line=line, query=query)
-        if not matches:
+    keywords: list[str] = [query] + extract_query_keywords(query=query, min_length=3)
+    seen_keywords: set[str] = set()
+
+    for candidate_query in keywords:
+        if candidate_query in seen_keywords:
             continue
-        rank: float = 1.0 - max(language_match_ratio(match_text=match[0], query=query) for match in matches)
-        return build_memory_text_result(
-            markdown_path=markdown_path,
-            memory_root=memory_root,
-            content=content,
-            line=line,
-            line_number=line_number,
-            matches=matches,
-            rank=rank,
-        )
+        seen_keywords.add(candidate_query)
+        for line_number, line in enumerate(content.splitlines(), 1):
+            matches: list[tuple[str, int, int]] = find_language_text_matches(line=line, query=candidate_query)
+            if not matches:
+                continue
+            rank: float = 1.0 - max(language_match_ratio(match_text=match[0], query=candidate_query) for match in matches)
+            return build_memory_text_result(
+                markdown_path=markdown_path,
+                memory_root=memory_root,
+                content=content,
+                line=line,
+                line_number=line_number,
+                matches=matches,
+                rank=rank,
+            )
     return None
+
 from brain.infrastructure.runtime.paths import get_agent_home

@@ -12,9 +12,11 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
 
+from brain.application.messages.session_naming import propose_session_name
 from brain.infrastructure.explorer.contracts import ApiRouteError
 from brain.infrastructure.runtime.paths import get_avatar_storage_dir
-from brain.infrastructure.voice.daemon_client import VoiceDaemonClient
+from brain.infrastructure.voice.daemon.daemon_client import VoiceDaemonClient
+from brain.infrastructure.voice.contracts.avatar_speak_request import AvatarSpeakRequest
 from brain.infrastructure.messages.repository import MessageRepository
 from brain.infrastructure.runtime.paths import get_workspace_root
 
@@ -83,18 +85,44 @@ class VoiceRoutesMixin:
             "data": {
                 "state": str(status.get("state", "stopped")),
                 "activeSpeakId": str(status.get("activeSpeakId", "")),
+                "playbackActive": bool(status.get("playbackActive")),
                 "muted": bool(status.get("muted")),
                 "muteMode": str(status.get("muteMode", "off")),
             },
         }
 
+    def _voice_session_name(self) -> dict[str, Any]:
+        """Propose or persist one canonical message-session name."""
+        payload = self._read_json_body()
+        action = str(payload.get("action") or "rename").casefold().strip()
+        if action not in {"rename", "autoname"}:
+            raise ApiRouteError(HTTPStatus.BAD_REQUEST, "Session-name action must be rename or autoname.")
+        session_date = str(payload.get("date") or "").strip()
+        chat_id = str(payload.get("chatId") or "").strip()
+        if not session_date:
+            raise ApiRouteError(HTTPStatus.BAD_REQUEST, "Session date is required.")
+        repository = MessageRepository(consumer_path=get_workspace_root(), require_registered=False)
+        try:
+            if action == "autoname":
+                records = repository.list_messages(limit=40, date=session_date, chat_id_exact=chat_id)
+                name = propose_session_name(records=records)
+                return {"ok": True, "data": {"action": action, "proposedName": name}}
+            name = repository.rename_session(
+                session_date=session_date,
+                chat_id=chat_id,
+                canonical_name=str(payload.get("name") or ""),
+            )
+        except ValueError as exc:
+            raise ApiRouteError(HTTPStatus.BAD_REQUEST, str(exc)) from exc
+        return {"ok": True, "data": {"action": action, "canonicalName": name}}
+
     def _voice_replay(self) -> dict[str, Any]:
         """Replay one retained daemon message without requesting synthesis."""
         payload = self._read_json_body()
         name = str(payload.get("name", "")).strip()
-        if not VOICE_FILENAME_PATTERN.fullmatch(name):
+        if name and not VOICE_FILENAME_PATTERN.fullmatch(name):
             return {"ok": False, "error": "A valid retained voice message name is required."}
-        result = VoiceDaemonClient().replay(name=name)
+        result = VoiceDaemonClient().replay(name=name or None)
         return {"ok": bool(result.get("replaying")), "data": result}
 
     def _voice_pause(self) -> dict[str, Any]:
@@ -113,7 +141,7 @@ class VoiceRoutesMixin:
         record = repository.get_message(message_id=message_id)
         if record is None:
             raise ApiRouteError(HTTPStatus.NOT_FOUND, "Persisted message not found.")
-        queued = VoiceDaemonClient().speak(
+        request = AvatarSpeakRequest(
             text=record.text,
             display_text=record.text,
             lang=record.language,
@@ -123,6 +151,7 @@ class VoiceRoutesMixin:
             source_command="historical-message-audio",
             source_phase="replay",
         )
+        queued = VoiceDaemonClient().speak(request)
         return {
             "ok": True,
             "data": {

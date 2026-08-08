@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import sys
+import argparse
 from pathlib import Path
 
 from brain.presentation.terminal import render_placeholders, log_step
@@ -14,7 +15,17 @@ from brain.application.backlog.service import create_backlog_task
 
 
 
-def handle(args) -> int:
+def handle(args: argparse.Namespace) -> int:
+    """Create a backlog task from positional or named command arguments.
+
+    Args:
+        args (argparse.Namespace): Parsed command options with task metadata,
+            priority, domain, and output settings.
+
+    Returns:
+        int: Zero when the task is created; otherwise one after reporting invalid
+            input or a service error.
+    """
     # Resolve title and description from positional or flag forms
     title = args.title if args.title is not None else args.title_pos
     description = args.description if args.description is not None else args.description_pos

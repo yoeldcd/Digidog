@@ -12,7 +12,7 @@ from PIL import Image, UnidentifiedImageError
 
 from brain.infrastructure.pictures.models import PictureRecord
 from brain.infrastructure.pictures.repository import PictureRepository
-from brain.infrastructure.runtime.paths import get_pictures_dir
+from brain.infrastructure.runtime.paths import get_picture_root, get_pictures_dir, normalize_picture_scope
 
 
 DEFAULT_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
@@ -25,20 +25,34 @@ def scan_pictures(
     pictures_root: Path | None = None,
     extensions: set[str] | None = None,
     on_event: PictureScanEvent | None = None,
+    scope: str = "local",
 ) -> dict[str, object]:
-    """Synchronize current files, preserving descriptions and recognizing moves."""
+    """Synchronize picture files while preserving descriptions and recognizing moves.
+
+    Args:
+        repository (PictureRepository | None): Optional picture repository override.
+        pictures_root (Path | None): Optional filesystem picture root.
+        extensions (set[str] | None): Optional allowed extension override.
+        on_event (PictureScanEvent | None): Optional per-file scan event callback.
+        scope (str): Picture source scope used for registry isolation.
+
+    Returns:
+        dict[str, object]: Scan totals, active records, moves, removals, and errors.
+    """
     repo = repository or PictureRepository()
-    root = (pictures_root or get_pictures_dir()).resolve()
+    normalized_scope = normalize_picture_scope(scope)
+    default_root = get_pictures_dir() if normalized_scope == "local" else get_picture_root(scope=normalized_scope)
+    root = (pictures_root or default_root).resolve()
     supported = {value.casefold() for value in (extensions or DEFAULT_EXTENSIONS)}
     now = datetime.now().astimezone().isoformat()
     files = sorted(path for path in root.rglob("*") if path.is_file() and path.suffix.casefold() in supported)
     current_paths = {path.relative_to(root).as_posix() for path in files}
-    summary: dict[str, object] = {"added": 0, "changed": 0, "moved": 0, "unchanged": 0, "deleted": 0, "errors": []}
+    summary: dict[str, object] = {"added": 0, "changed": 0, "moved": 0, "unchanged": 0, "deleted": 0, "errors": [], "scope": normalized_scope}
 
     for path in files:
         relative_path = path.relative_to(root).as_posix()
         stat = path.stat()
-        existing = repo.get(relative_path=relative_path)
+        existing = repo.get(relative_path=relative_path, scope=normalized_scope)
         if existing and existing.mtime_ns == stat.st_mtime_ns and existing.size_bytes == stat.st_size and existing.active:
             summary["unchanged"] = int(summary["unchanged"]) + 1
             if on_event is not None:
@@ -55,7 +69,11 @@ def scan_pictures(
                 on_event("error", relative_path)
             continue
 
-        moved = None if existing else repo.find_active_by_hash(content_hash=content_hash, excluded_paths=current_paths)
+        moved = None if existing else repo.find_active_by_hash(
+            content_hash=content_hash,
+            excluded_paths=current_paths,
+            scope=normalized_scope,
+        )
         prior = existing or moved
         model_description_stale = bool(
             prior
@@ -70,10 +88,18 @@ def scan_pictures(
             if prior and prior.relative_path == relative_path and not model_description_stale
             else ""
         )
-        picture_id = prior.id if prior else hashlib.sha256(relative_path.encode("utf-8")).hexdigest()[:24]
-        domain = ".".join(Path(relative_path).parent.parts) if Path(relative_path).parent != Path(".") else "root"
+        picture_id = (
+            prior.id
+            if prior
+            else hashlib.sha256(f"{normalized_scope}:{relative_path}".encode("utf-8")).hexdigest()[:24]
+        )
+        domain_path = Path(relative_path).parent
+        if normalized_scope == "local" and domain_path.parts[:1] == ("images",):
+            domain_path = Path(*domain_path.parts[1:]) if len(domain_path.parts) > 1 else Path(".")
+        domain = ".".join(domain_path.parts) if domain_path != Path(".") else "root"
         record = PictureRecord(
             id=picture_id,
+            scope=normalized_scope,
             relative_path=relative_path,
             domain=domain,
             filename=path.name,
@@ -98,12 +124,16 @@ def scan_pictures(
         if on_event is not None:
             on_event(key, relative_path)
 
-    missing_ids = repo.deactivate_missing(active_paths=current_paths, updated_at=now)
+    missing_ids = repo.deactivate_missing(
+        active_paths=current_paths,
+        updated_at=now,
+        scope=normalized_scope,
+    )
     summary["deleted"] = len(missing_ids)
     if on_event is not None:
         for picture_id in missing_ids:
             on_event("deleted", picture_id)
-    summary["total"] = len(repo.list())
+    summary["total"] = len(repo.list(scope=normalized_scope))
     summary["database"] = repo.database_path.as_posix()
     summary["root"] = root.as_posix()
     return summary

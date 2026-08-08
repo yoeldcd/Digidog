@@ -4,12 +4,21 @@
 """Render avatar service diagnostics."""
 from __future__ import annotations
 import argparse
-from brain.infrastructure.voice.daemon_client import VoiceDaemonClient
+from brain.infrastructure.voice.daemon.daemon_client import VoiceDaemonClient
 
 BLUE, RED, CYAN, GREEN, RESET = "\033[94m", "\033[91m", "\033[96m", "\033[92m", "\033[0m"
 
 
 def handle(args: argparse.Namespace) -> int:
+    """Render live diagnostics returned by the avatar service daemon.
+
+    Args:
+        args (argparse.Namespace): Parsed command options controlling terminal
+            color and JSON payload handling.
+
+    Returns:
+        int: Zero when the daemon reports an operational state; otherwise one.
+    """
     snapshot = VoiceDaemonClient().status_snapshot()
     color = bool(getattr(args, "color", False))
     paint = lambda value, tone: f"{tone}{value}{RESET}" if color else str(value)

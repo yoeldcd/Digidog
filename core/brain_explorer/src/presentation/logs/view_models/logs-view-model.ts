@@ -9,7 +9,6 @@
  */
 
 import type { IconName } from "../../shared/utils/icons.ts";
-import type { StructureTreeNode } from "../../shared/view_models/structure-tree-view-model.ts";
 
 /**
  * Sort direction supported by the Logs list and shared tree.
@@ -131,11 +130,6 @@ export interface ParsedLogEntryViewModel {
      * @type {string}
      */
     impact: string;
-    /**
-     * Safe attachment file names discovered in the entry body.
-     * @type {string[]}
-     */
-    pictures: string[];
 }
 
 /**
@@ -226,32 +220,6 @@ export interface LogDomainTreeNode {
 }
 
 /**
- * Date-tree leaf enriched with the target required to load its log record.
- */
-export interface LogDateTreeEntry extends StructureTreeNode {
-    /**
-     * Clock label used to order entries inside one calendar day.
-     * @type {string}
-     */
-    timestamp: string;
-    /**
-     * Dot-delimited log domain loaded by selection.
-     * @type {string}
-     */
-    domain: string;
-    /**
-     * Exact indexed date loaded by selection.
-     * @type {string}
-     */
-    date: string;
-    /**
-     * Exact indexed time loaded by selection.
-     * @type {string}
-     */
-    time: string;
-}
-
-/**
  * Mutable accumulator used to group indexed entries by year, month, and day.
  */
 export interface LogDateGroup {
@@ -276,8 +244,8 @@ export interface LogDateGroup {
      */
     children: Map<string, LogDateGroup>;
     /**
-     * Terminal log entries owned directly by this group.
-     * @type {LogDateTreeEntry[]}
+     * Number of terminal log entries owned directly by this period.
+     * @type {number}
      */
-    entries: LogDateTreeEntry[];
+    entryCount: number;
 }

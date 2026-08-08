@@ -21,6 +21,7 @@ from brain.infrastructure.sources.registry.consumers import remove_consumer_sour
 def ingest_sources(
     repository: KnowledgeRepository,
     domain: str = "all",
+    source_paths: list[str] | None = None,
     limit: int | None = None,
     agent_home: Path | None = None,
     workspace_root: Path | None = None,
@@ -34,6 +35,7 @@ def ingest_sources(
     Args:
         repository: Knowledge repository that owns the consumer state file.
         domain: Source domain filter.
+        source_paths: Optional exact canonical paths to ingest.
         limit: Optional maximum source count.
         agent_home: Optional agent home override.
         workspace_root: Optional workspace root override.
@@ -61,6 +63,13 @@ def ingest_sources(
         workspace_root=workspace_root,
         source_scope=resolved_source_scope,
     )
+    selected_paths = {_normalize_source_path(path) for path in (source_paths or []) if path.strip()}
+    if selected_paths:
+        source_candidates = [
+            candidate
+            for candidate in source_candidates
+            if _normalize_source_path(candidate.source_dto.path) in selected_paths
+        ]
     for source_candidate in source_candidates:
         _emit_source_event(
             event_callback=event_callback,
@@ -75,6 +84,9 @@ def ingest_sources(
         source_scope=resolved_source_scope,
         force_all=force_all,
     )
+    if selected_paths:
+        changed_paths = [path for path in changed_paths if _normalize_source_path(path) in selected_paths]
+        deleted_paths = [path for path in deleted_paths if _normalize_source_path(path) in selected_paths]
     _emit_event(
         event_callback=event_callback,
         payload={
@@ -167,6 +179,11 @@ def ingest_sources(
         "deleted": len(deleted_paths),
         "changed_sources": changed_sources,
     }
+
+
+def _normalize_source_path(source_path: str) -> str:
+    """Return one case-insensitive canonical source-path key."""
+    return str(source_path).replace("\\", "/").strip().casefold()
 
 
 def _emit_source_event(

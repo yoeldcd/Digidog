@@ -46,6 +46,9 @@ def discover_sources(
 
     Returns:
         list[SourceCandidate]: Source metadata paired with mtime and file path.
+
+    Raises:
+        ValueError: The requested source domain is not supported.
     """
     normalized_domain: str = domain.casefold().strip()
     if normalized_domain not in SOURCE_DOMAINS:

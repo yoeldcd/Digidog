@@ -13,6 +13,16 @@ from brain.presentation.avatar.communication.message_store import AvatarMessageS
 
 
 def handle(args: argparse.Namespace) -> int:
+    """Read or acknowledge one opaque durable avatar message reference.
+
+    Args:
+        args (argparse.Namespace): Parsed command options selecting the message
+            UUID, action, and output format.
+
+    Returns:
+        int: Zero when the requested operation succeeds, one for a missing message
+            or failed acknowledgement, or two for invalid arguments.
+    """
     store = AvatarMessageStore(Path.cwd())
     action = str(args.action).casefold().strip()
     message_id = str(args.message_id or "").strip()

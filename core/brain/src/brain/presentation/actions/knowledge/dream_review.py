@@ -9,8 +9,8 @@ from __future__ import annotations
 from typing import Any
 
 # Application Modules Imports
-from brain.application.knowledge.pipeline.delta_revalidation import revalidate_pending_delta_rows
-from brain.application.knowledge.pipeline.delta_status import is_delta_applicable
+from brain.application.knowledge.pipeline.deltas.delta_revalidation import revalidate_pending_delta_rows
+from brain.application.knowledge.pipeline.deltas.delta_status import is_delta_applicable
 from brain.infrastructure.database.knowledge.repository import KnowledgeRepository
 
 

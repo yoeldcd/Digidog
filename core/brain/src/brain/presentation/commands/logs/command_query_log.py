@@ -15,7 +15,7 @@ SCHEMA = CommandSchema(
     arguments=[
         ArgumentSchema(flags=["domain"], nargs="?", help="Log domain prefix to restrict search (optional)."),
         ArgumentSchema(flags=["query"], nargs="?", help="Text query to search semantically (required)."),
-        ArgumentSchema(flags=["-l", "--limit"], type="int", default=5, help="Limit number of semantic matches (default: 5)."),
+        ArgumentSchema(flags=["-l", "--limit"], type="int", default=5, help="Limit log matches only; always-on policies are returned separately (default: 5)."),
         ArgumentSchema(flags=["-j", "--json"], action="store_true", help="Output results as JSON."),
     ],
 )

@@ -4,9 +4,11 @@
  */
 
 import type { ApiRequestOptions, ApiResponse, QueryParams } from "../../../../application/shared/contracts/api-response-contract.ts";
-import type { BacklogMutation } from "../../../../application/backlog/dtos/requests/backlog-mutation-request.ts";
+import type { BacklogDraftEnrichmentRequest, BacklogMutation } from "../../../../application/backlog/dtos/requests/backlog-mutation-request.ts";
+import type { DomainRenameRequest } from "../../../../application/domains/dtos/requests/domain-rename-request.ts";
 import type { BacklogPayload } from "../../../../application/backlog/dtos/responses/backlog-response.ts";
-import type { PictureDescriptionPayload, PicturesPayload } from "../../../../application/pictures/dtos/responses/pictures-response.ts";
+import type { BacklogDraftEnrichmentPayload, BacklogEnrichmentPayload } from "../../../../application/backlog/dtos/responses/backlog-enrichment-response.ts";
+import type { PictureDescriptionPayload, PictureImportPayload, PicturesPayload } from "../../../../application/pictures/dtos/responses/pictures-response.ts";
 import type { LogsPayload } from "../../../../application/logs/dtos/responses/logs-response.ts";
 import type { MemoryEntryPayload } from "../../../../application/memory/dtos/responses/memory-response.ts";
 import type { ProfileReadPayload, ProfilesPayload } from "../../../../application/profiles/dtos/responses/profiles-response.ts";
@@ -66,6 +68,11 @@ export class BrainApiClient extends EventTarget {
      */
     setWorkspaceRootOverride(path: string | null) {
         this.#workspaceRootOverride = path;
+        this.clearCache();
+    }
+
+    /** Clear retained GET responses so the next view request is authoritative. */
+    clearCache(): void {
         this.#cache.clear();
         this.#inFlight.clear();
     }
@@ -220,6 +227,19 @@ export class BrainApiClient extends EventTarget {
     }
 
     /**
+     * Forward a client-side resource failure through the shell notification contract.
+     *
+     * @param {string} command User-facing operation that failed.
+     * @param {string} error Human-readable failure reason.
+     * @returns {ApiResponse} The recorded failure envelope.
+     */
+    reportClientFailure(command: string, error: string): ApiResponse {
+        const payload: ApiResponse = { ok: false, code: 0, command: [command], stdout: "", stderr: error, durationMs: 0, error };
+        this.dispatchEvent(new CustomEvent("request-end", { detail: { command, method: "GET", payload } }));
+        return payload;
+    }
+
+    /**
      * Read persisted paid-voice messages and their transcript sessions.
      *
      * @param {QueryParams} params Optional server-side session, date, or pagination query values.
@@ -235,6 +255,19 @@ export class BrainApiClient extends EventTarget {
     }
 
     /**
+     * Propose or persist a canonical message-session name.
+     * @param {Record<string, unknown>} payload Session identity and rename action payload.
+     * @returns {Promise<ApiResponse>} The naming API response.
+     */
+    updateVoiceSessionName(payload: Record<string, unknown>): Promise<ApiResponse> {
+        return this.request("/api/voice/session/name", {
+            method: "POST",
+            body: JSON.stringify(payload),
+            forceRefresh: true
+        });
+    }
+
+    /**
      * Poll the daemon-confirmed avatar playback identity.
      *
      * @param {ApiRequestOptions} options Cache and fetch policy; polling callers normally force refresh.
@@ -247,10 +280,10 @@ export class BrainApiClient extends EventTarget {
     /**
      * Replay one retained daemon message without regenerating speech.
      *
-     * @param {string} name Server-issued retained audio filename.
+     * @param {string} name Optional server-issued retained audio filename; empty selects the latest.
      * @returns {Promise<ApiResponse<unknown>>} Operation envelope confirming whether replay was accepted.
      */
-    replayVoiceMessage(name: string): Promise<ApiResponse> {
+    replayVoiceMessage(name = ""): Promise<ApiResponse> {
         return this.request("/api/voice/replay", {
             method: "POST",
             body: JSON.stringify({ name }),
@@ -431,6 +464,20 @@ export class BrainApiClient extends EventTarget {
     }
 
     /**
+     * Generate knowledge proposals for one source-tree container.
+     *
+     * @param {object} payload Consolidate/recompose action, physical scope, domain, and source paths.
+     * @returns {Promise<object>} Dream result with pending proposals and optional targeted prune summary.
+     */
+    knowledgeDream(payload: Record<string, unknown>): Promise<ApiResponse> {
+        return this.request("/api/knowledge/dream", {
+            method: "POST",
+            body: JSON.stringify(payload),
+            forceRefresh: true
+        });
+    }
+
+    /**
      * Execute global brain query.
      *
      * @param {object} params Query parameters.
@@ -489,6 +536,27 @@ export class BrainApiClient extends EventTarget {
         return `/api/pictures/file?id=${encodeURIComponent(pictureId)}`;
     }
 
+
+    /**
+     * Import one browser-selected image into a canonical picture domain.
+     *
+     * @param {string} domain Target dotted picture domain; an empty value means the library root.
+     * @param {File} file Browser-owned source image.
+     * @returns {Promise<ApiResponse<PicturesPayload>>} The registered imported picture and refreshed scan data.
+     */
+    importPicture(domain: string, file: File): Promise<ApiResponse<PictureImportPayload>> {
+        return this.request<PictureImportPayload>(`/api/pictures/import?domain=${encodeURIComponent(domain)}`, {
+            method: "POST",
+            headers: {
+                "Content-Type": file.type || "application/octet-stream",
+                "X-Picture-Filename": encodeURIComponent(file.name)
+            },
+            body: file,
+            forceRefresh: true,
+            commandLabel: `Import picture: ${file.name}`
+        });
+    }
+
     /**
      * Read profile list.
      *
@@ -540,6 +608,16 @@ export class BrainApiClient extends EventTarget {
     }
 
     /**
+     * Rename a log-domain subtree.
+     *
+     * @param {DomainRenameRequest} payload Source, destination, and scope contract.
+     * @returns {Promise<ApiResponse>} CLI mutation result.
+     */
+    renameLogDomain(payload: DomainRenameRequest): Promise<ApiResponse> {
+        return this.request("/api/logs/domain", { method: "POST", body: JSON.stringify(payload) });
+    }
+
+    /**
      * Read the workspace backlog tree.
      *
      * @param {object} params Query parameters.
@@ -562,6 +640,49 @@ export class BrainApiClient extends EventTarget {
             method: "POST",
             body: JSON.stringify(payload)
         });
+    }
+
+    /**
+     * Enrich one backlog task through the profile-aware multimodal backend.
+     *
+     * @param {string} taskId Persistent task identifier.
+     * @returns {Promise<ApiResponse<BacklogEnrichmentPayload>>} Updated task and enrichment metadata.
+     */
+    enrichBacklogTask(taskId: string): Promise<ApiResponse<BacklogEnrichmentPayload>> {
+        const payload: BacklogMutation = { action: "enrich", taskId };
+        return this.request<BacklogEnrichmentPayload>("/api/backlog/task", {
+            method: "POST",
+            body: JSON.stringify(payload)
+        });
+    }
+
+    /**
+     * Enrich current task-form values without persisting them.
+     *
+     * @param {BacklogDraftEnrichmentRequest} draft Current typed form state and optional image.
+     * @param {AbortSignal | undefined} signal Optional cancellation signal owned by the task editor.
+     * @returns {Promise<ApiResponse<BacklogDraftEnrichmentPayload>>} Enriched Markdown and model metadata.
+     */
+    enrichBacklogDraft(
+        draft: BacklogDraftEnrichmentRequest,
+        signal?: AbortSignal
+    ): Promise<ApiResponse<BacklogDraftEnrichmentPayload>> {
+        const payload: BacklogMutation = { action: "enrich-draft", ...draft };
+        return this.request<BacklogDraftEnrichmentPayload>("/api/backlog/task", {
+            method: "POST",
+            body: JSON.stringify(payload),
+            ...(signal ? { signal } : {})
+        });
+    }
+
+    /**
+     * Rename a backlog-domain subtree.
+     *
+     * @param {DomainRenameRequest} payload Source, destination, and scope contract.
+     * @returns {Promise<ApiResponse>} CLI mutation result.
+     */
+    renameBacklogDomain(payload: DomainRenameRequest): Promise<ApiResponse> {
+        return this.request("/api/backlog/domain", { method: "POST", body: JSON.stringify(payload) });
     }
 }
 
@@ -612,8 +733,6 @@ function normalizeDirectResponse<TData>(
 function isHealthStatus(value: unknown): value is HealthStatus {
     return isRecord(value)
         && typeof value.ok === "boolean"
-        && typeof value.name === "string"
-        && typeof value.distDir === "string"
         && typeof value.workspaceRoot === "string"
         && typeof value.agentHome === "string";
 }

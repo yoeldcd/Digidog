@@ -43,7 +43,15 @@ def _validate_mode(args: argparse.Namespace) -> tuple[bool, bool]:
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Describe one or many pictures and refresh semantic references once."""
+    """Describe selected picture records and refresh their semantic references.
+
+    Args:
+        args (argparse.Namespace): Parsed command options selecting one record or
+            batch mode, optional text, prompt, and output formatting.
+
+    Returns:
+        int: Zero when description processing succeeds; otherwise one.
+    """
     try:
         describe_all, undescribed = _validate_mode(args)
         prompt = str(getattr(args, "prompt", "") or "")

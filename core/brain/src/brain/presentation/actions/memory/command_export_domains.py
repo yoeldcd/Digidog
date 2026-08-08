@@ -12,7 +12,16 @@ from brain.presentation.terminal import get_color_codes, log_step
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Export memory domain directories to a target path."""
+    """Export one memory domain or the complete memory store to a directory.
+
+    Args:
+        args (argparse.Namespace): Parsed command options with the requested
+            domain and destination directory.
+
+    Returns:
+        int: Zero when the export succeeds; otherwise one after reporting an
+            error.
+    """
     bold, cyan, green, red, yellow, magenta, dim, reset = get_color_codes(getattr(args, "color", False))
     try:
         log_step(args, '[1/2] Resolving domain...')

@@ -18,7 +18,15 @@ from brain.presentation.terminal import log_step
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Run one checked Documentation Utils operation."""
+    """Run one validated Documentation Utils command through the Brain CLI.
+
+    Args:
+        args (argparse.Namespace): Parsed command options selecting the utility
+            mode, documentation path, network binding, and output format.
+
+    Returns:
+        int: Exit code returned by the utility, or one after validation failure.
+    """
     if args.mode not in {"check", "generate", "serve"}:
         error: str = f"Unsupported wiki mode `{args.mode}`. Use check, generate, or serve."
         args.json_payload = {"ok": False, "command": "wiki", "error": error}

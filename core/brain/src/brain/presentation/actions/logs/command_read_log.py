@@ -24,7 +24,15 @@ WORKSPACE_ROOT = Path(os.environ.get("WORKSPACE_ROOT", "."))
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Read log entries."""
+    """Read DB-backed log entries for a selected date and optional time.
+
+    Args:
+        args (argparse.Namespace): Parsed command options with date, optional
+            time, output limit, and formatting settings.
+
+    Returns:
+        int: Zero when logs are rendered; otherwise one after reporting an error.
+    """
     log_step(args, "Reading log entries...")
     color_enabled = getattr(args, "color", False)
     try:

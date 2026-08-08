@@ -15,7 +15,16 @@ from brain.infrastructure.runtime.paths import get_agent_home
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Clone a snippet."""
+    """Copy a reusable snippet into the current workspace.
+
+    Args:
+        args (argparse.Namespace): Parsed command options identifying the snippet
+            and optional destination path.
+
+    Returns:
+        int: Zero when the snippet is copied; otherwise one after reporting an
+            error.
+    """
     color_enabled = getattr(args, "color", False)
     try:
         snippet_name = args.name.strip()

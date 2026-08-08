@@ -16,7 +16,15 @@ from brain.presentation.terminal import render_placeholders, log_step
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Execute status command for local vector store."""
+    """Report configuration and collection statistics for the local vector store.
+
+    Args:
+        args (argparse.Namespace): Parsed command options controlling output
+            formatting and activity logging.
+
+    Returns:
+        int: Zero when status is rendered; otherwise one after reporting an error.
+    """
     color_enabled = getattr(args, "color", False)
     log_step(args, 'Retrieving local vectorstore status...')
     try:

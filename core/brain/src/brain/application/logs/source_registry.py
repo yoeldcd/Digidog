@@ -10,7 +10,12 @@ from pathlib import Path
 
 
 def refresh_log_source_registry(workspace_root: Path, logs_dir: Path) -> None:
-    """Refresh the local source registry for DB-backed or exported workspace logs."""
+    """Refresh the local source registry for DB-backed or exported workspace logs.
+
+    Args:
+        workspace_root (Path): Workspace whose local source registry is updated.
+        logs_dir (Path): Compatibility logs directory retained by the public contract.
+    """
     del logs_dir
     try:
         from brain.infrastructure.runtime.paths import get_source_registry_path
@@ -37,6 +42,12 @@ def refresh_log_source_registry(workspace_root: Path, logs_dir: Path) -> None:
 
 
 def refresh_log_source_record(workspace_root: Path, logs_dir: Path, log_file: Path) -> None:
-    """Refresh local source registry records after a touched log source changes."""
+    """Refresh local source registry records after a touched log source changes.
+
+    Args:
+        workspace_root (Path): Workspace whose local source registry is updated.
+        logs_dir (Path): Compatibility logs directory forwarded to the full refresh.
+        log_file (Path): Touched log path retained by the compatibility contract.
+    """
     del log_file
     refresh_log_source_registry(workspace_root=workspace_root, logs_dir=logs_dir)

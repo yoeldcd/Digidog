@@ -16,7 +16,14 @@ from brain.presentation.router.services.narration_templates import NARRATION_TEM
 
 @dataclass(frozen=True)
 class CommandNarration:
-    """Call and outcome templates for one canonical CLI command."""
+    """Call and outcome templates for one canonical CLI command.
+
+    Attributes:
+        call_template (str): Spoken template used before command execution.
+        output_template (str): Spoken template used after command execution.
+        refine_with_llm (bool): Whether the safe draft may be refined by an LLM.
+        emotion (str): Avatar emotion selected for the command narration.
+    """
 
     call_template: str
     output_template: str
@@ -25,7 +32,11 @@ class CommandNarration:
 
     @property
     def announce_start(self) -> bool:
-        """Return whether the reviewed contract speaks before execution."""
+        """Return whether the reviewed contract speaks before execution.
+
+        Returns:
+            bool: True when a non-empty call template permits start narration.
+        """
         return bool(self.call_template and self.call_template.casefold() != "no-speak")
 
 
@@ -54,7 +65,17 @@ def _load_templates() -> dict[str, CommandNarration]:
 
 
 def narration_for(command: str, args: argparse.Namespace) -> CommandNarration | None:
-    """Return the reviewed narration contract for a command, when configured."""
+    """Return the reviewed narration contract for a configured command.
+
+    Args:
+        command (str): Canonical CLI command name.
+        args (argparse.Namespace): Parsed command arguments reserved for future
+            context-sensitive policy selection.
+
+    Returns:
+        CommandNarration | None: Contract for ``command``, or None when speech is
+        not configured.
+    """
     del args
     return _load_templates().get(command)
 
@@ -69,7 +90,20 @@ def build_narration_draft(
     phase: str,
     cause: str = "",
 ) -> str:
-    """Combine one selected template with bounded, factual command evidence."""
+    """Combine a reviewed template with bounded factual command evidence.
+
+    Args:
+        command (str): Canonical CLI command name.
+        template (str): Reviewed narration template with variants.
+        args (argparse.Namespace): Parsed arguments supplying safe factual values.
+        output (str): Captured command output available to narration.
+        succeeded (bool): Whether command execution succeeded.
+        phase (str): Lifecycle phase that the draft describes.
+        cause (str): Optional concise failure cause.
+
+    Returns:
+        str: Structured narration draft containing template, facts, and fallback.
+    """
     selected = _select_variant(
         command=command,
         template=template,
@@ -153,7 +187,15 @@ def _safe_value(value: object) -> object:
 
 
 def render_safe_template(*, template: str, facts: dict[str, object]) -> str:
-    """Render a concise deterministic fallback without leaking raw arguments."""
+    """Render a concise deterministic fallback without leaking raw arguments.
+
+    Args:
+        template (str): Reviewed template containing bounded placeholders.
+        facts (dict[str, object]): Sanitized argument and outcome facts.
+
+    Returns:
+        str: Safe narration sentence with unresolved or sensitive values omitted.
+    """
     normalized_facts: dict[str, object] = {}
     for key, value in facts.items():
         normalized_key = _normalize_placeholder(key)
@@ -162,6 +204,14 @@ def render_safe_template(*, template: str, facts: dict[str, object]) -> str:
             normalized_facts[normalized_key.removeprefix("narration_")] = value
 
     def replace(match: re.Match[str]) -> str:
+        """Resolve one template placeholder from the safe fact mapping.
+
+        Args:
+            match (re.Match[str]): Placeholder match enclosed by curly braces.
+
+        Returns:
+            str: Bounded spoken substitution or an empty string.
+        """
         token = match.group(1).strip()
         normalized_token = _normalize_placeholder(token)
         if normalized_token == "log_summary_of_what_does":
@@ -217,6 +267,13 @@ def _spoken_fact(value: object) -> str:
 
 
 def render_without_refinement(draft: str) -> str:
-    """Return the pre-rendered safe sentence when a row disables the LLM."""
+    """Extract the deterministic fallback when a row disables LLM refinement.
+
+    Args:
+        draft (str): Structured narration draft produced by this module.
+
+    Returns:
+        str: Safe fallback sentence, or an empty string when it is absent.
+    """
     fallback_line = next((line for line in draft.splitlines() if line.startswith("Fallback seguro: ")), "")
     return fallback_line.removeprefix("Fallback seguro: ").strip()

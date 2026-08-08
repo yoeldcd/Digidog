@@ -9,10 +9,16 @@ import { BrainApiClient } from "../src/infrastructure/shared/http/clients/brain-
 
 const stateSource = await readFile(new URL("../src/presentation/shell/state/app-state.ts", import.meta.url), "utf8");
 const appSource = await readFile(new URL("../src/app.ts", import.meta.url), "utf8");
+const indexSource = await readFile(new URL("../src/index.html", import.meta.url), "utf8");
 const appShellSource = await readFile(
     new URL("../src/presentation/shell/layouts/app-shell.ts", import.meta.url),
     "utf8"
 );
+
+assert.match(indexSource, /rel="icon" type="image\/png" sizes="256x256" href="\.\/brain-explorer-favicon\.png"/,
+    "Brain Explorer must ship its generated representative favicon.");
+assert.match(indexSource, /meta name="theme-color" content="#0d1728"/,
+    "The browser chrome color must match the Explorer dark surface.");
 
 assert.match(
     stateSource,
@@ -46,7 +52,7 @@ assert.match(
 );
 assert.match(
     appShellSource,
-    /activeRouteIsMounted\s*=\s*host\.childElementCount\s*>\s*0[\s\S]*if\s*\(activeRouteIsMounted\s*&&\s*!refreshPendingQuery\)/,
+    /mountedElement\s*=\s*host\.firstElementChild[\s\S]*activeRouteIsMounted\s*=\s*mountedElement\s*!==\s*null[\s\S]*if\s*\(activeRouteIsMounted\s*&&\s*!refreshPendingQuery\)/,
     "The default route must mount into an empty host even when its id already matches the initial route field."
 );
 assert.doesNotMatch(
@@ -54,6 +60,15 @@ assert.doesNotMatch(
     /"query"/,
     "Transient search results must not replace a project's stable view."
 );
+assert.match(appShellSource, /data-search-select-all="search-source"[\s\S]*data-search-select-all="search-mechanism"/, "Both search option groups require bulk-selection controls.");
+assert.match(appShellSource, /value="backlog" checked>Backlog/, "Backlog must be an explicit search source.");
+assert.match(appShellSource, /<legend>Methods<\/legend>/, "Retrieval choices must use the Methods terminology.");
+assert.match(appShellSource, /master\.indeterminate = checkedCount > 0 && checkedCount < children\.length/, "Bulk-selection controls must expose partial state.");
+assert.match(appShellSource, /normalized\.length >= 2[\s\S]*}, 200\);/, "Reactive search must start at two characters and remain debounced.");
+assert.match(appShellSource, /mountedElement\?\.querySelector\("\.query-results"\)[\s\S]*#preservedQueryView = mountedElement/, "Search Results must only be preserved after a real result view exists.");
+assert.doesNotMatch(appShellSource, /if \(route\.id === "query"\) this\.#preservedQueryView = element/, "An empty QueryView must not expose Search Results navigation.");
+assert.match(appShellSource, /Please select at least one source and method\./, "Imperative search must reject empty option groups.");
+assert.match(appShellSource, /#activeRouteId === "query"[\s\S]*applyReactiveContentFilter/, "The shell searchbar must forward reactive text to QueryView.");
 
 const originalFetch = globalThis.fetch;
 const directSystemResponses = new Map([

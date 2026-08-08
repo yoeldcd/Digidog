@@ -188,10 +188,9 @@ export class DashboardView extends HTMLElement {
      */
     #renderSectionBody(kind: string, entries: ContextEntry[]): string {
         if (kind === "logs") {
-            const chronologicalEntries = this.#sortLogsNewestFirst(entries);
             return `
-                <nav class="context-log-links" aria-label="Recent log entries">
-                    ${chronologicalEntries.map(entry => this.#renderContextLine(entry, "context-link-line")).join("")}
+                <nav class="context-log-links" aria-label="Log domains">
+                    ${entries.map(entry => this.#renderContextLine(entry, "context-link-line")).join("")}
                 </nav>
             `;
         }
@@ -213,55 +212,6 @@ export class DashboardView extends HTMLElement {
             return entries.map(entry => this.#renderFactRow(entry)).join("");
         }
         return entries.map(entry => this.#renderContextLine(entry, "context-link-line")).join("");
-    }
-
-    /**
-     * Return log entries in reverse chronological order without mutating the
-     * domain-oriented sequence received from the CLI facade.
-     *
-     * Entries with equal or missing timestamps retain their original order.
-     *
-     * @param {object[]} entries Normalized log entries.
-     * @returns {object[]} Newest entries first.
-     */
-    #sortLogsNewestFirst(entries: ContextEntry[]): ContextEntry[] {
-        return entries
-            .map((entry, index) => ({
-                entry,
-                index,
-                timestamp: this.#logTimestamp(entry)
-            }))
-            .sort((left, right) => {
-                if (left.timestamp === right.timestamp) {
-                    return left.index - right.index;
-                }
-                return right.timestamp - left.timestamp;
-            })
-            .map(({ entry }) => entry);
-    }
-
-    /**
-     * Parse the CLI display date and time into a sortable UTC value.
-     *
-     * @param {object} entry Normalized log entry.
-     * @returns {number} UTC timestamp or negative infinity when unavailable.
-     */
-    #logTimestamp(entry: ContextEntry): number {
-        const dateMatch = String(entry.date || "").match(/^(\d{2})-(\d{2})-(\d{4})$/);
-        const timeMatch = String(entry.time || "00:00").match(/^(\d{2}):(\d{2})(?::(\d{2}))?$/);
-        if (!dateMatch || !timeMatch) {
-            return Number.NEGATIVE_INFINITY;
-        }
-        const [, day, month, year] = dateMatch;
-        const [, hour, minute, second = "0"] = timeMatch;
-        return Date.UTC(
-            Number(year),
-            Number(month) - 1,
-            Number(day),
-            Number(hour),
-            Number(minute),
-            Number(second)
-        );
     }
 
     /**
@@ -359,19 +309,56 @@ export class DashboardView extends HTMLElement {
             logs: "document",
             backlog: "checkSquare"
         } satisfies Record<string, IconName>)[section.kind ?? ""] || "document";
+        const lastChange = item.last_change;
+        const route = this.#itemRoute(section, item);
         return {
             kind: section.kind || "item",
             icon: iconName,
             typeLabel: this.#typeLabel(section, item),
             label: this.#itemLabel(section, item),
             summary: this.#itemSummary(section, item),
-            title: item.label || item.id || section.title || "Contexto",
-            ...((item.route || section.route) ? { route: item.route || section.route } : {}),
-            target: item.target || {},
+            title: lastChange?.title || item.title || item.name || item.label || String(item.id || "") || section.title || "Contexto",
+            ...(route ? { route } : {}),
+            target: this.#itemTarget(section, item),
             domain: item.domain || item.target?.domain || "",
             date: item.date || item.target?.date || "",
             time: item.time || item.target?.time || "",
-            changeType: item.changeType || item.type || ""
+            changeType: lastChange?.type || item.changeType || item.type || ""
+        };
+    }
+
+    /**
+     * Resolve navigation from the owning section instead of transport metadata.
+     *
+     * @param {object} section Context section.
+     * @param {object} item Section item.
+     * @returns {RouteId | undefined} Destination route.
+     */
+    #itemRoute(section: ContextSection, item: ContextItem): ContextEntry["route"] {
+        if (section.kind === "logs") return "logs";
+        if (section.kind === "diary") return "memory";
+        if (section.kind === "profiles") return "profiles";
+        return item.route || section.route;
+    }
+
+    /**
+     * Derive route state from compact context fields.
+     *
+     * @param {object} section Context section.
+     * @param {object} item Section item.
+     * @returns {object} Destination target.
+     */
+    #itemTarget(section: ContextSection, item: ContextItem): ContextTarget {
+        if (section.kind === "logs") return { domain: item.domain || "" };
+        if (section.kind === "profiles") return { profile: item.name || "" };
+        if (section.kind !== "diary") return item.target || {};
+
+        const date = item.retrieve_command?.match(/(?:^|\s)-d\s+(\d{2}-\d{2}-\d{4})(?:\s|$)/)?.[1] || "";
+        const [, month = "", year = ""] = date.split("-");
+        return {
+            path: date && month && year ? `diary.${year}-${month}.${date}` : "diary",
+            domain: "diary",
+            mode: "read"
         };
     }
 
@@ -387,12 +374,12 @@ export class DashboardView extends HTMLElement {
      * @returns {string} Entry label.
      */
     #itemLabel(section: ContextSection, item: ContextItem): string {
-        const fallback = item.label || item.id || section.title || "Contexto";
+        const fallback = item.title || item.name || item.label || String(item.id || "") || section.title || "Contexto";
         if (section.kind !== "logs") {
             return fallback;
         }
-        const timestamp = [item.date, item.time].filter(Boolean).join(" ");
-        return timestamp ? `${timestamp} -> ${fallback}` : fallback;
+        const domain = item.domain || "logs";
+        return item.last_change?.title ? `${domain} -> ${item.last_change.title}` : domain;
     }
 
     /**
@@ -424,13 +411,14 @@ export class DashboardView extends HTMLElement {
      */
     #itemSummary(section: ContextSection, item: ContextItem): string {
         if (section.kind === "profiles") {
-            return item.command || `read-profile ${item.label || ""}`;
+            return item.retrieve_command || `read-profile ${item.name || ""}`;
         }
         if (section.kind === "diary") {
-            return item.target?.path || item.command || "Diary entry";
+            return item.retrieve_command || "Diary entry";
         }
         if (section.kind === "logs") {
-            return `${item.domain || "logs"} - ${item.changeType || "registro"}`;
+            const change = item.last_change;
+            return [change?.type || "registro", change?.retrieve_command || ""].filter(Boolean).join(" - ");
         }
         return item.command || section.summary || "";
     }

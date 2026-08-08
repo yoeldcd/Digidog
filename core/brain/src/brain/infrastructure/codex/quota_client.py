@@ -18,7 +18,14 @@ from brain.infrastructure.runtime.paths import get_agent_home
 
 @dataclass(frozen=True)
 class CodexQuotaSnapshot:
-    """Used percentages for Codex's five-hour and weekly windows."""
+    """Used percentages for Codex quota windows.
+
+    Attributes:
+        five_hour_percent (int): Used percentage of the short quota window.
+        weekly_percent (int): Used percentage of the weekly quota window.
+        five_hour_resets_at (int): Unix timestamp for the short-window reset.
+        weekly_resets_at (int): Unix timestamp for the weekly reset.
+    """
 
     five_hour_percent: int
     weekly_percent: int
@@ -37,7 +44,11 @@ class CodexQuotaClient:
         self._lock = threading.Lock()
 
     def read(self) -> CodexQuotaSnapshot | None:
-        """Return the current quota snapshot, or `None` when unavailable."""
+        """Read the current quota snapshot.
+
+        Returns:
+            CodexQuotaSnapshot | None: Current limits, or None when unavailable.
+        """
         with self._lock:
             try:
                 self._ensure_started()

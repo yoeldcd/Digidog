@@ -39,6 +39,12 @@ export interface StructureTreeAction {
      * @type {boolean | undefined}
      */
     active?: boolean;
+    /**
+     * Whether the toolbar should render the human-readable label beside the icon.
+     * Node menus always render their action labels.
+     * @type {boolean | undefined}
+     */
+    showLabel?: boolean;
 }
 
 /**
@@ -60,6 +66,11 @@ export interface StructureTreeNode {
      * @type {string}
      */
     label: string;
+    /**
+     * Optional complete title used by the native hover tooltip when the label is abbreviated.
+     * @type {string | undefined}
+     */
+    title?: string;
     /**
      * Optional explicit icon overriding the component branch/leaf defaults.
      * @type {"edit" | "settings" | "home" | "database" | "graph" | "search" | "messageCircle" | "sliders" | "users" | "document" | "plus" | "documentPlus" | "folderPlus" | "copy" | "trash" | "save" | "refresh" | "pulse" | "folder" | "moon" | "sun" | "terminal" | "close" | "collapseLeft" | "expandRight" | "eye" | "filter" | "checkSquare" | "chevronRight" | "chevronLeft" | "chevronDown" | "minus" | "more" | "clock" | "camera" | "book" | "volume" | "play" | "pause" | "download" | undefined}

@@ -65,9 +65,11 @@ assert.match(knowledgeSource, /openRoute: "messages"/);
 assert.match(knowledgeSource, /#pictureForNode\([\s\S]*knowledge-source-preview/);
 assert.match(knowledgeSource, /renderDescriptionCard\([\s\S]*title: picture \? "Image description" : "Entity description"/);
 assert.match(knowledgeSource, /data-action='resolve-description-entity'[\s\S]*#focusEntityByLabel/);
-assert.match(knowledgeSource, /consumeRouteTarget\?\.\("knowledge"\)[\s\S]*entityLabel/);
+assert.match(knowledgeSource, /public async focusTarget\(target: Readonly<Record<string, unknown>>\)/);
+assert.doesNotMatch(knowledgeSource, /consumeRouteTarget\?\.\("knowledge"\)/);
 assert.match(knowledgeSource, /#messageForNode\([\s\S]*knowledge-message-preview/);
-assert.match(messagesSource, /consumeRouteTarget\?\.\("messages"\)/);
+assert.match(messagesSource, /public async focusTarget\(target: Readonly<Record<string, unknown>>\)/);
+assert.doesNotMatch(messagesSource, /consumeRouteTarget\?\.\("messages"\)/);
 assert.match(messagesSource, /target\.messageId[\s\S]*#expandedIds\.add/);
 
 assert.match(knowledgeSource, /#mergeScopeRecords\(this\.#filteredRecords\(\)\)/);
@@ -102,10 +104,15 @@ assert.match(knowledgeSource, /#rankImportantNodes\(candidates\)[\s\S]*right\.de
 assert.match(knowledgeSource, /rankedNodeIds = new Set\(this\.#rankImportantNodes\(visibleNodes\)[\s\S]*#nodeLabelIsVisible\(node, degrees, maxDegree, selected \|\| focused, ranked\)/);
 assert.match(knowledgeSource, /#drawNodeLabel\(context[^)]*occupiedBounds[^)]*\)[\s\S]*context\.measureText\(label\)[\s\S]*#roundedRect/);
 assert.match(knowledgeSource, /#nodeLabelBounds = new Map(?:<[^;]+>)?\(\)[\s\S]*#drawNodes\(context[^)]*\)[\s\S]*#nodeLabelBounds\.clear\(\)/);
-assert.match(knowledgeSource, /#drawNodeLabel[\s\S]*#nodeLabelBounds\.set\(node\.id,[\s\S]*left:[\s\S]*bottom:/);
+assert.match(knowledgeSource, /#drawNodeLabel[\s\S]*if \(ranked \|\| selected\) \{[\s\S]*context\.stroke\(\);[\s\S]*\}\s*this\.#nodeLabelBounds\.set\(node\.id,[\s\S]*left:[\s\S]*bottom:/,
+    "Every rendered label must register hit bounds, including connectivity-visible labels without a box.");
 assert.match(knowledgeSource, /#onPointerDown[\s\S]*#hitTestNodeExpansionBadge[\s\S]*#hitTestNodeLabel[\s\S]*#hitTestEdgeLabel/);
 assert.match(knowledgeSource, /#hitTestNodeLabel\(x[^)]*y[^)]*\)[\s\S]*#nodeLabelBounds\.entries\(\)[\s\S]*return this\.#nodes\.find/);
 assert.match(knowledgeSource, /#rankedLabelPlacement\(node[^)]*occupiedBounds[^)]*\)[\s\S]*const candidates = \[[\s\S]*const overlaps[\s\S]*occupiedBounds\.push/);
+assert.match(knowledgeSource, /#drawNodeLabelLeader\(context[^)]*node[^)]*placement[^)]*width[^)]*height[^)]*\)[\s\S]*labelBoundaryRatio[\s\S]*nodeBoundaryRatio[\s\S]*setLineDash[\s\S]*context\.stroke\(\)/,
+    "Materially displaced labels must retain ownership through a dashed boundary-to-boundary leader.");
+assert.match(knowledgeSource, /if \(ranked\) \{[\s\S]*#drawNodeLabelLeader\(context, node, placement, width, height\)/,
+    "Collision-ranked labels must invoke ownership leader rendering.");
 assert.match(knowledgeSource, /#renderGraphBusyState\(\)[\s\S]*graph-busy-overlay[\s\S]*graph-busy-spinner/);
 assert.match(knowledgeSource, /#beginGraphBusy\(label[^)]*\)[\s\S]*#graphBusyDepth \+= 1[\s\S]*#syncGraphBusyState/);
 assert.match(knowledgeSource, /async #showRecords[\s\S]*#beginGraphBusy[\s\S]*finally[\s\S]*#endGraphBusy/);
@@ -130,6 +137,16 @@ assert.match(knowledgeSource, /#navigateBackGraphRegion\(\)[\s\S]*#regionHistory
 assert.match(knowledgeSource, /const progress = Math\.max\(0, Math\.min\(1, \(now - startedAt\) \/ duration\)\)/);
 assert.doesNotMatch(knowledgeSource, /#expandGraphRegion\(/);
 assert.match(knowledgeSource, /relationEndpoint = selectedRelation\?\.from === node\.id \|\| selectedRelation\?\.to === node\.id/);
+assert.doesNotMatch(knowledgeSource, /focused = selected \|\| hovered \|\| relationEndpoint \|\| Boolean\(focus\?\.nodeIds/,
+    "Subregion membership must not bypass connectivity-versus-zoom label visibility.");
+assert.match(knowledgeSource, /#renderDetails\(\)[\s\S]*const focus = this\.#focusGraph\(\)[\s\S]*nodes: projectedNodes[\s\S]*edges: projectedEdges/,
+    "Inspector totals and content must use the same active subregion projection as the canvas.");
+assert.match(knowledgeSource, /#previewCanvasGeometry\(event[^)]*canvas[^)]*\)[\s\S]*#hitTestNode\(point\.x, point\.y\)[\s\S]*#hitTestEdge\(point\.x, point\.y\)[\s\S]*#renderInspector\(\)/,
+    "Canvas geometry hover must incrementally preview node or relation details.");
+assert.match(knowledgeSource, /#clearCanvasHover\(\)[\s\S]*#hoveredNodeId = ""[\s\S]*#hoveredRelationId = ""[\s\S]*#renderInspector\(\)/,
+    "Leaving canvas geometry must restore persistent Inspector state.");
+assert.match(knowledgeSource, /selectedNodeId: this\.#hoveredNodeId \|\| this\.#selectedNodeId[\s\S]*selectedRelationId: this\.#hoveredRelationId \|\| this\.#selectedRelationId/,
+    "Transient geometry hover must take precedence without mutating persistent selection.");
 assert.doesNotMatch(knowledgeSource, /expandGraphRegionFromEdge/);
 assert.match(knowledgeSource, /style="--entity-color: \$\{escapeHtml\(node\.color\)\}"/);
 assert.match(knowledgeSource, /distance >= 4[\s\S]*this\.#dragNode/);
@@ -156,5 +173,11 @@ assert.match(viewsStyles, /\.graph-detail-list > \*[\s\S]*max-width: 100%/);
 assert.match(viewsStyles, /\.important-node-chips \{[\s\S]*display: flex;[\s\S]*flex-wrap: wrap;[\s\S]*justify-content: space-between/);
 assert.match(viewsStyles, /\.important-node-chips button \{[\s\S]*flex: 1 1 max-content;[\s\S]*justify-content: center;[\s\S]*width: auto;[\s\S]*max-width: 100%[\s\S]*text-align: center/);
 assert.match(viewsStyles, /\.important-node-chips strong \{[\s\S]*overflow: visible;[\s\S]*overflow-wrap: anywhere;[\s\S]*text-overflow: clip;[\s\S]*white-space: normal;/);
+assert.match(knowledgeProjectionSource, /rootPath[\s\S]*#findNode\(roots, rootPath\)[\s\S]*return \[\{[\s\S]*filter-source/);
+assert.match(knowledgeSource, /#treeFilterActive = false[\s\S]*rootPath: this\.#treeFilterActive \? this\.#selectedTreePath : ""/);
+assert.match(knowledgeSource, /refresh-tree[\s\S]*revert-tree-filter[\s\S]*showLabel: true/);
+assert.match(knowledgeSource, /#revertTreeFilter\(\)[\s\S]*#treeFilterActive = false[\s\S]*#treeScope = "all"[\s\S]*#applyFilters\(\)/);
+assert.match(structureTreeSource, /action\.showLabel[\s\S]*structure-tree-toolbar-action--labeled[\s\S]*escapeHtml\(action\.label\)/);
+assert.match(viewsStyles, /\.structure-tree-toolbar button\.icon-action\.structure-tree-toolbar-action--labeled \{[\s\S]*display: inline-flex;[\s\S]*min-width: max-content;[\s\S]*white-space: nowrap;/);
 
 console.log("knowledge graph layout contract passed");

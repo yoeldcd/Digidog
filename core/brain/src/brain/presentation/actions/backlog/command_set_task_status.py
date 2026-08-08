@@ -7,14 +7,24 @@ from __future__ import annotations
 
 import os
 import sys
+import argparse
 from pathlib import Path
 
 from brain.application.backlog.service import BacklogTaskNotFoundError, set_backlog_task_status
 from brain.presentation.terminal import log_step, render_placeholders
 
 
-def handle(args) -> int:
-    """Set one task to `WORKING` or `DONE`."""
+def handle(args: argparse.Namespace) -> int:
+    """Set one task to the requested workflow state.
+
+    Args:
+        args (argparse.Namespace): Parsed command options containing the task ID,
+            requested state, and output settings.
+
+    Returns:
+        int: Zero when the task status is updated; otherwise one after reporting
+            an error.
+    """
     workspace_root = Path(os.environ.get("WORKSPACE_ROOT", ".")).resolve()
     color_enabled = getattr(args, "color", False)
     requested_status = str(args.status).upper().strip()

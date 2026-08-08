@@ -101,7 +101,15 @@ def scan_log_database_record(workspace_root: Path) -> SourceRegistryRecordDTO | 
 
 
 def scan_message_database_record(workspace_root: Path) -> SourceRegistryRecordDTO | None:
-    """Return a virtual source record for persisted workspace avatar messages."""
+    """Build a virtual source record for persisted workspace messages.
+
+    Args:
+        workspace_root (Path): Root of the workspace that owns the database.
+
+    Returns:
+        SourceRegistryRecordDTO | None: Database source metadata, or ``None``
+        when the database is missing, invalid, or has no messages.
+    """
     database_path: Path = workspace_root / "$agent" / "database" / "messages.db"
     if not database_path.is_file():
         return None

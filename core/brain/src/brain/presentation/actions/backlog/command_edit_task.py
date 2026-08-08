@@ -7,14 +7,24 @@ from __future__ import annotations
 
 import os
 import sys
+import argparse
 from pathlib import Path
 
 from brain.application.backlog.service import BacklogTaskNotFoundError, edit_backlog_task
 from brain.presentation.terminal import log_step, render_placeholders
 
 
-def handle(args) -> int:
-    """Persist explicitly supplied task fields without changing its status."""
+def handle(args: argparse.Namespace) -> int:
+    """Persist supplied task fields without changing the current workflow state.
+
+    Args:
+        args (argparse.Namespace): Parsed command options with the task ID,
+            editable fields, and output settings.
+
+    Returns:
+        int: Zero when the task is updated; otherwise one after reporting an
+            error.
+    """
     workspace_root = Path(os.environ.get("WORKSPACE_ROOT", ".")).resolve()
     color_enabled = getattr(args, "color", False)
     log_step(args, f"Editing task '{args.task_id}'...")
@@ -25,6 +35,7 @@ def handle(args) -> int:
             title=args.title,
             description=args.description,
             priority=args.priority,
+            domain=args.domain,
         )
     except (BacklogTaskNotFoundError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)

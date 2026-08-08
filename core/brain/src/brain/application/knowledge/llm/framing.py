@@ -20,12 +20,13 @@ MAX_MARKDOWN_SECTIONS = 24
 
 
 def build_knowledge_frame(source_dto: SourceDTO, content: str) -> KnowledgeFrameDTO:
-    """
-    Convert raw source content into a semantic model input frame.
+    """Convert raw source content into a semantic model input frame.
 
     Args:
         source_dto (SourceDTO): Source metadata kept by the harness.
         content (str): Raw source content.
+        source_dto: `SourceDTO`. Source metadata kept by the harness.
+        content: `str`. Raw source content.
 
     Returns:
         KnowledgeFrameDTO: Model-ready frame without filesystem metadata.
@@ -38,11 +39,11 @@ def build_knowledge_frame(source_dto: SourceDTO, content: str) -> KnowledgeFrame
 
 
 def render_knowledge_frame_for_llm(frame_dto: KnowledgeFrameDTO) -> str:
-    """
-    Render a knowledge frame as text for model-backed extraction.
+    """Render a knowledge frame as text for model-backed extraction.
 
     Args:
         frame_dto (KnowledgeFrameDTO): Semantic input frame.
+        frame_dto: `KnowledgeFrameDTO`. The semantic input frame to be rendered.
 
     Returns:
         str: Model-ready text.

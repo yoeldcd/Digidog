@@ -15,6 +15,7 @@ from brain.application.knowledge.models.ontology_keys import normalize_label
 
 
 class KnowledgeOntologyRepositoryMixin:
+    """Persist ontology suggestions and discovered schema metadata."""
     def add_schema_suggestion(
         self,
         suggestion_type: str,

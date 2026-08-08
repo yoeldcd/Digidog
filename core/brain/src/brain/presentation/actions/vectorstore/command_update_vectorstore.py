@@ -24,7 +24,16 @@ from brain.presentation.terminal import render_placeholders, log_step
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Incremental update vectorstore."""
+    """Incrementally synchronize global vector-store records with their sources.
+
+    Args:
+        args (argparse.Namespace): Parsed command options controlling JSON output,
+            verbose activity reporting, and best-effort error handling.
+
+    Returns:
+        int: Zero when synchronization succeeds or an allowed best-effort failure
+            occurs; otherwise one.
+    """
     color_enabled = getattr(args, "color", False)
     log_step(args, '[1/2] Scanning for changes...')
     try:

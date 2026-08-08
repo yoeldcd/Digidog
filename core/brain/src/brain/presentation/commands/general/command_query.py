@@ -1,9 +1,9 @@
+from __future__ import annotations
+
 # Author: Yoel David <yoeldcd@gmail.com>
 # X: https://x.com/SAY6267
 
 """Command metadata for the `query` CLI command."""
-
-from __future__ import annotations
 
 from brain.presentation.commands.models import ArgumentSchema, CommandSchema
 
@@ -11,7 +11,7 @@ from brain.presentation.commands.models import ArgumentSchema, CommandSchema
 SCHEMA = CommandSchema(
     name="query",
     domain="general",
-    help="Search the brain through one global query point across knowledge graph and memory.",
+    help="Search the brain through one global query point across knowledge graph, memory, messages, and pictures with broad keyword fallback.",
     arguments=[
         ArgumentSchema(
             flags=["domain"],
@@ -20,6 +20,8 @@ SCHEMA = CommandSchema(
         ),
         ArgumentSchema(flags=["query"], nargs="?", help="Text to search globally."),
         ArgumentSchema(flags=["-l", "--limit"], type="int", default=5, help="Limit matches per selected backend."),
+        ArgumentSchema(flags=["--page"], type="int", default=1, help="1-based result page for shallow queries."),
+        ArgumentSchema(flags=["--page-size"], type="int", default=25, help="Results per page for shallow queries: 0 (all), 10, 25, 50, or 100."),
         ArgumentSchema(
             flags=["--source"],
             default="all",
@@ -33,12 +35,12 @@ SCHEMA = CommandSchema(
         ArgumentSchema(
             flags=["--scope"],
             default=None,
-            help="Backward-compatible alias for --source.",
+            help="Alias for --knowledge-scope: all, global, or local.",
         ),
         ArgumentSchema(
             flags=["--mechanism"],
             default="all",
-            help="Query mechanism: all, graph, vector, or text. Defaults to all.",
+            help="Query mechanism: all, graph, vector, or text (with broad keyword fallback). Defaults to all.",
         ),
         ArgumentSchema(
             flags=["--knowledge-scope"],
@@ -52,5 +54,6 @@ SCHEMA = CommandSchema(
         ),
         ArgumentSchema(flags=["--explain"], action="store_true", help="Show source, kind, and rank details."),
         ArgumentSchema(flags=["-j", "--json"], action="store_true", help="Output results as JSON."),
+        ArgumentSchema(flags=["--verbose-schema"], action="store_true", help="Output the full internal query DTO schema."),
     ],
 )

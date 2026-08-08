@@ -327,7 +327,15 @@ def get_log_entry_by_timestamp(workspace_root: Path, timestamp: str) -> LogEntry
 
 
 def get_log_entry_by_id(workspace_root: Path, record_id: int) -> LogEntryRecord | None:
-    """Return one canonical log row by its stable SQLite identifier."""
+    """Return one canonical log row by its stable SQLite identifier.
+
+    Args:
+        workspace_root (Path): Workspace containing the log database.
+        record_id (int): Stable SQLite entry identifier.
+
+    Returns:
+        LogEntryRecord | None: Matching entry, or None when absent.
+    """
     with connect_logs_database(workspace_root=workspace_root) as connection:
         row = connection.execute(
             "SELECT * FROM log_entries WHERE id = ?",
@@ -418,7 +426,14 @@ def log_database_summary(workspace_root: Path) -> tuple[int, int, int]:
 
 
 def list_log_domains(workspace_root: Path) -> list[str]:
-    """Return all distinct normalized log domains from persistent storage."""
+    """Return all distinct normalized log domains from persistent storage.
+
+    Args:
+        workspace_root (Path): Workspace containing the log database.
+
+    Returns:
+        list[str]: Distinct non-empty domains in lexical order.
+    """
     with connect_logs_database(workspace_root=workspace_root) as connection:
         rows = connection.execute(
             "SELECT DISTINCT domain FROM log_entries WHERE domain <> '' ORDER BY domain",
@@ -484,7 +499,15 @@ def refresh_log_index(workspace_root: Path) -> None:
 
 
 def insert_log_entry_connection(connection: sqlite3.Connection, entry: LogEntryRecord) -> int:
-    """Insert one log entry using an existing transaction."""
+    """Insert one log entry using an existing transaction.
+
+    Args:
+        connection (sqlite3.Connection): Open log-database transaction.
+        entry (LogEntryRecord): Canonical entry to persist.
+
+    Returns:
+        int: Stable identifier assigned to the inserted row.
+    """
     date_text, time_text, timestamp_sort = timestamp_parts(timestamp=entry.timestamp)
     now_timestamp: float = time.time()
     cursor = connection.execute(
@@ -530,7 +553,11 @@ def insert_log_entry_connection(connection: sqlite3.Connection, entry: LogEntryR
 
 
 def refresh_log_index_connection(connection: sqlite3.Connection) -> None:
-    """Rebuild the latest-domain projection in an existing transaction."""
+    """Rebuild the latest-domain projection in an existing transaction.
+
+    Args:
+        connection (sqlite3.Connection): Open log-database transaction.
+    """
     connection.execute("DELETE FROM log_index_latest")
     rows = connection.execute(
         """
@@ -612,7 +639,14 @@ def source_path_from_date(date_text: str) -> str:
 
 
 def row_to_log_entry(row: sqlite3.Row) -> LogEntryRecord:
-    """Convert one SQLite row into a log entry record."""
+    """Convert one SQLite row into a log entry record.
+
+    Args:
+        row (sqlite3.Row): SQLite row containing canonical log columns.
+
+    Returns:
+        LogEntryRecord: Typed application record for the stored entry.
+    """
     return LogEntryRecord(
         timestamp=str(row["timestamp"]),
         domain=str(row["domain"]),

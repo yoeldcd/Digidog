@@ -2,6 +2,7 @@
  * Coordinates Knowledge source-tree selection, actions, and navigation.
  */
 import { StructureTree } from "../../shared/components/structure-tree.ts";
+import type { StructureTreeAction } from "../../shared/view_models/structure-tree-view-model.ts";
 import { KnowledgeCanvasInteractionController } from "./knowledge-canvas-interaction-controller.ts";
 
 /**
@@ -23,9 +24,10 @@ export abstract class KnowledgeTreeInteractionController extends KnowledgeCanvas
             toggleOnBranchSelect: true,
             title: "Knowledge",
             toolbarActions: [
-                { id: "refresh-graph", label: "Refresh graph", icon: "refresh" },
-                { id: "review-deltas", label: "Review deltas", icon: "graph" },
-                { id: "fit-graph", label: "Fit canvas", icon: "filter" }
+                { id: "refresh-tree", label: "Refresh", icon: "refresh", showLabel: true } satisfies StructureTreeAction,
+                ...(this.treeFilterActive
+                    ? [{ id: "revert-tree-filter", label: "Revert", icon: "chevronLeft", showLabel: true } satisfies StructureTreeAction]
+                    : []),
             ],
             defaultBranchIcon: "folder",
             defaultLeafIcon: "document"
@@ -45,12 +47,15 @@ export abstract class KnowledgeTreeInteractionController extends KnowledgeCanvas
         if (!(event instanceof CustomEvent)) return;
         const node = event.detail.node || {};
         this.selectedTreePath = String(node.path || "");
-        this.treeScope = node.scope === "global" || node.scope === "local" ? node.scope : "all";
-        this.domain = String(node.domain || "all");
+        this.highlightScope = node.scope === "global" || node.scope === "local" ? node.scope : "all";
+        this.highlightDomain = String(node.domain || "all");
         this.sourceKind = node.sourceKind === "memory" || node.sourceKind === "pictures"
             || node.sourceKind === "messages" || node.sourceKind === "logs" ? node.sourceKind : "";
-        this.treeVisualType = node.visualType === "class" || node.visualType === "entity" ? node.visualType : "";
-        this.sourcePath = String(node.sourcePath || "");
+        this.highlightSourceKind = this.sourceKind;
+        this.sourceKind = "";
+        this.highlightVisualType = node.visualType === "class" || node.visualType === "entity" ? node.visualType : "";
+        this.highlightSourcePath = String(node.sourcePath || "");
+        this.treeHighlightActive = true;
         this.applyTreeSelection();
     }
 
@@ -62,13 +67,10 @@ export abstract class KnowledgeTreeInteractionController extends KnowledgeCanvas
      */
     protected onDomainTreeToolbarAction(event: Event): void {
         if (!(event instanceof CustomEvent)) return;
-        if (event.detail.action === "refresh-graph") {
+        if (event.detail.action === "refresh-tree") {
             this.showRecords(true);
-        } else if (event.detail.action === "review-deltas") {
-            this.reviewDeltas();
-        } else if (event.detail.action === "fit-graph") {
-            this.needsViewportFit = true;
-            this.drawCanvas();
+        } else if (event.detail.action === "revert-tree-filter") {
+            this.revertTreeFilter();
         }
     }
 
@@ -85,6 +87,7 @@ export abstract class KnowledgeTreeInteractionController extends KnowledgeCanvas
         }
         if (event.detail.action === "filter-source") {
             this.selectedTreePath = String(event.detail.node.path);
+            this.treeFilterActive = true;
             this.treeScope = event.detail.node.scope === "global" || event.detail.node.scope === "local" ? event.detail.node.scope : "all";
             this.domain = String(event.detail.node.domain || "all");
             const sourceKind = event.detail.node.sourceKind;
@@ -92,16 +95,90 @@ export abstract class KnowledgeTreeInteractionController extends KnowledgeCanvas
                 || sourceKind === "messages" || sourceKind === "logs" ? sourceKind : "";
             this.treeVisualType = event.detail.node.visualType === "class" || event.detail.node.visualType === "entity" ? event.detail.node.visualType : "";
             this.sourcePath = String(event.detail.node.sourcePath || "");
-            this.applyTreeSelection();
+            this.treeHighlightActive = false;
+            this.treeHighlightNodeIds.clear();
+            this.treeHighlightEdgeIds.clear();
+            this.applyFilters();
             return;
         }
         if (event.detail.action === "open-source" && event.detail.node.openRoute) {
             this.state?.setRouteTarget?.(event.detail.node.openRoute, event.detail.node.openTarget || {});
             return;
         }
-        if (event.detail.action === "consolidate-source") {
-            this.reviewDeltas();
+        if (event.detail.action === "consolidate-source" || event.detail.action === "recompose-source") {
+            this.runContainerDream(
+                event.detail.node,
+                event.detail.action === "recompose-source" ? "recompose" : "consolidate",
+            );
         }
+    }
+
+    /**
+     * Restore the complete source hierarchy and remove its structural graph scope.
+     */
+    protected revertTreeFilter(): void {
+        this.selectedTreePath = "";
+        this.treeFilterActive = false;
+        this.treeScope = "all";
+        this.domain = "all";
+        this.sourceKind = "";
+        this.sourcePath = "";
+        this.treeVisualType = "";
+        this.treeHighlightActive = false;
+        this.treeHighlightNodeIds.clear();
+        this.treeHighlightEdgeIds.clear();
+        this.applyFilters();
+    }
+
+    /**
+     * Generate proposals for every source owned by one selected tree container.
+     *
+     * @param {Record<string, any>} node Selected tree node.
+     * @param {"consolidate" | "recompose"} action Requested generation mode.
+     * @returns {Promise<void>} Resolves after the graph reflects the dream response.
+     */
+    protected async runContainerDream(node: Record<string, any>, action: "consolidate" | "recompose"): Promise<void> {
+        if (!this.api) return;
+        const api = this.api;
+        const scope = node.scope === "global" || node.scope === "local" ? node.scope : "global";
+        const sourceKind = String(node.sourceKind || "");
+        const sourcePaths = this.collectTreeSourcePaths(node);
+        const rawDomain = String(node.domain || "all").split(/[./\\]/)[0]?.toLowerCase() || "all";
+        const domain = sourceKind === "logs" || sourceKind === "messages"
+            ? sourceKind
+            : rawDomain === "profiles" || rawDomain === "diary" ? rawDomain : "memory";
+        this.beginGraphBusy(action === "recompose" ? "Recomposing source container" : "Consolidating source container");
+        try {
+            const result = await api.knowledgeDream({
+                action,
+                scope,
+                domain,
+                sourcePaths,
+                limit: Math.max(sourcePaths.length, 20),
+            });
+            this.state?.setLastResult(result);
+            this.output = result;
+            this.ingestGraph(result.data);
+            this.render();
+        } finally {
+            this.endGraphBusy();
+        }
+    }
+
+    /**
+     * Return the unique canonical leaf paths owned by a tree container.
+     * @param {Record<string, any>} node Selected tree container.
+     * @returns {string[]} Unique canonical descendant source paths.
+     */
+    protected collectTreeSourcePaths(node: Record<string, any>): string[] {
+        const paths = new Set<string>();
+        const visit = (current: Record<string, any>): void => {
+            const sourcePath = String(current.sourcePath || "").trim();
+            if (sourcePath) paths.add(sourcePath.replaceAll("\\", "/"));
+            if (Array.isArray(current.children)) current.children.forEach(child => visit(child));
+        };
+        visit(node);
+        return [...paths].sort();
     }
 
     /**

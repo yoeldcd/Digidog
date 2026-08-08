@@ -48,6 +48,31 @@ def query_stop_words() -> set[str]:
     }
 
 
+def extract_query_keywords(query: str, min_length: int = 3) -> list[str]:
+    """
+    Extract meaningful non-acronym query keywords for broad text search.
+
+    Args:
+        query (str): User query text.
+        min_length (int): Minimum length requirement (exclusive: > min_length).
+
+    Returns:
+        list[str]: Filtered list of search keywords.
+    """
+    stopwords = query_stop_words()
+    keywords: list[str] = []
+    seen: set[str] = set()
+    for token in query.strip().split():
+        clean_token = token.strip(".,;:!?\"'()[]{}")
+        if not clean_token or len(clean_token) <= min_length or clean_token.isupper():
+            continue
+        normalized = normalize_query_text(value=clean_token)
+        if normalized and normalized not in stopwords and normalized not in seen:
+            seen.add(normalized)
+            keywords.append(clean_token)
+    return keywords
+
+
 def temporal_words() -> set[str]:
     """
     Return normalized temporal words from every supported language module.

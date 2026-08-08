@@ -12,8 +12,8 @@ from typing import Any, Iterable
 
 # Application Modules Imports
 from brain.infrastructure.runtime.paths import get_source_registry_path
-from brain.infrastructure.runtime.migration_dtos import RuntimeMigrationReportDTO
-from brain.infrastructure.runtime.migration_steps import record
+from brain.infrastructure.runtime.migrations.migration_dtos import RuntimeMigrationReportDTO
+from brain.infrastructure.runtime.migrations.migration_steps import record
 from brain.infrastructure.sources.registry.consumers import mark_consumer_source_processed
 
 
@@ -24,7 +24,15 @@ def import_source_state_json(
     workspace_root: Path,
     report: RuntimeMigrationReportDTO,
 ) -> None:
-    """Import legacy source-state JSON into `brain_sources.db`."""
+    """Import legacy source-state JSON into the source registry database.
+
+    Args:
+        source_state_path (Path): Legacy JSON state file.
+        scope (str): Target runtime scope.
+        agent_home (Path): Shared agent home.
+        workspace_root (Path): Consumer workspace root.
+        report (RuntimeMigrationReportDTO): Mutable migration report.
+    """
     if not source_state_path.exists():
         return
     try:
@@ -56,7 +64,14 @@ def import_source_state_json(
 
 
 def iter_source_state_entries(raw_data: Any) -> Iterable[tuple[str, str, float]]:
-    """Yield consumer/path/mtime triples from common legacy source-state shapes."""
+    """Yield source-state triples from common legacy payload shapes.
+
+    Args:
+        raw_data (Any): Decoded legacy JSON payload.
+
+    Yields:
+        tuple[str, str, float]: Consumer name, source path, and modification time.
+    """
     if not isinstance(raw_data, dict):
         return
     for consumer_name, consumer_payload in raw_data.items():
@@ -74,14 +89,28 @@ def iter_source_state_entries(raw_data: Any) -> Iterable[tuple[str, str, float]]
 
 
 def canonical_source_path(source_path: str) -> str:
-    """Return current stable source path for imported legacy state rows."""
+    """Return a current stable path for an imported legacy state row.
+
+    Args:
+        source_path (str): Legacy source path.
+
+    Returns:
+        str: Canonical current source path.
+    """
     if source_path.startswith("$agent/logs/") and source_path.endswith(".log") and not source_path.endswith(".log.md"):
         return f"{source_path}.md"
     return source_path
 
 
 def extract_mtime(state_payload: Any) -> float | None:
-    """Extract an mtime from one legacy source-state value."""
+    """Extract a modification time from one legacy source-state value.
+
+    Args:
+        state_payload (Any): Numeric or mapping-shaped legacy state value.
+
+    Returns:
+        float | None: Parsed modification time, or None when unavailable.
+    """
     if isinstance(state_payload, int | float):
         return float(state_payload)
     if not isinstance(state_payload, dict):

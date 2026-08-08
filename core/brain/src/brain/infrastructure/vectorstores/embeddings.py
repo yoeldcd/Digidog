@@ -15,7 +15,18 @@ from brain.infrastructure.vectorstores.settings import load_config
 
 
 def get_embedding(text: str) -> list[float]:
-    """Fetch embedding vector for the text using the configured API."""
+    """Fetch an embedding vector from the configured remote API.
+
+    Args:
+        text (str): Source text to encode as a numerical vector.
+
+    Returns:
+        list[float]: Embedding values returned by the configured model.
+
+    Raises:
+        RuntimeError: If the embedding service rejects the request or cannot
+            return a usable response.
+    """
     config = load_config()
     emb_config = config.get("embedding_model", {})
 

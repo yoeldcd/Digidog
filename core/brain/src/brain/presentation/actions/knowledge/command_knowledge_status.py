@@ -19,7 +19,15 @@ from brain.presentation.terminal import render_placeholders, log_step
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Print knowledge graph runtime status."""
+    """Report configuration and storage status for selected knowledge scopes.
+
+    Args:
+        args (argparse.Namespace): Parsed command options selecting scopes and
+            output formatting.
+
+    Returns:
+        int: Zero when status is rendered; otherwise one after reporting an error.
+    """
     color_enabled: bool = getattr(args, "color", False)
     try:
         log_step(args, "Retrieving knowledge status...")

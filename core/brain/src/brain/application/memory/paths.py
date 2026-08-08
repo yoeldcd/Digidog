@@ -25,7 +25,17 @@ class BrainStoreError(RuntimeError):
 
 
 def validate_part_name(name: str) -> str:
-    """Validate that a category or key name only contains alnum/underscores."""
+    """Validate a category or key path component.
+
+    Args:
+        name (str): Raw component to normalize and validate.
+
+    Returns:
+        str: Stripped component containing only supported characters.
+
+    Raises:
+        BrainStoreError: The component is empty or contains unsupported characters.
+    """
     normalized = name.strip()
     if not normalized:
         raise BrainStoreError("Name components cannot be empty.")
@@ -37,7 +47,17 @@ def validate_part_name(name: str) -> str:
 
 
 def resolve_category_dir(category: str) -> Path:
-    """Split category by dot and resolve its directory path under MEMORY_ROOT."""
+    """Resolve a dot-separated category beneath the memory root.
+
+    Args:
+        category (str): Dot-separated memory category.
+
+    Returns:
+        Path: Validated category directory beneath the memory root.
+
+    Raises:
+        BrainStoreError: The category is empty or contains an invalid component.
+    """
     parts = [part.strip() for part in category.split(".") if part.strip()]
     if not parts:
         raise BrainStoreError("Category name cannot be empty.")
@@ -47,7 +67,15 @@ def resolve_category_dir(category: str) -> Path:
 
 
 def resolve_file_path(category: str, key: str) -> Path:
-    """Resolve the .md file path for a given category and key name."""
+    """Resolve the Markdown path for a category and key.
+
+    Args:
+        category (str): Dot-separated memory category.
+        key (str): Entry key used as the filename stem.
+
+    Returns:
+        Path: Validated Markdown entry path.
+    """
     dir_path = resolve_category_dir(category)
     validated_key = validate_part_name(key)
     return dir_path / f"{validated_key}.md"
@@ -59,7 +87,12 @@ def ensure_memory_root() -> None:
 
 
 def write_text_atomic(path: Path, content: str) -> None:
-    """Write text using an atomic replacement inside the temp folder."""
+    """Write text through an atomic replacement staged in the managed temp directory.
+
+    Args:
+        path (Path): Final destination path.
+        content (str): UTF-8 text to persist.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     TMP_DIR.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=TMP_DIR, delete=False) as handle:

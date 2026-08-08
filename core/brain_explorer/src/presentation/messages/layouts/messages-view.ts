@@ -13,15 +13,19 @@ import { BrainApiClient } from "../../../infrastructure/shared/http/clients/brai
 import { StructureTree } from "../../shared/components/structure-tree.ts";
 import { treeActionDetail, treeSelectDetail } from "../../shared/view_models/structure-tree-view-model.ts";
 import type { StructureTreeNode } from "../../shared/view_models/structure-tree-view-model.ts";
-import { escapeHtml, renderMarkdown } from "../../shared/utils/html.ts";
+import { escapeHtml, filterRenderedContent, renderMarkdown } from "../../shared/utils/html.ts";
 import { icon } from "../../shared/utils/icons.ts";
 import type { AppState } from "../../shell/state/app-state.ts";
-import type { ComponentContext } from "../../shared/view_models/component-context-view-model.ts";
+import type { ComponentContext, TargetFocusableLayout } from "../../shared/view_models/component-context-view-model.ts";
+
+const VOICE_STATUS_ACTIVE_INTERVAL_MS = 1_500;
+const VOICE_STATUS_IDLE_INTERVAL_MS = 10_000;
+const VOICE_STATUS_HIDDEN_INTERVAL_MS = 60_000;
 
 /**
  * Browse, inspect, copy, download, and replay persisted voice messages.
  */
-export class MessagesView extends HTMLElement {
+export class MessagesView extends HTMLElement implements TargetFocusableLayout {
     /**
      * Provides the unique CSS selector string used to identify the MessagesView component in the DOM.
      * @returns {string} A string representing the component's DOM selector.
@@ -97,6 +101,11 @@ export class MessagesView extends HTMLElement {
      */
     #statusTimer: number | null = null;
     /**
+     * Prevents overlapping voice-status requests when visibility or playback changes.
+     * @type {boolean}
+     */
+    #statusPollInFlight = false;
+    /**
      * Maintains the unique identifier of the currently active speaking entity within the messages view.
      *
      * @type {string}
@@ -114,6 +123,10 @@ export class MessagesView extends HTMLElement {
      * @type {Set<string>}
      */
     #expandedIds = new Set<string>();
+    /** Message identifiers expanded exclusively to reveal reactive-search matches. */
+    #reactiveExpandedIds = new Set<string>();
+    /** Current global-shell query applied to the mounted message list. */
+    #reactiveQuery = "";
     /**
      * Maintains a unique collection of active path identifiers for expanded nodes within the messages tree view.
      *
@@ -138,6 +151,13 @@ export class MessagesView extends HTMLElement {
      * @type {Record<string, unknown> | null}
      */
     #pendingTarget: Record<string, unknown> | null = null;
+    /**
+     * Resumes status synchronization immediately when the Messages layout becomes visible.
+     * @type {() => void}
+     */
+    #onVisibilityChange = () => {
+        if (!document.hidden) void this.#pollVoiceStatus();
+    };
 
     /**
      * Assigns the component context to initialize API and state references, resolves the route target, and triggers initial message loading and voice status polling.
@@ -146,7 +166,7 @@ export class MessagesView extends HTMLElement {
     set context(context: ComponentContext) {
         this.#api = context.api;
         this.#state = context.state;
-        this.#pendingTarget = this.#state?.consumeRouteTarget?.("messages") || null;
+        this.#pendingTarget = null;
         void this.#loadMessages();
         void this.#pollVoiceStatus();
     }
@@ -154,8 +174,44 @@ export class MessagesView extends HTMLElement {
     /**
      * Triggers the initial rendering of the component when it is attached to the document DOM.
      */
+    applyReactiveContentFilter(query: string): void {
+        this.#reactiveQuery = query.trim();
+        this.#refreshMessageList();
+    }
+
+    /**
+     * Focus a canonical message target after session and history data are ready.
+     *
+     * @param {Readonly<Record<string, unknown>>} target - Session and message identifiers.
+     * @returns {Promise<void>} Resolves after the target message is expanded and focused.
+     */
+    public async focusTarget(target: Readonly<Record<string, unknown>>): Promise<void> {
+        await this.#loadMessages(true);
+
+        const sessionId = String(target.sessionId || "").trim();
+        const chatId = String(target.chatId || "").trim();
+        const date = String(target.date || "").trim();
+        const messageId = String(target.messageId || "").trim();
+        const targetSession = this.#sessions.find((candidate) =>
+            candidate.id === sessionId || (candidate.chatId === chatId && candidate.date === date),
+        );
+        if (targetSession && targetSession.id !== this.#selectedSessionId) {
+            this.#selectedSessionId = targetSession.id;
+            this.#expandSessionPath(targetSession);
+            await this.#loadMessages(true);
+        }
+
+        if (!messageId || !this.#history.some(record => record.id === messageId)) return;
+        this.#expandedIds.clear();
+        this.#expandedIds.add(messageId);
+        this.#refreshMessageList();
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+        this.#focusMessage(messageId, true);
+    }
     connectedCallback() {
         this.#render();
+        document.addEventListener("visibilitychange", this.#onVisibilityChange);
     }
 
     /**
@@ -165,20 +221,22 @@ export class MessagesView extends HTMLElement {
         this.#stopAudio();
         if (this.#refreshTimer !== null) window.clearTimeout(this.#refreshTimer);
         if (this.#statusTimer !== null) window.clearTimeout(this.#statusTimer);
+        document.removeEventListener("visibilitychange", this.#onVisibilityChange);
     }
 
     /**
      * Synchronize playback controls exclusively from the daemon's latest status.
      */
     async #pollVoiceStatus() {
-        if (!this.#api) return;
+        if (!this.#api || this.#statusPollInFlight) return;
         if (this.#statusTimer !== null) window.clearTimeout(this.#statusTimer);
         this.#statusTimer = null;
+        this.#statusPollInFlight = true;
         try {
             const response = await this.#api.getVoiceStatus({ forceRefresh: true, silent: true });
             const activeSpeakId = response.data?.activeSpeakId ?? "";
             const serviceState = response.data?.state ?? "stopped";
-            const playbackActive = ["preparing", "speaking", "muted_replay"].includes(serviceState);
+            const playbackActive = response.data?.playbackActive === true;
             const playingName = playbackActive
                 ? this.#messages.find(message => message.speakId === activeSpeakId)?.name ?? ""
                 : "";
@@ -190,11 +248,16 @@ export class MessagesView extends HTMLElement {
                 this.#activeSpeakId = activeSpeakId;
                 this.#serviceState = serviceState;
                 this.#playingName = playingName;
-                this.#render();
+                this.#refreshMessageList();
             }
         } finally {
+            this.#statusPollInFlight = false;
             if (this.isConnected) {
-                this.#statusTimer = window.setTimeout(() => void this.#pollVoiceStatus(), 750);
+                const playbackActive = ["preparing", "speaking"].includes(this.#serviceState);
+                const interval = document.hidden
+                    ? VOICE_STATUS_HIDDEN_INTERVAL_MS
+                    : (playbackActive ? VOICE_STATUS_ACTIVE_INTERVAL_MS : VOICE_STATUS_IDLE_INTERVAL_MS);
+                this.#statusTimer = window.setTimeout(() => void this.#pollVoiceStatus(), interval);
             }
         }
     }
@@ -207,17 +270,16 @@ export class MessagesView extends HTMLElement {
         if (!this.#api) return;
         if (this.#refreshTimer !== null) window.clearTimeout(this.#refreshTimer);
         this.#refreshTimer = null;
-        if (!silent) {
-            this.#loading = true;
-            this.#render();
-        }
+        this.#loading = !silent;
+        const previousSignature = this.#messageListSignature();
+        let focusLatestId = "";
         try {
             const selected = this.#sessions.find(session => session.id === this.#selectedSessionId);
             const params = selected ? { date: selected.date, chatId: selected.chatId } : {};
             const response = await this.#api.getVoiceMessages(params, { forceRefresh: true, silent });
             this.#messages = response.data?.messages ?? [];
             this.#speaks = response.data?.speaks ?? [];
-            this.#history = response.data?.history ?? [];
+            this.#history = [...(response.data?.history ?? [])].sort(this.#compareMessagesNewestFirst);
             this.#sessions = response.data?.sessions ?? [];
             if (this.#pendingTarget && this.#sessions.length) {
                 const target = this.#pendingTarget;
@@ -237,10 +299,26 @@ export class MessagesView extends HTMLElement {
                 await this.#loadMessages(true);
                 return;
             }
+            const availableIds = new Set(this.#history.map(record => record.id));
+            this.#expandedIds = new Set([...this.#expandedIds].filter(id => availableIds.has(id)));
+            const latestMessage = this.#history[0];
+            if (!this.#expandedIds.size && latestMessage) {
+                this.#expandedIds.add(latestMessage.id);
+                focusLatestId = latestMessage.id;
+            }
             this.#state?.setLastResult(response);
         } finally {
             this.#loading = false;
-            this.#render();
+            if (silent && this.#messageListSignature() !== previousSignature) {
+                this.#refreshMessageList();
+                this.#configureTree();
+                this.#refreshMessageHeader();
+            } else if (!silent) {
+                this.#refreshMessageList();
+                this.#configureTree();
+                this.#refreshMessageHeader();
+            }
+            if (focusLatestId) requestAnimationFrame(() => this.#focusMessage(focusLatestId, true));
             if (this.isConnected) this.#refreshTimer = window.setTimeout(() => void this.#loadMessages(true), 60_000);
         }
     }
@@ -266,26 +344,193 @@ export class MessagesView extends HTMLElement {
                     </main>
                 </div>
             </section>
+            <dialog id="message-session-name-dialog" class="message-session-name-dialog">
+                <form method="dialog" class="message-session-name-card">
+                    <header class="message-session-name-header">
+                        <span class="message-session-name-icon">${icon("messageCircle")}</span>
+                        <div>
+                            <strong data-role="session-name-title">Rename session</strong>
+                            <small>Create a concise identity for this conversation</small>
+                        </div>
+                        <button class="icon-action" value="cancel" title="Close" aria-label="Close">${icon("close")}</button>
+                    </header>
+                    <label class="message-session-name-field"><span>Canonical name</span>
+                        <input data-role="session-name-input" maxlength="120" autocomplete="off" spellcheck="true">
+                    </label>
+                    <p class="message-session-name-status" data-role="session-name-status" aria-live="polite"></p>
+                    <footer class="message-session-name-actions">
+                        <button class="ghost-action" value="cancel">Cancel</button>
+                        <button class="primary-action" type="button" data-action="save-session-name">Save name</button>
+                    </footer>
+                </form>
+            </dialog>
         `;
-        this.querySelectorAll("[data-action='play-message']").forEach(button => {
-            button.addEventListener("click", () => void this.#toggleMessage(button.getAttribute("data-name") || ""));
-        });
-        this.querySelectorAll(".voice-message-item").forEach(item => {
-            item.addEventListener("click", event => {
-                const target = event.target instanceof Element ? event.target : null;
-                if (target?.closest(".voice-message-actions, .voice-message-leading-action")) return;
-                this.#toggleExpandedMessage(item.getAttribute("data-message-id") || "");
-            });
-        });
-        this.querySelectorAll("[data-action='copy-message']").forEach(button => {
-            button.addEventListener("click", () => void this.#copyMessage(button));
-        });
-        this.querySelectorAll("[data-action='generate-message-audio']").forEach(button => {
-            button.addEventListener("click", () => {
-                void this.#generateMessageAudio(button.getAttribute("data-message-id") || "");
-            });
+        this.#bindMessageEvents(this);
+        this.querySelector("[data-action='save-session-name']")?.addEventListener("click", () => {
+            void this.#saveSessionName();
         });
         this.#configureTree();
+    }
+
+    /**
+     * Bind message interactions inside a full or partial render host.
+     * @param {ParentNode} host Full view or partially refreshed message-list host.
+     * @returns {void} Nothing.
+     */
+    #bindMessageEvents(host: ParentNode) {
+        const container = host instanceof Element && host.matches(".voice-message-list")
+            ? host
+            : host.querySelector(".voice-message-list");
+        if (!(container instanceof HTMLElement) || container.dataset.eventsBound === "true") return;
+        container.dataset.eventsBound = "true";
+        container.addEventListener("click", event => this.#handleMessageListClick(event));
+    }
+
+    /**
+     * Route message-list gestures through one stable delegated listener.
+     * @param {MouseEvent} event Click emitted by a message descendant.
+     * @returns {void} Nothing.
+     */
+    #handleMessageListClick(event: MouseEvent) {
+        const target = event.target instanceof Element ? event.target : null;
+        const action = target?.closest<HTMLElement>("[data-action]");
+        if (action?.dataset.action === "play-message") {
+            void this.#toggleMessage(action.dataset.name || "");
+            return;
+        }
+        if (action?.dataset.action === "copy-message") {
+            void this.#copyMessage(action);
+            return;
+        }
+        if (action?.dataset.action === "generate-message-audio") {
+            void this.#generateMessageAudio(action.dataset.messageId || "");
+            return;
+        }
+        if (action?.dataset.action === "expand-message" || action?.dataset.action === "collapse-message") {
+            this.#toggleExpandedMessage(action.dataset.messageId || "");
+        }
+    }
+
+    /**
+     * Reconcile keyed message cards without replacing stable focused DOM nodes.
+     * @returns {void} Nothing.
+     */
+    #refreshMessageList() {
+        this.#syncReactiveExpandedMessages();
+        const container = this.querySelector<HTMLElement>(".voice-message-list");
+        if (!container) return;
+        const template = document.createElement("template");
+        template.innerHTML = this.#renderMessages();
+        const desiredItems = Array.from(template.content.children);
+        const existingItems = new Map(
+            Array.from(container.querySelectorAll<HTMLElement>(":scope > [data-message-id]"))
+                .map(item => [item.dataset.messageId || "", item])
+        );
+        desiredItems.forEach((desired, index) => {
+            const id = desired instanceof HTMLElement ? desired.dataset.messageId || "" : "";
+            const existing = id ? existingItems.get(id) : null;
+            if (existing && desired instanceof HTMLElement) {
+                this.#patchElement(existing, desired);
+                container.insertBefore(existing, container.children[index] || null);
+                existingItems.delete(id);
+                return;
+            }
+            container.insertBefore(desired, container.children[index] || null);
+        });
+        existingItems.forEach(item => item.remove());
+        if (!desiredItems.some(item => item instanceof HTMLElement && item.dataset.messageId)) {
+            container.replaceChildren(...desiredItems);
+        }
+        filterRenderedContent(this, this.#reactiveQuery, ".voice-message-item", ".message-list");
+    }
+
+    /**
+     * Reconcile search-owned expansions without disturbing cards opened manually.
+     */
+    #syncReactiveExpandedMessages(): void {
+        this.#reactiveExpandedIds.forEach(id => this.#expandedIds.delete(id));
+        this.#reactiveExpandedIds.clear();
+        const needle = this.#reactiveQuery.toLocaleLowerCase();
+        if (!needle) return;
+        this.#history.forEach(record => {
+            const speak = this.#speaks.find(candidate => candidate.id === record.id) ?? null;
+            const generatedSpeakId = this.#generatedAudioSpeakIds.get(record.id);
+            const message = this.#messages.find(candidate => candidate.speakId === record.id || candidate.speakId === generatedSpeakId);
+            if (!this.#messageReactiveContent(record, speak, message).toLocaleLowerCase().includes(needle)) return;
+            if (!this.#expandedIds.has(record.id)) this.#reactiveExpandedIds.add(record.id);
+            this.#expandedIds.add(record.id);
+        });
+    }
+
+    /**
+     * Synchronize attributes and descendants while retaining the current element identity.
+     * @param {HTMLElement} current Live element retained by keyed reconciliation.
+     * @param {HTMLElement} desired Detached element describing the next state.
+     * @returns {void} Nothing.
+     */
+    #patchElement(current: HTMLElement, desired: HTMLElement) {
+        Array.from(current.attributes).forEach(attribute => {
+            if (!desired.hasAttribute(attribute.name)) current.removeAttribute(attribute.name);
+        });
+        Array.from(desired.attributes).forEach(attribute => current.setAttribute(attribute.name, attribute.value));
+        const desiredChildren = Array.from(desired.childNodes);
+        desiredChildren.forEach((desiredChild, index) => {
+            const liveChild = current.childNodes[index];
+            if (!liveChild) {
+                current.append(desiredChild.cloneNode(true));
+                return;
+            }
+            if (liveChild.nodeType !== desiredChild.nodeType) {
+                liveChild.replaceWith(desiredChild.cloneNode(true));
+                return;
+            }
+            if (liveChild instanceof HTMLElement && desiredChild instanceof HTMLElement) {
+                if (liveChild.tagName !== desiredChild.tagName || liveChild.dataset.messageControl !== desiredChild.dataset.messageControl) {
+                    liveChild.replaceWith(desiredChild.cloneNode(true));
+                }
+                else this.#patchElement(liveChild, desiredChild);
+                return;
+            }
+            if (liveChild.textContent !== desiredChild.textContent) liveChild.textContent = desiredChild.textContent;
+        });
+        while (current.childNodes.length > desiredChildren.length) current.lastChild?.remove();
+    }
+
+    /**
+     * Compare canonical timestamps newest-first with a stable identifier tie-breaker.
+     * @param {AvatarMessageRecord} left Left message record.
+     * @param {AvatarMessageRecord} right Right message record.
+     * @returns {number} Negative when the left record must render first.
+     */
+    #compareMessagesNewestFirst(left: AvatarMessageRecord, right: AvatarMessageRecord) {
+        const leftTime = Date.parse(left.created_at);
+        const rightTime = Date.parse(right.created_at);
+        const timeDifference = (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0);
+        return timeDifference || right.id.localeCompare(left.id);
+    }
+
+    /**
+     * Return a compact signature for list-visible message, speech, and audio state.
+     * @returns {string} Stable signature for the currently visible message state.
+     */
+    #messageListSignature() {
+        return [
+            ...this.#history.map(record => `${record.id}:${record.created_at}:${record.text}`),
+            ...this.#speaks.map(speak => `${speak.id}:${speak.status}:${speak.error}`),
+            ...this.#messages.map(message => `${message.speakId}:${message.name}:${message.sizeBytes}`),
+        ].join("|");
+    }
+
+    /**
+     * Update session heading text without replacing the surrounding layout.
+     * @returns {void} Nothing.
+     */
+    #refreshMessageHeader() {
+        const header = this.querySelector<HTMLElement>(".structure-content > .content-head");
+        const title = header?.querySelector("strong");
+        const count = header?.querySelector("span");
+        if (title) title.textContent = this.#selectedSessionLabel();
+        if (count) count.textContent = this.#selectedSessionId && this.#history.length ? `${this.#history.length} messages` : "";
     }
 
     /**
@@ -358,9 +603,14 @@ export class MessagesView extends HTMLElement {
                     children: sessions.map(session => ({
                         id: session.id,
                         path: session.id,
-                        label: session.chatId ? session.label : `Session ${this.#formatTime(session.startedAt)}`,
+                        label: this.#truncateTreeTitle(session.chatId ? session.label : `Session ${this.#formatTime(session.startedAt)}`),
+                        title: session.chatId ? session.label : `Session ${this.#formatTime(session.startedAt)}`,
                         icon: "messageCircle",
-                        count: session.messageCount
+                        count: session.messageCount,
+                        actions: [
+                            { id: "rename-session", label: "RENAME", icon: "edit" },
+                            { id: "autoname-session", label: "AUTONAME", icon: "pulse" }
+                        ]
                     }))
                 }))
             }))
@@ -394,6 +644,87 @@ export class MessagesView extends HTMLElement {
             const detail = event instanceof CustomEvent ? treeActionDetail(event.detail) : null;
             if (detail?.action === "refresh") void this.#loadMessages();
         });
+        tree.addEventListener("brain-tree-action", event => {
+            if (!(event instanceof CustomEvent)) return;
+            const action = String(event.detail.action || "");
+            const sessionId = String(event.detail.node?.path || "");
+            if (action === "rename-session" || action === "autoname-session") {
+                void this.#openSessionNameDialog(sessionId, action === "autoname-session" ? "autoname" : "rename");
+            }
+        });
+    }
+
+    /**
+     * Open the shared custom prompt flow for rename or generated naming.
+     * @param {string} sessionId Canonical session identifier.
+     * @param {"rename" | "autoname"} action Requested manual or automatic naming flow.
+     * @returns {Promise<void>} A promise that settles after the dialog is ready.
+     */
+    async #openSessionNameDialog(sessionId: string, action: "rename" | "autoname") {
+        const session = this.#sessions.find(candidate => candidate.id === sessionId);
+        const dialog = this.querySelector<HTMLDialogElement>("#message-session-name-dialog");
+        const input = this.querySelector<HTMLInputElement>("[data-role='session-name-input']");
+        const title = this.querySelector<HTMLElement>("[data-role='session-name-title']");
+        const status = this.querySelector<HTMLElement>("[data-role='session-name-status']");
+        const save = this.querySelector<HTMLButtonElement>("[data-action='save-session-name']");
+        if (!session || !dialog || !input || !title || !status || !save || !this.#api) return;
+        dialog.dataset.sessionId = session.id;
+        title.textContent = action === "autoname" ? "Autoname session" : "Rename session";
+        input.value = action === "rename" ? session.label : "";
+        input.disabled = action === "autoname";
+        save.disabled = action === "autoname";
+        status.textContent = action === "autoname" ? "Generating a concise proposal…" : "Use at most 10 words.";
+        dialog.showModal();
+        if (action === "rename") {
+            input.focus();
+            input.select();
+            return;
+        }
+        try {
+            const result = await this.#api.updateVoiceSessionName({
+                action: "autoname",
+                date: session.date,
+                chatId: session.chatId,
+            });
+            /**
+             * Naming proposal payload.
+             * @type {Record<string, unknown> | undefined}
+             */
+            const resultData = result.data as Record<string, unknown> | undefined;
+            input.value = String(resultData?.["proposedName"] || "");
+            status.textContent = "Review the proposal, then save or cancel.";
+        } finally {
+            input.disabled = false;
+            save.disabled = false;
+            input.focus();
+            input.select();
+        }
+    }
+
+    /**
+     * Persist the reviewed canonical name from the custom prompt dialog.
+     * @returns {Promise<void>} A promise that settles after the name is saved.
+     */
+    async #saveSessionName() {
+        const dialog = this.querySelector<HTMLDialogElement>("#message-session-name-dialog");
+        const input = this.querySelector<HTMLInputElement>("[data-role='session-name-input']");
+        const status = this.querySelector<HTMLElement>("[data-role='session-name-status']");
+        const session = this.#sessions.find(candidate => candidate.id === dialog?.dataset.sessionId);
+        if (!dialog || !input || !status || !session || !this.#api) return;
+        const name = input.value.trim();
+        if (!name || name.split(/\s+/).length > 10) {
+            status.textContent = "Enter a name containing 1 to 10 words.";
+            return;
+        }
+        status.textContent = "Saving canonical name…";
+        await this.#api.updateVoiceSessionName({
+            action: "rename",
+            date: session.date,
+            chatId: session.chatId,
+            name,
+        });
+        dialog.close();
+        await this.#loadMessages();
     }
 
     /**
@@ -415,6 +746,16 @@ export class MessagesView extends HTMLElement {
         const session = this.#sessions.find(candidate => candidate.id === this.#selectedSessionId);
         if (!session) return "Select a session";
         return session.chatId ? session.label : `Session on ${session.date} at ${this.#formatTime(session.startedAt)}`;
+    }
+
+    /**
+     * Limit one visible session title to twenty characters with a literal ellipsis.
+     * @param {string} title Complete session title.
+     * @returns {string} Bounded label for the tree row.
+     */
+    #truncateTreeTitle(title: string) {
+        const normalized = title.trim();
+        return normalized.length > 20 ? `${normalized.slice(0, 17)}...` : normalized;
     }
 
     /**
@@ -453,16 +794,22 @@ export class MessagesView extends HTMLElement {
             ? `${record.source_command}:${record.source_phase || "output"}`
             : record.emotion || "speak";
         return `
-            <article class="voice-message-item ${name === this.#playingName ? "is-playing" : ""} ${expanded ? "is-expanded" : ""}" data-message-id="${escapeHtml(id)}">
+            <article class="voice-message-item ${name && name === this.#playingName ? "is-playing" : ""} ${expanded ? "is-expanded" : ""}" data-message-id="${escapeHtml(id)}" data-reactive-content="${escapeHtml(this.#messageReactiveContent(record, speak, message))}">
                 <div class="voice-message-header">
                     ${expanded
-                        ? `<span class="voice-message-leading-placeholder" aria-hidden="true"></span>`
+                        ? `<button class="voice-icon-action voice-message-collapse-action" data-message-control="collapse" data-action="collapse-message" data-message-id="${escapeHtml(id)}" title="Collapse message" aria-label="Collapse message">${icon("chevronDown")}</button>`
                         : this.#renderLeadingAudioAction(id, name, generatingAudio)}
-                    <button class="voice-message-summary" data-action="toggle-message-details" data-id="${escapeHtml(id)}" aria-expanded="${expanded}">
-                        ${expanded ? `<span class="voice-message-spacer"></span>` : `<span class="voice-message-preview">${escapeHtml(text)}</span>`}
-                        <span class="voice-speak-status is-${status.toLowerCase()}">${escapeHtml(sourceLabel)}</span>
-                        <time class="voice-message-time" datetime="${escapeHtml(createdAt)}">${escapeHtml(this.#formatTime(createdAt))}</time>
-                    </button>
+                    ${expanded
+                        ? `<div class="voice-message-summary" aria-expanded="true">
+                            <span class="voice-message-spacer"></span>
+                            <span class="voice-speak-status is-${status.toLowerCase()}">${escapeHtml(sourceLabel)}</span>
+                            <time class="voice-message-time" datetime="${escapeHtml(createdAt)}">${escapeHtml(this.#formatTime(createdAt))}</time>
+                        </div>`
+                        : `<button class="voice-message-summary" data-action="expand-message" data-message-id="${escapeHtml(id)}" aria-expanded="false">
+                            <span class="voice-message-preview">${escapeHtml(text)}</span>
+                            <span class="voice-speak-status is-${status.toLowerCase()}">${escapeHtml(sourceLabel)}</span>
+                            <time class="voice-message-time" datetime="${escapeHtml(createdAt)}">${escapeHtml(this.#formatTime(createdAt))}</time>
+                        </button>`}
                 </div>
                 ${expanded ? `
                     <div class="voice-message-detail">
@@ -485,6 +832,37 @@ export class MessagesView extends HTMLElement {
     }
 
     /**
+     * Build the complete searchable corpus for one message, including collapsed details.
+     *
+     * @param {AvatarMessageRecord} record Persisted transcript item.
+     * @param {VoiceSpeakRecord | null} speak Speech state associated with the transcript.
+     * @param {VoiceMessageRecord | undefined} message Retained audio metadata.
+     * @returns {string} Normalized searchable content without presentation truncation.
+     */
+    #messageReactiveContent(
+        record: AvatarMessageRecord,
+        speak: VoiceSpeakRecord | null,
+        message: VoiceMessageRecord | undefined
+    ): string {
+        return [
+            record.text,
+            record.created_at,
+            record.date,
+            record.time,
+            record.emotion,
+            record.language,
+            record.source_type,
+            record.source_command,
+            record.source_phase,
+            speak?.status || "DONE",
+            speak?.error || "",
+            message?.name || "",
+            message?.text || "",
+            message?.source || "",
+        ].join(" ");
+    }
+
+    /**
      * Render the primary list action as replay or on-demand audio generation.
      * @param {string} id The unique identifier of the message used for audio generation requests.
      * @param {string} name The identifier of the audio file to play, or a falsy value if audio must be generated.
@@ -494,9 +872,9 @@ export class MessagesView extends HTMLElement {
     #renderLeadingAudioAction(id: string, name: string, generatingAudio: boolean) {
         if (name) {
             const playing = name === this.#playingName;
-            return `<button class="voice-icon-action voice-message-leading-action" data-action="play-message" data-name="${escapeHtml(name)}" title="${playing ? "Pause message" : "Play message"}" aria-label="${playing ? "Pause message" : "Play message"}">${icon(playing ? "pause" : "play")}</button>`;
+            return `<button class="voice-icon-action voice-message-leading-action" data-message-control="audio" data-action="play-message" data-name="${escapeHtml(name)}" title="${playing ? "Pause message" : "Play message"}" aria-label="${playing ? "Pause message" : "Play message"}">${icon(playing ? "pause" : "play")}</button>`;
         }
-        return `<button class="voice-icon-action voice-message-leading-action" data-action="generate-message-audio" data-message-id="${escapeHtml(id)}" ${generatingAudio ? "disabled" : ""} title="Generate and play audio" aria-label="Generate and play audio">${icon("play")}</button>`;
+        return `<button class="voice-icon-action voice-message-leading-action" data-message-control="audio" data-action="generate-message-audio" data-message-id="${escapeHtml(id)}" ${generatingAudio ? "disabled" : ""} title="Generate and play audio" aria-label="Generate and play audio">${icon("play")}</button>`;
     }
 
     /**
@@ -515,7 +893,7 @@ export class MessagesView extends HTMLElement {
     async #generateMessageAudio(id: string) {
         if (!this.#api || !id || this.#generatingAudioIds.has(id)) return;
         this.#generatingAudioIds.add(id);
-        this.#render();
+        this.#refreshMessageList();
         try {
             const result = await this.#api.synthesizeVoiceMessage(id);
             this.#state?.setLastResult(result);
@@ -526,7 +904,7 @@ export class MessagesView extends HTMLElement {
             }
         } finally {
             this.#generatingAudioIds.delete(id);
-            this.#render();
+            this.#refreshMessageList();
         }
     }
 
@@ -549,9 +927,12 @@ export class MessagesView extends HTMLElement {
     #toggleExpandedMessage(id: string) {
         if (!id) return;
         const willExpand = !this.#expandedIds.has(id);
-        if (willExpand) this.#expandedIds.add(id);
+        if (willExpand) {
+            this.#expandedIds.clear();
+            this.#expandedIds.add(id);
+        }
         else this.#expandedIds.delete(id);
-        this.#render();
+        this.#refreshMessageList();
         requestAnimationFrame(() => this.#focusMessage(id, willExpand));
     }
 
@@ -562,12 +943,17 @@ export class MessagesView extends HTMLElement {
      */
     #focusMessage(id: string, expanded: boolean) {
         const summary = Array.from(this.querySelectorAll<HTMLElement>(".voice-message-summary"))
-            .find(candidate => candidate.getAttribute("data-id") === id);
-        summary?.focus({ preventScroll: true });
+            .find(candidate => candidate.dataset.messageId === id);
+        const collapseAction = this.querySelector<HTMLElement>(`[data-action="collapse-message"][data-message-id="${id}"]`);
+        (expanded ? collapseAction : summary)?.focus({ preventScroll: true });
         if (!expanded) return;
-        const article = summary?.closest<HTMLElement>(".voice-message-item");
+        const article = (collapseAction || summary)?.closest<HTMLElement>(".voice-message-item");
         const container = article?.closest<HTMLElement>(".voice-message-list");
         if (!article || !container) return;
+        if (article === container.firstElementChild) {
+            container.scrollTop = 0;
+            return;
+        }
         const articleBounds = article.getBoundingClientRect();
         const containerBounds = container.getBoundingClientRect();
         if (articleBounds.top < containerBounds.top) {
@@ -583,12 +969,14 @@ export class MessagesView extends HTMLElement {
      */
     async #toggleMessage(name: string) {
         if (!this.#api || !name) return;
-        if (this.#playingName === name && ["preparing", "speaking", "muted_replay"].includes(this.#serviceState)) {
+        if (this.#playingName === name && ["preparing", "speaking"].includes(this.#serviceState)) {
             await this.#api.pauseVoiceReplay();
+            void this.#pollVoiceStatus();
             return;
         }
         try {
             await this.#api.replayVoiceMessage(name);
+            void this.#pollVoiceStatus();
         } catch {
             return;
         }

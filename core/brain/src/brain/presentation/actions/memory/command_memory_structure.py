@@ -11,7 +11,14 @@ from brain.presentation.terminal import render_placeholders, log_step
 
 
 def get_all_relative_paths(index_data: dict) -> list[str]:
-    """Return all indexed memory paths from an index tree."""
+    """Return every indexed memory path represented by an index tree.
+
+    Args:
+        index_data (dict): Root node mapping loaded from the memory index.
+
+    Returns:
+        list[str]: Alphabetically sorted dotted paths for directories and entries.
+    """
     paths = []
 
     def _walk(children: dict, prefix: str = "") -> None:
@@ -81,7 +88,16 @@ def _metadata_label(node: dict, uptime_order: bool) -> str:
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Print domain hierarchy tree."""
+    """Render the memory-domain hierarchy in JSON or terminal-tree form.
+
+    Args:
+        args (argparse.Namespace): Parsed command options, including output format,
+            ordering, and item limit.
+
+    Returns:
+        int: Zero when the hierarchy is rendered; otherwise one after reporting an
+            error.
+    """
     color_enabled = getattr(args, "color", False)
     try:
         limit = getattr(args, "limit", None)

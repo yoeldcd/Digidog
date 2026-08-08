@@ -17,7 +17,15 @@ from brain.presentation.terminal import log_step, render_placeholders
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Run the dream consolidation pipeline."""
+    """Run knowledge-consolidation proposal processing for selected scopes.
+
+    Args:
+        args (argparse.Namespace): Parsed command options selecting the scopes,
+            source domain, and output format.
+
+    Returns:
+        int: Aggregated exit code from the requested consolidation scopes.
+    """
     color_enabled: bool = getattr(args, "color", False)
     try:
         scope_plan: list[dict[str, str]] = resolve_dream_scope_plan(

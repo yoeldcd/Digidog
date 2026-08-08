@@ -20,12 +20,29 @@ BACKLOG_FILE_NAME = "backlog.md"
 
 
 def get_backlog_path(workspace_root: Path) -> Path:
-    """Return the legacy Markdown source path used only for migration."""
+    """Return the legacy Markdown source path used only for migration.
+
+    Args:
+        workspace_root: `Path`. The root directory of the workspace.
+
+    Returns:
+        Path: The path to the legacy backlog Markdown file.
+    """
     return workspace_root / "$agent" / "data" / BACKLOG_FILE_NAME
 
 
 def normalize_task_id(task_id: str) -> str:
-    """Normalize a user-provided task identifier to the persisted `tN` form."""
+    """Normalize a user-provided task identifier to the persisted `tN` form.
+
+    Args:
+        task_id: `str`. The raw task identifier provided by the user.
+
+    Returns:
+        str: The normalized task identifier starting with t.
+
+    Raises:
+        ValueError: Raised when the provided task identifier is empty after stripping.
+    """
     normalized = str(task_id).strip().lstrip("#")
     if not normalized:
         raise ValueError("Task ID must not be empty.")
@@ -33,7 +50,16 @@ def normalize_task_id(task_id: str) -> str:
 
 
 def list_tasks(workspace_root: Path, domain: str | None = None, show_all: bool = False) -> list[BacklogTask]:
-    """Return persisted tasks, optionally limited to one domain subtree."""
+    """Return persisted tasks, optionally limited to one domain subtree.
+
+    Args:
+        workspace_root: `Path`. The root directory of the workspace.
+        domain: `str | None`. Optional domain filter to limit results to a specific subtree.
+        show_all: `bool`. Whether to include tasks with a DONE status.
+
+    Returns:
+        list[BacklogTask]: A list of BacklogTask records matching the criteria.
+    """
     clauses: list[str] = []
     values: list[str] = []
     if domain:
@@ -62,7 +88,18 @@ def add_task_record(
     description: str,
     priority: str,
 ) -> BacklogTask:
-    """Create and return one working task using a workspace-unique ID."""
+    """Create and return one working task using a workspace-unique ID.
+
+    Args:
+        workspace_root: `Path`. The root directory of the workspace.
+        domain: `str`. The domain associated with the task.
+        title: `str`. The title of the task.
+        description: `str`. The detailed description of the task.
+        priority: `str`. The priority level of the task.
+
+    Returns:
+        BacklogTask: The newly created BacklogTask record.
+    """
     now = time.time()
     with connect_logs_database(workspace_root=workspace_root) as connection:
         connection.execute("BEGIN IMMEDIATE")
@@ -87,7 +124,16 @@ def add_task_record(
 
 
 def insert_legacy_task(connection: sqlite3.Connection, task: BacklogTask, legacy_source: str) -> bool:
-    """Insert one legacy task when its ID has not been migrated before."""
+    """Insert one legacy task when its ID has not been migrated before.
+
+    Args:
+        connection: `sqlite3.Connection`. The SQLite database connection.
+        task: `BacklogTask`. The BacklogTask record to insert.
+        legacy_source: `str`. The source identifier from the legacy system.
+
+    Returns:
+        bool: A boolean indicating whether the task was successfully inserted.
+    """
     now = time.time()
     cursor = connection.execute(
         """
@@ -114,7 +160,15 @@ def insert_legacy_task(connection: sqlite3.Connection, task: BacklogTask, legacy
 
 
 def get_task(workspace_root: Path, task_id: str) -> BacklogTask | None:
-    """Return one task by normalized identifier."""
+    """Return one task by normalized identifier.
+
+    Args:
+        workspace_root: `Path`. The root directory of the workspace.
+        task_id: `str`. The task identifier to look up.
+
+    Returns:
+        BacklogTask | None: The matching BacklogTask record, or null if not found.
+    """
     normalized = normalize_task_id(task_id)
     with connect_logs_database(workspace_root=workspace_root) as connection:
         row = connection.execute(
@@ -128,7 +182,17 @@ def get_task(workspace_root: Path, task_id: str) -> BacklogTask | None:
 
 
 def set_task_status_record(workspace_root: Path, task_id: str, status: str, completed_at: str) -> BacklogTask | None:
-    """Persist a validated task status and return the updated record."""
+    """Persist a validated task status and return the updated record.
+
+    Args:
+        workspace_root: `Path`. The root directory of the workspace.
+        task_id: `str`. The identifier of the task to update.
+        status: `str`. The new status to assign to the task.
+        completed_at: `str`. The timestamp of completion.
+
+    Returns:
+        BacklogTask | None: The updated BacklogTask record, or null if the task was not found.
+    """
     normalized = normalize_task_id(task_id)
     with connect_logs_database(workspace_root=workspace_root) as connection:
         cursor = connection.execute(
@@ -157,8 +221,22 @@ def edit_task_record(
     title: str | None,
     description: str | None,
     priority: str | None,
+    domain: str | None,
 ) -> BacklogTask | None:
-    """Update explicitly supplied task fields without changing task status."""
+    """
+    Update explicitly supplied task fields without changing task status.
+
+    Args:
+        workspace_root: Workspace containing the canonical backlog database.
+        task_id: Persistent task identifier in `tN` or numeric form.
+        title: Optional normalized replacement title.
+        description: Optional normalized replacement description.
+        priority: Optional normalized replacement priority.
+        domain: Optional normalized replacement domain.
+
+    Returns:
+        BacklogTask | None: Updated task, or `None` when the task does not exist.
+    """
     normalized = normalize_task_id(task_id)
     changes: list[str] = []
     values: list[object] = []
@@ -171,6 +249,9 @@ def edit_task_record(
     if priority is not None:
         changes.append("priority = ?")
         values.append(priority)
+    if domain is not None:
+        changes.append("domain = ?")
+        values.append(domain)
     if not changes:
         return get_task(workspace_root=workspace_root, task_id=normalized)
     changes.append("updated_at = ?")
@@ -194,7 +275,15 @@ def edit_task_record(
 
 
 def delete_task_record(workspace_root: Path, task_id: str) -> bool:
-    """Delete one already-authorized task and report whether it existed."""
+    """Delete one already-authorized task and report whether it existed.
+
+    Args:
+        workspace_root: `Path`. The root directory of the workspace.
+        task_id: `str`. The identifier of the task to delete.
+
+    Returns:
+        bool: A boolean indicating whether the task existed and was deleted.
+    """
     normalized = normalize_task_id(task_id)
     with connect_logs_database(workspace_root=workspace_root) as connection:
         cursor = connection.execute("DELETE FROM backlog_tasks WHERE task_id = ?", (normalized,))
@@ -227,17 +316,35 @@ def _row_to_task(row: sqlite3.Row) -> BacklogTask:
 
 
 def save_tasks(workspace_root: Path, root: TaskNode) -> None:
-    """Serialize the TaskNode tree back to backlog.md."""
+    """Serialize the TaskNode tree back to backlog.md.
+
+    Args:
+        workspace_root: `Path`. The root directory of the workspace.
+        root: `TaskNode`. The root TaskNode of the backlog tree.
+    """
     tasks_file = get_backlog_path(workspace_root)
     tasks_file.parent.mkdir(parents=True, exist_ok=True)
 
     lines = []
 
     def serialize(node: TaskNode) -> None:
+        """Recursively serialize a TaskNode and its children into Markdown format.
+
+        Args:
+            node: `TaskNode`. The TaskNode to serialize.
+        """
         if node.level > 0:
             lines.append(f"{'#' * node.level} {node.name}\n")
             # Sort node.tasks in the same order before serializing to backlog.md!
             def priority_weight(p: str) -> int:
+                """Convert a priority string into a numeric weight for sorting.
+
+                Args:
+                    p: `str`. The priority string.
+
+                Returns:
+                    int: An integer weight where lower values indicate higher priority.
+                """
                 val = str(p).upper()
                 if val == "HIGH":
                     return 0
@@ -246,6 +353,14 @@ def save_tasks(workspace_root: Path, root: TaskNode) -> None:
                 return 2
 
             def task_sort_key(t: dict[str, object]) -> tuple[int, int, float, str]:
+                """Generate a sort key for tasks based on status, priority, and creation date.
+
+                Args:
+                    t: `dict[str, object]`. The task data dictionary.
+
+                Returns:
+                    tuple[int, int, float, str]: A tuple used as a sorting key for task ordering.
+                """
                 st = str(t.get("status", "TODO")).upper()
                 pr = str(t.get("priority", "LOW")).upper()
                 cre = float(t.get("created_at") or 0.0)

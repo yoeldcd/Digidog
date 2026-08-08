@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import sys
+import argparse
 from pathlib import Path
 
 from brain.presentation.terminal import render_placeholders, log_step
@@ -14,7 +15,17 @@ from brain.application.backlog.service import BacklogTaskNotFoundError, set_back
 
 
 
-def handle(args) -> int:
+def handle(args: argparse.Namespace) -> int:
+    """Mark one backlog task as completed.
+
+    Args:
+        args (argparse.Namespace): Parsed command options containing the task ID
+            and output settings.
+
+    Returns:
+        int: Zero when the task status changes to ``DONE``; otherwise one after
+            reporting an error.
+    """
     workspace_root = Path(os.environ.get("WORKSPACE_ROOT", ".")).resolve()
     color_enabled = getattr(args, "color", False)
 

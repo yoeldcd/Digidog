@@ -99,9 +99,12 @@ other than `tags` or `characters`, and replace the JSON file atomically through 
 
 ## Picture Lifecycle
 
-1. `scan-images` recursively discovers supported image files and reads their hash, MIME type, dimensions, size,
+1. `registre-image` validates one file or base64 source, places it in the requested local or global domain, and
+   creates or reuses its stable picture record. A supplied description is stored as manual semantic text; when it
+   is omitted, the standard image-to-text fields are generated. `--index` forces picture-vector synchronization.
+2. `scan-images` recursively discovers supported image files and reads their hash, MIME type, dimensions, size,
    timestamp, relative path, and folder-derived domain.
-2. The scanner recognizes additions, content changes, moves, unchanged files, and deletions. Moves preserve the
+3. The scanner recognizes additions, content changes, moves, unchanged files, and deletions. Moves preserve the
    stable picture identifier and existing description.
 3. A content change invalidates a model-generated description because it may no longer describe the source.
    Manual descriptions are retained. Any affected vector fingerprint is cleared.
@@ -125,6 +128,7 @@ Commands are available through the workspace wrapper, for example `py '$agent/sc
 |---|---|
 | `picture-status` | Scan and report registry health, domains, description counts, extensions, and model state. |
 | `list-pictures` | List, search, or filter active registry records; accepts `--id`, `--domain`, `--query`, `--all`, and `--limit`. |
+| `registre-image` | Register one file or base64 image in `local` or `global` scope under a dotted domain; accepts optional Markdown and `--index`. |
 | `scan-images` / `scan-pictures` | Synchronize the image filesystem; `--describe` fills empty descriptions and `--index` refreshes vectors. |
 | `describe-image` / `describe-picture` | Save manual text for one picture or invoke img2text when text is omitted. |
 | `list-picture-guidance [section]` | Return both guidance collections or only `tags`/`characters`. |

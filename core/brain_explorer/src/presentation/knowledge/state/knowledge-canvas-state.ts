@@ -248,6 +248,51 @@ export abstract class KnowledgeCanvasState extends HTMLElement {
      */
     protected selectedTreePath = "";
     /**
+     * Whether the source tree is projected from one filtered node as its sole root.
+     * @type {boolean}
+     */
+    protected treeFilterActive = false;
+    /**
+     * Whether one tree click is visually emphasizing a subset without filtering it.
+     * @type {boolean}
+     */
+    protected treeHighlightActive = false;
+    /**
+     * Node identifiers emphasized by the current non-structural tree selection.
+     * @type {Set<string>}
+     */
+    protected treeHighlightNodeIds = new Set<string>();
+    /**
+     * Edge identifiers emphasized by the current non-structural tree selection.
+     * @type {Set<string>}
+     */
+    protected treeHighlightEdgeIds = new Set<string>();
+    /**
+     * Domain selected for visual emphasis.
+     * @type {string}
+     */
+    protected highlightDomain = "all";
+    /**
+     * Scope selected for visual emphasis.
+     * @type {KnowledgeScope | ""}
+     */
+    protected highlightScope: KnowledgeScope | "" = "all";
+    /**
+     * Source kind selected for visual emphasis.
+     * @type {KnowledgeSourceKind | ""}
+     */
+    protected highlightSourceKind: KnowledgeSourceKind | "" = "";
+    /**
+     * Canonical source path selected for visual emphasis.
+     * @type {string}
+     */
+    protected highlightSourcePath = "";
+    /**
+     * Visual type selected for emphasis.
+     * @type {KnowledgeVisualType | ""}
+     */
+    protected highlightVisualType: KnowledgeVisualType | "" = "";
+    /**
      * Stores the shared Knowledge canvas sourc ath state used by rendering and interaction collaborators.
      * @type {string}
      */

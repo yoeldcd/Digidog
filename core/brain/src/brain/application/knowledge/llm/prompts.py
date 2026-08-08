@@ -29,8 +29,7 @@ def build_delta_prompt(
     graph_context: str = "",
     entity_class_catalog: dict[str, str] | None = None,
 ) -> str:
-    """
-    Build the extraction prompt for a source.
+    """Build the extraction prompt for a source.
 
     Args:
         stage_name (str): Configured processing stage.
@@ -39,6 +38,12 @@ def build_delta_prompt(
         prior_delta (KnowledgeDeltaDTO | None): Accumulated delta from earlier stages.
         graph_context (str): Compact read-only graph context.
         entity_class_catalog (dict[str, str] | None): Known class definitions for NER prompts.
+        stage_name: `str`. The identifier of the configured processing stage.
+        source_path: `str`. The stable path of the source being processed.
+        content: `str`. The raw text content of the source.
+        prior_delta: `KnowledgeDeltaDTO | None`. The accumulated knowledge delta from preceding stages, if any.
+        graph_context: `str`. A compact, read-only representation of the current knowledge graph context.
+        entity_class_catalog: `dict[str, str] | None`. A mapping of known entity class definitions used for named entity recognition prompts.
 
     Returns:
         str: Prompt text.

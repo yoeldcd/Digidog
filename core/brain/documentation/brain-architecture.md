@@ -143,8 +143,8 @@ assembly and dispatch services.
 
 ### Infrastructure:
 Command modules declare CLI input contracts. They are grouped by domain:
-general commands, memory commands, diary commands, log commands, profile commands, snippet commands, vectorstore
-commands, task backlog commands, and knowledge commands.
+general commands, memory commands, record commands, diary commands, log commands, profile commands, snippet commands, vectorstore
+commands, task backlog commands, and knowledge commands. Policy spellings are aliases declared by canonical record schemas; they do not form a parallel command or action layer.
 
 #### Components
 Each module exposes a `SCHEMA` value. The schema declares the command name, domain, help text, arguments,
@@ -341,7 +341,7 @@ and object entity IDs after deterministic resolution.
 ## `brain.persistence`
 
 ### Infrastructure:
-Persistence is split by storage family. Markdown memory behavior lives under `brain.application.memory`. Logs are managed under
+Persistence is split by storage family. Markdown memory behavior lives under `brain.application.memory`; always-on local records live under `brain.application.records`. Logs are managed under
 `brain.application.logs`, backlog tasks under `brain.application.backlog`, vector data under `brain.infrastructure.vectorstores`, runtime migrations under
 `brain.infrastructure.runtime`, and profile reading under `brain.application.profiles`. Knowledge graph state is managed by scoped knowledge
 repositories. Importable Python code lives under `core/brain/src/brain`; the repository root keeps

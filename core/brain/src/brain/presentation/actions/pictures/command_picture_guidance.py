@@ -14,7 +14,15 @@ from brain.infrastructure.pictures.guidance_graph import project_character_guida
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Execute one list, set, or delete picture-guidance command."""
+    """Execute a list, set, or delete operation on picture-recognition guidance.
+
+    Args:
+        args (argparse.Namespace): Parsed command options selecting the operation,
+            guidance section, entry values, and output format.
+
+    Returns:
+        int: Zero when the selected operation succeeds; otherwise one.
+    """
     command = str(getattr(args, "command", ""))
     try:
         if command == "list-picture-guidance":

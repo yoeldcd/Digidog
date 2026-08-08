@@ -89,7 +89,11 @@ class BrainExplorerRequestHandler(
     VoiceRoutesMixin,
     BaseHTTPRequestHandler,
 ):
-    """Handle static Brain Explorer files and API requests."""
+    """Handle static Brain Explorer files and API requests.
+
+    Attributes:
+        config (BrainExplorerServerConfig): Shared server runtime configuration.
+    """
 
     server_version = "BrainExplorer/1.0"
     config: BrainExplorerServerConfig
@@ -129,7 +133,13 @@ class BrainExplorerRequestHandler(
         Args:
             method (str): HTTP method name.
         """
-        requested_root = self.headers.get("X-Workspace-Root") or self.config.facade.workspace_root
+        parsed_url = urlparse(self.path)
+        query = parse_query(parsed_url.query)
+        requested_root = (
+            self.headers.get("X-Workspace-Root")
+            or query.get("workspaceRoot")
+            or self.config.facade.workspace_root
+        )
         try:
             workspace_root = resolve_registered_workspace_root(requested_root=requested_root)
         except ApiRouteError as exc:
@@ -148,12 +158,16 @@ class BrainExplorerRequestHandler(
             if parsed_url.path == "/api/backlog/image":
                 self._handle_backlog_image(method=method, query=parse_query(parsed_url.query))
                 return
+            if parsed_url.path == "/api/workspace/image":
+                self._handle_workspace_image(method=method, query=parse_query(parsed_url.query))
+                return
             if parsed_url.path == "/api/logs/image":
                 self._handle_log_image(method=method, query=parse_query(parsed_url.query))
                 return
             if parsed_url.path == "/api/pictures/file":
                 self._handle_picture_file(method=method, query=parse_query(parsed_url.query))
                 return
+
             self._handle_api(method=method, path=parsed_url.path, query=parse_query(parsed_url.query))
             return
         if parsed_url.path.startswith("/wiki/"):

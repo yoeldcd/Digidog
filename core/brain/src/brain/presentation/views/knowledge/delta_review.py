@@ -30,7 +30,7 @@ from brain.presentation.views.knowledge.delta_sections import (
     _render_schema,
     _render_summary_lines,
 )
-from brain.application.knowledge.pipeline.delta_status import (
+from brain.application.knowledge.pipeline.deltas.delta_status import (
     delta_counts,
     empty_delta_counts,
     is_delta_applicable,

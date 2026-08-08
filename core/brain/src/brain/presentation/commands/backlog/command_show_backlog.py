@@ -10,6 +10,7 @@ from brain.presentation.commands.models import ArgumentSchema, CommandSchema
 
 SCHEMA = CommandSchema(
     name="show-backlog",
+    aliases=["task-list"],
     domain="task backlog",
     help="Display the workspace backlog tree. (e.g. show-backlog dev.db)",
     arguments=[

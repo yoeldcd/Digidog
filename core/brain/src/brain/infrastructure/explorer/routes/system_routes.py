@@ -7,13 +7,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from brain.infrastructure.explorer.resources import find_documentation_dirs
+from brain.infrastructure.explorer.resources import find_documentation_dirs, find_wiki_markdown_files
 from brain.infrastructure.explorer.validation import load_registered_projects
-from brain.infrastructure.runtime.paths import (
-    get_agent_home,
-    get_core_root,
-    get_workspace_root,
-)
+from brain.infrastructure.runtime.paths import get_workspace_root
 
 
 class SystemRoutesMixin:
@@ -26,13 +22,11 @@ class SystemRoutesMixin:
         Returns:
             dict[str, Any]: Health payload.
         """
+        workspace_root = get_workspace_root()
         return {
             "ok": True,
-            "name": "brain_explorer",
-            "distDir": self.config.dist_dir.as_posix(),
-            "workspaceRoot": get_workspace_root().as_posix(),
-            "agentHome": get_agent_home().as_posix(),
-            "coreRoot": get_core_root().as_posix(),
+            "workspaceRoot": workspace_root.as_posix(),
+            "agentHome": (workspace_root / "$agent").as_posix(),
         }
 
     def _projects_list(self) -> dict[str, Any]:
@@ -41,21 +35,18 @@ class SystemRoutesMixin:
 
     def _wikis_list(self) -> dict[str, Any]:
         """
-        Scan workspace root for documentation directories, check if they have
-        compiled wiki folders, and return the list.
+        Scan workspace documentation directories and expose live Markdown wikis.
         """
         workspace_root = get_workspace_root()
         doc_dirs = find_documentation_dirs(workspace_root)
         wikis = []
         for d in doc_dirs:
             wiki_name = d.parent.name
-            wiki_index = d / "wiki" / "index.html"
-            wiki_data = d / "wiki" / "data" / "index.json"
-            has_wiki = wiki_index.exists() and wiki_data.exists()
+            has_wiki = bool(find_wiki_markdown_files(d))
             wikis.append({
                 "name": wiki_name,
                 "path": d.as_posix(),
                 "hasWiki": has_wiki
             })
         wikis.sort(key=lambda w: w["name"].lower())
-        return {"ok": True, "wikis": wikis}
+        return {"ok": True, "workspaceRoot": workspace_root.as_posix(), "wikis": wikis}

@@ -67,7 +67,7 @@ export function renderDescriptionCard(markdown: string, options: DescriptionCard
     const sections = parseDescriptionSections(markdown);
     const content = sections.length
         ? sections.map((section, index) => `
-            <details class="description-card-section" ${options.openFirst !== false && index === 0 ? "open" : ""}>
+            <details class="description-card-section" ${options.openAll || (options.openFirst !== false && index === 0) ? "open" : ""}>
                 <summary>
                     <span>${escapeHtml(section.title)}</span>
                     <span class="description-card-chevron" aria-hidden="true">&#8250;</span>

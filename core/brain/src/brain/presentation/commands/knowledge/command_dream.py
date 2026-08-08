@@ -30,6 +30,16 @@ SCHEMA = CommandSchema(
             help="Limit number of sources to inspect.",
         ),
         ArgumentSchema(
+            flags=["--source-path"],
+            action="append",
+            help="Restrict the pass to one source path. Repeat for multiple sources.",
+        ),
+        ArgumentSchema(
+            flags=["--force"],
+            action="store_true",
+            help="Process selected sources even when their consumer timestamps are current.",
+        ),
+        ArgumentSchema(
             flags=["--min-confidence"],
             type="float",
             default=None,

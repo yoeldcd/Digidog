@@ -8,17 +8,33 @@ from __future__ import annotations
 import argparse
 import json
 
-from brain.presentation.terminal import render_markdown, render_placeholders, log_step
-from brain.application.profiles.service import read_profile_entries, render_profile
-
+from brain.application.profiles.service import (
+    read_profile_entries,
+    render_profile,
+    render_profile_template_variables,
+)
+from brain.presentation.terminal import log_step, render_markdown, render_placeholders
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Print a complete profile composed from all profile Markdown entries."""
+    """Render one profile composed from its persisted Markdown entries.
+
+    Args:
+        args (argparse.Namespace): Parsed command options containing the profile
+            name and output format.
+
+    Returns:
+        int: Zero when the profile is rendered; otherwise one after reporting an
+            error.
+    """
     color_enabled = getattr(args, "color", False)
     try:
         log_step(args, "Reading profile...")
-        entries = read_profile_entries(args.name)
+        raw_entries = read_profile_entries(args.name)
+        entries = [
+            (key, render_profile_template_variables(content))
+            for key, content in raw_entries
+        ]
 
         if args.json:
             records = [{"key": key, "content": content} for key, content in entries]

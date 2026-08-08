@@ -19,7 +19,16 @@ from brain.presentation.terminal import render_placeholders, log_step
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Export the knowledge graph."""
+    """Export selected knowledge-graph scopes in the supported interchange format.
+
+    Args:
+        args (argparse.Namespace): Parsed command options selecting the scopes,
+            export format, and output settings.
+
+    Returns:
+        int: Zero when export data is rendered; otherwise one after reporting an
+            error.
+    """
     color_enabled: bool = getattr(args, "color", False)
     try:
         log_step(args, "Exporting knowledge graph...")

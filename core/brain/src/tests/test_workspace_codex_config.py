@@ -57,8 +57,8 @@ class WorkspaceCodexConfigTests(unittest.TestCase):
             self.assertFalse(ensure_workspace_codex_rules(workspace=workspace))
             self.assertTrue(rules_file.read_text(encoding="utf-8").endswith("# project-owned\n"))
 
-    def test_create_brain_and_init_supervise_both_codex_artifacts(self) -> None:
-        """Bind creation and initialization to config.toml plus default.rules."""
+    def test_only_create_brain_supervises_codex_artifacts(self) -> None:
+        """Keep Codex policy creation out of recurring init and wakeup calls."""
         import inspect
         from brain.presentation.actions.general import command_create_brain, command_init
 
@@ -66,8 +66,10 @@ class WorkspaceCodexConfigTests(unittest.TestCase):
         init_source = inspect.getsource(command_init.handle)
         self.assertIn("ensure_workspace_codex_config", create_source)
         self.assertIn("ensure_workspace_codex_rules", create_source)
-        self.assertIn("ensure_workspace_codex_config", init_source)
-        self.assertIn("ensure_workspace_codex_rules", init_source)
+        self.assertNotIn("ensure_workspace_codex_config", init_source)
+        self.assertNotIn("ensure_workspace_codex_rules", init_source)
+        self.assertNotIn('workspace_root / ".codex"', init_source)
+
     def test_existing_config_is_preserved(self) -> None:
         """Never overwrite a project-owned Codex configuration."""
         with tempfile.TemporaryDirectory() as directory:

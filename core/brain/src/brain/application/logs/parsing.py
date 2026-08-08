@@ -19,7 +19,14 @@ LEGACY_STANDARD_LOG_SUFFIX = ".log"
 
 
 def to_slug(s: str) -> str:
-    """Normalize a domain name to lowercase-hyphenated slug format."""
+    """Normalize a domain name to lowercase-hyphenated slug format.
+
+    Args:
+        s (str): Raw domain name.
+
+    Returns:
+        str: Normalized dot-aware slug or `unknown` when empty.
+    """
     normalized = s.strip().lower().replace("`", "")
     normalized = re.sub(r"(?<=\d)\.(?=\d)", "-", normalized)
     normalized = re.sub(r"\s+", "-", normalized)
@@ -30,12 +37,26 @@ def to_slug(s: str) -> str:
 
 
 def log_file_name(date_str: str) -> str:
-    """Return the canonical log filename for a DD-MM-YYYY date."""
+    """Return the canonical log filename for a DD-MM-YYYY date.
+
+    Args:
+        date_str (str): Date text in `DD-MM-YYYY` form.
+
+    Returns:
+        str: Date with the canonical log suffix.
+    """
     return f"{date_str}{STANDARD_LOG_SUFFIX}"
 
 
 def log_date_stem(path: Path) -> str:
-    """Return the date stem from canonical and legacy log filenames."""
+    """Return the date stem from canonical and legacy log filenames.
+
+    Args:
+        path (Path): Canonical or legacy log path.
+
+    Returns:
+        str: Filename without its recognized log suffix.
+    """
     name = path.name
     if name.endswith(STANDARD_LOG_SUFFIX):
         return name[: -len(STANDARD_LOG_SUFFIX)]
@@ -43,17 +64,39 @@ def log_date_stem(path: Path) -> str:
 
 
 def is_canonical_log_file(path: Path) -> bool:
-    """Return true when path uses the canonical `.log.md` suffix."""
+    """Return whether a path uses the canonical `.log.md` suffix.
+
+    Args:
+        path (Path): Candidate log path.
+
+    Returns:
+        bool: True when the filename has the canonical suffix.
+    """
     return path.name.casefold().endswith(STANDARD_LOG_SUFFIX)
 
 
 def is_previous_log_file(path: Path) -> bool:
-    """Return true when path uses the previous `.log` suffix."""
+    """Return whether a path uses the previous `.log` suffix.
+
+    Args:
+        path (Path): Candidate log path.
+
+    Returns:
+        bool: True when the filename has the legacy suffix.
+    """
     return path.suffix.casefold() == LEGACY_STANDARD_LOG_SUFFIX
 
 
 def parse_entry(timestamp: str, body_text: str) -> tuple[str, str, str]:
-    """Parse log domain, title, and type from a canonical log entry body."""
+    """Parse log domain, title, and type from a canonical log entry body.
+
+    Args:
+        timestamp (str): Entry timestamp retained for parser compatibility.
+        body_text (str): Canonical Markdown entry body.
+
+    Returns:
+        tuple[str, str, str]: Normalized domain, title, and change type.
+    """
     del timestamp
     domain = "unknown"
     title = "Untitled Change"
@@ -70,7 +113,14 @@ def parse_entry(timestamp: str, body_text: str) -> tuple[str, str, str]:
 
 
 def parse_log_timestamp(ts_str: str) -> datetime.datetime:
-    """Parse a canonical or legacy log timestamp."""
+    """Parse a canonical or legacy log timestamp.
+
+    Args:
+        ts_str (str): Timestamp text in a supported canonical or legacy form.
+
+    Returns:
+        datetime.datetime: Parsed timestamp or `datetime.min` when unrecognized.
+    """
     ts_str = ts_str.strip().lower()
     ts_str = re.sub(r"\s+", " ", ts_str)
     for fmt in ("%d-%m-%Y %I:%M %p", "%d-%m-%Y %H:%M", "%d-%m-%Y %I:%M%p", "%Y-%m-%d"):
@@ -88,7 +138,15 @@ def parse_log_timestamp(ts_str: str) -> datetime.datetime:
 
 
 def log_read_command(date_stem: str, entry_ts: str) -> str:
-    """Return the CLI command that reads the indexed log entry."""
+    """Return the CLI command that reads the indexed log entry.
+
+    Args:
+        date_stem (str): Date that selects the log source.
+        entry_ts (str): Entry timestamp used to derive an optional time filter.
+
+    Returns:
+        str: CLI command targeting the date and, when valid, its minute.
+    """
     parsed_dt = parse_log_timestamp(entry_ts)
     if parsed_dt == datetime.datetime.min:
         return f"read-log -d {date_stem}"
@@ -96,7 +154,14 @@ def log_read_command(date_stem: str, entry_ts: str) -> str:
 
 
 def glob_log_and_md_files(logs_dir: Path) -> list[Path]:
-    """Return candidate log files in stable order."""
+    """Return candidate log files in stable order.
+
+    Args:
+        logs_dir (Path): Root directory containing current or legacy log files.
+
+    Returns:
+        list[Path]: Unique candidate files sorted by resolved path.
+    """
     paths: dict[str, Path] = {}
     for pattern in ("*.log.md", "*.log", "*.md"):
         for path in logs_dir.rglob(pattern):

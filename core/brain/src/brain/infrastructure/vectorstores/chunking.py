@@ -22,7 +22,16 @@ DATED_ENTRY_RE = re.compile(
 
 
 def chunk_content(category: str, key: str, content: str) -> list[tuple[str, str, dict]]:
-    """Split content into indexable chunks."""
+    """Split memory content into indexable chunks.
+
+    Args:
+        category (str): Memory category used in chunk metadata.
+        key (str): Source entry key.
+        content (str): Markdown content to split.
+
+    Returns:
+        list[tuple[str, str, dict]]: Chunk identifiers, text, and metadata.
+    """
     lines = content.splitlines()
     chunks = []
 
@@ -98,7 +107,20 @@ def chunk_dated_markdown_entries(
     source_kind: str,
     reader_command: str,
 ) -> list[tuple[str, str, dict]]:
-    """Split dated Markdown sources into entry-level vector records."""
+    """Split dated Markdown sources into entry-level vector records.
+
+    Args:
+        category (str): Source category.
+        key (str): Source key.
+        content (str): Markdown source content.
+        mtime (float): Source modification time.
+        path (str): Stable source path.
+        source_kind (str): Source classification.
+        reader_command (str): Base CLI reader command.
+
+    Returns:
+        list[tuple[str, str, dict]]: Entry chunks with retrieval metadata.
+    """
     chunks: list[tuple[str, str, dict]] = []
     current_header: str = ""
     current_lines: list[str] = []
@@ -148,7 +170,19 @@ def append_dated_entry_chunk(
     source_kind: str,
     reader_command: str,
 ) -> None:
-    """Append one dated entry vector chunk when it has body text."""
+    """Append one dated entry vector chunk when it has body text.
+
+    Args:
+        chunks (list[tuple[str, str, dict]]): Mutable chunk output.
+        category (str): Source category.
+        key (str): Source key.
+        header (str): Dated entry heading.
+        body_lines (list[str]): Entry body lines.
+        mtime (float): Source modification time.
+        path (str): Stable source path.
+        source_kind (str): Source classification.
+        reader_command (str): Base CLI reader command.
+    """
     if not header:
         return
     body_text: str = "\n".join(body_lines).strip()
@@ -182,7 +216,15 @@ def append_dated_entry_chunk(
 
 
 def parse_dated_entry_header(header: str, fallback_date: str) -> dict[str, str]:
-    """Parse a diary or log entry heading into metadata fields."""
+    """Parse a diary or log entry heading into metadata fields.
+
+    Args:
+        header (str): Markdown entry heading.
+        fallback_date (str): Date used when the heading omits one.
+
+    Returns:
+        dict[str, str]: Normalized date, time, title, domain, and type fields.
+    """
     match: re.Match[str] | None = DATED_ENTRY_RE.match(header)
     if match is None:
         return {"date": fallback_date, "time": "", "title": header.strip()}
@@ -198,7 +240,14 @@ def parse_dated_entry_header(header: str, fallback_date: str) -> dict[str, str]:
 
 
 def normalized_entry_time(header: str) -> str:
-    """Return HH:MM from an entry heading."""
+    """Return a normalized time from an entry heading.
+
+    Args:
+        header (str): Markdown entry heading.
+
+    Returns:
+        str: Time in `HH:MM` form, or an empty string when absent.
+    """
     match: re.Match[str] | None = DATED_ENTRY_RE.match(header)
     if match is None:
         return ""
@@ -206,7 +255,15 @@ def normalized_entry_time(header: str) -> str:
 
 
 def normalize_clock_time(time_text: str, ampm: str = "") -> str:
-    """Normalize a clock time to HH:MM."""
+    """Normalize a clock time to 24-hour text.
+
+    Args:
+        time_text (str): Clock time containing hours and minutes.
+        ampm (str): Optional meridiem suffix.
+
+    Returns:
+        str: Time normalized to `HH:MM`.
+    """
     hour_text, minute_text = time_text.split(":", 1)
     hour = int(hour_text)
     minute = int(minute_text[:2])
@@ -219,18 +276,41 @@ def normalize_clock_time(time_text: str, ampm: str = "") -> str:
 
 
 def reader_command_for_entry(command_name: str, date_text: str, entry_time: str) -> str:
-    """Build a precise CLI reader command."""
+    """Build a precise CLI reader command for one dated entry.
+
+    Args:
+        command_name (str): Reader command name.
+        date_text (str): Entry date.
+        entry_time (str): Optional normalized entry time.
+
+    Returns:
+        str: CLI command targeting the entry.
+    """
     time_text: str = f" --time {entry_time}" if entry_time else ""
     return f"{command_name} -d {date_text}{time_text}"
 
 
 def entry_slug_from_header(header: str) -> str:
-    """Build a stable slug from an entry heading."""
+    """Build a stable slug from an entry heading.
+
+    Args:
+        header (str): Markdown entry heading.
+
+    Returns:
+        str: Normalized stable entry slug.
+    """
     return re.sub(r"[^a-zA-Z0-9]+", "-", header).strip("-").lower()
 
 
 def log_entry_body_text(body_text: str) -> str:
-    """Return log entry semantic body without the metadata subheading."""
+    """Return log entry body without its metadata subheading.
+
+    Args:
+        body_text (str): Raw Markdown entry body.
+
+    Returns:
+        str: Semantic entry body used for indexing.
+    """
     lines: list[str] = body_text.splitlines()
     while lines and not lines[0].strip():
         lines.pop(0)
@@ -240,7 +320,14 @@ def log_entry_body_text(body_text: str) -> str:
 
 
 def markdown_header_slug(header: str) -> str:
-    """Build a stable readable slug from a Markdown section header."""
+    """Build a stable readable slug from a Markdown section header.
+
+    Args:
+        header (str): Markdown section heading.
+
+    Returns:
+        str: Normalized readable section slug.
+    """
     clean_header = header.strip().lstrip("#").strip().strip(":").casefold()
     slug = re.sub(r"\s+", "-", clean_header)
     slug = re.sub(r"[^a-z0-9_-]+", "-", slug)
@@ -249,7 +336,16 @@ def markdown_header_slug(header: str) -> str:
 
 
 def unique_chunk_id(base_id: str, slug: str, slug_counts: dict[str, int]) -> str:
-    """Return a unique chunk ID for repeated section headers inside one file."""
+    """Return a unique chunk ID for repeated headers inside one file.
+
+    Args:
+        base_id (str): Stable source identifier prefix.
+        slug (str): Normalized section slug.
+        slug_counts (dict[str, int]): Mutable occurrence counts by slug.
+
+    Returns:
+        str: Unique deterministic chunk identifier.
+    """
     slug_counts[slug] = slug_counts.get(slug, 0) + 1
     suffix = "" if slug_counts[slug] == 1 else f"-{slug_counts[slug]}"
     return f"{base_id}#{slug}{suffix}"

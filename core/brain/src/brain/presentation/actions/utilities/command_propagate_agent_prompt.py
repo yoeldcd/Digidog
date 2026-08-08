@@ -21,7 +21,15 @@ from brain.presentation.terminal import log_step
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Propagate or inspect canonical prompt mirrors through the core utility."""
+    """Propagate or inspect canonical prompt mirrors through the core utility.
+
+    Args:
+        args (argparse.Namespace): Parsed command options selecting the source,
+            mirror registry, dry-run mode, and output format.
+
+    Returns:
+        int: Exit code returned by the prompt-propagation utility.
+    """
     utility_path: Path = get_prompt_propagator_path()
     if not utility_path.is_file():
         error: str = f"Prompt propagator entrypoint does not exist: {utility_path}"
@@ -34,6 +42,8 @@ def handle(args: argparse.Namespace) -> int:
         command.extend(["--source", args.source])
     mirrors_file: str = args.mirrors_file or str(get_instruction_mirrors_registry_path(create=False))
     command.extend(["--mirrors-file", mirrors_file])
+    if args.consumers_file:
+        command.extend(["--consumers-file", args.consumers_file])
     if args.dry_run:
         command.append("--dry-run")
 

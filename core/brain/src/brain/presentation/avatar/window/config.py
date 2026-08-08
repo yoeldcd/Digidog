@@ -20,10 +20,22 @@ TRANSPARENT_COLOR = "#00ff01"
 
 
 def avatar_asset(state: str, fallback_state: str = "speaking") -> Path:
-    """Resolve one user-owned avatar GIF with an explicit state fallback."""
-    safe_state = state if re.fullmatch(r"[a-z0-9_-]+", state or "") else "speaking"
+    """Resolve a user-owned avatar GIF with an explicit state fallback.
+
+    Args:
+        state (str): Requested avatar state name.
+        fallback_state (str): Safe state used when the requested asset is absent.
+
+    Returns:
+        Path: Existing state asset or the canonical speaking asset path.
+    """
     root = get_avatar_assets_dir()
-    candidate = root / f"avatar_{safe_state}.gif"
+    normalized_state = (state or "").strip().lower()
+    if re.fullmatch(r"[a-z0-9_-]+\.gif", normalized_state):
+        candidate = root / normalized_state
+    else:
+        safe_state = normalized_state if re.fullmatch(r"[a-z0-9_-]+", normalized_state) else "speaking"
+        candidate = root / f"avatar_{safe_state}.gif"
     if candidate.is_file():
         return candidate
     safe_fallback = fallback_state if re.fullmatch(r"[a-z0-9_-]+", fallback_state or "") else "speaking"
@@ -32,6 +44,13 @@ def avatar_asset(state: str, fallback_state: str = "speaking") -> Path:
 
 
 def default_geometry(screen_width: int) -> str:
-    """Place the initial window in the upper-right corner."""
+    """Build initial upper-right window geometry.
+
+    Args:
+        screen_width (int): Available screen width in pixels.
+
+    Returns:
+        str: Tk-compatible window geometry string.
+    """
     x = max(SCREEN_MARGIN, screen_width - INITIAL_WIDTH - SCREEN_MARGIN)
     return f"{INITIAL_WIDTH}x{INITIAL_HEIGHT}+{x}+{SCREEN_MARGIN + 120}"

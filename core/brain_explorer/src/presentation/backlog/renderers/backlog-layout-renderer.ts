@@ -7,7 +7,7 @@
  * @module presentation/backlog/renderers/backlog-layout-renderer
  */
 
-import { escapeHtml } from "../../shared/utils/html.ts";
+import { escapeHtml, workspaceScopedUrl } from "../../shared/utils/html.ts";
 import { icon } from "../../shared/utils/icons.ts";
 import type { BacklogPipTaskViewModel } from "../view_models/backlog-pip-view-model.ts";
 
@@ -16,7 +16,7 @@ import type { BacklogPipTaskViewModel } from "../view_models/backlog-pip-view-mo
  *
  * @param {readonly BacklogPipTaskViewModel[]} tasks Domain-scoped tasks in endpoint order.
  * @param {string} selectedDomain Domain used to distinguish direct tasks and shorten subgroup labels.
- * @param {readonly string[]} tasksWithImages Task identifiers with a persisted visual reference.
+ * @param {readonly string[]} tasksWithImages Task identifiers with persisted visual references.
  * @returns {string} Backlog task-list markup or an empty-state paragraph.
  */
 export function renderBacklogTaskList(
@@ -66,30 +66,50 @@ export function renderBacklogTaskList(
  */
 export function renderBacklogDialogs(): string {
     return `
-        <dialog id="backlog-modal" class="backlog-dialog" style="border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 0; width: 720px; height: 540px; max-width: 90vw; max-height: 90vh; box-shadow: var(--shadow); background: var(--surface); color: var(--text);">
-            <form method="dialog" class="backlog-modal-form" data-role="modal-form" style="display: flex; flex-direction: column; height: 100%;">
-                <header class="modal-header" style="display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border); background: var(--surface-strong);">
-                    <strong data-role="modal-title" style="font-size: 16px; color: var(--text-strong);">Create task</strong>
-                    <button type="button" class="icon-action close-modal-btn" data-action="close-modal" style="border: 0; background: transparent; cursor: pointer; color: var(--text);">${icon("close")}</button>
+        <dialog id="backlog-modal" class="backlog-dialog backlog-task-editor-dialog">
+            <form method="dialog" class="backlog-modal-form task-editor-form" data-role="modal-form">
+                <header class="modal-header task-editor-header">
+                    <span class="task-status task-editor-status-indicator is-neutral" data-role="modal-status-indicator" title="New task">${icon("clock")}</span>
+                    <div class="task-editor-heading"><strong data-role="modal-title">Create task</strong></div>
+                    <button type="button" class="task-dialog-close" data-action="close-modal" title="Close editor" aria-label="Close editor">${icon("close")}</button>
                 </header>
                 <div class="modal-body" style="padding: 18px; flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden;">
                     <input type="hidden" data-role="modal-task-id" value=""><input type="hidden" data-role="modal-domain" value="">
-                    <div class="modal-toolbar" style="display: flex; gap: 10px; align-items: center; padding-bottom: 12px; border-bottom: 1px solid var(--border);">
-                        <input type="text" data-role="modal-title-input" placeholder="Task title" required style="flex: 1; min-height: 38px;">
-                        <select data-role="modal-priority" style="width: 110px; min-height: 38px;">
-                            <option value="HIGH">HIGH</option><option value="MEDIUM">MEDIUM</option><option value="LOW">LOW</option>
-                        </select>
-                        <button type="button" data-action="open-visual-reference" class="ghost-action compact-action" style="display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px; font-weight: bold; background: var(--surface-muted); color: var(--primary); height: 38px;">${icon("camera")} Visual Reference</button>
+                    <div class="modal-toolbar task-editor-toolbar">
+                        <label class="task-editor-field task-editor-title-field"><span>Title</span><input type="text" data-role="modal-title-input" placeholder="Task title" required></label>
+                        <label class="task-editor-field task-editor-priority-field"><span>Priority</span><select data-role="modal-priority"><option value="HIGH">HIGH</option><option value="MEDIUM">MEDIUM</option><option value="LOW">LOW</option></select></label>
+                        <div class="task-editor-tools">
+                            <button type="button" data-action="open-visual-reference" class="task-editor-tool-action" title="Attach or edit a visual reference">${icon("camera")}<span>Image</span></button>
+                            <button type="button" data-action="enrich-task-draft" class="task-editor-tool-action task-draft-enrich-action" title="Enrich this draft with profiles and visual context">${icon("enrich")}<span>Enrich</span></button>
+                        </div>
                     </div>
-                    <div style="flex: 1; display: flex; min-height: 0; margin-top: 12px;">
-                        <textarea data-role="modal-description" placeholder="Write task details and description here..." required style="flex: 1; border: 0; padding: 0; outline: none; background: transparent; font-family: inherit; font-size: 14px; line-height: 1.6; resize: none; overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none;"></textarea>
+                    <div class="task-editor-content">
+                        <textarea data-role="modal-description" placeholder="Write task details and description here..." required></textarea>
                     </div>
                 </div>
-                <footer class="modal-footer" style="display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 14px 18px; border-top: 1px solid var(--border); background: var(--surface-strong);">
-                    <button type="button" class="ghost-action" data-action="close-modal">Cancel</button>
-                    <button type="submit" class="primary-action" data-role="modal-submit-btn">Create</button>
+                <footer class="modal-footer task-editor-footer">
+                    <button type="button" class="ghost-action task-footer-action" data-action="close-modal">${icon("close")}<span>Cancel</span></button>
+                    <button type="submit" class="primary-action task-footer-action" data-role="modal-submit-btn">${icon("save")}<span data-role="modal-submit-label">Create</span></button>
                 </footer>
+                <div class="task-enrichment-overlay" data-role="task-enrichment-overlay" role="status" aria-live="polite" hidden><span class="working-spinner" aria-hidden="true">${["blue", "cyan", "green", "yellow", "red", "pink"].map(color => `<span class="dot dot-${color}"></span>`).join("")}</span><span>Enriching taskΓÇª</span></div>
             </form>
+        </dialog>
+        <dialog id="task-viewer-modal" class="backlog-dialog backlog-task-viewer-dialog">
+            <article class="task-viewer-shell">
+                <header class="modal-header task-viewer-header">
+                    <span class="task-status task-viewer-status-indicator" data-role="task-viewer-status-indicator"></span>
+                    <div class="task-viewer-heading"><strong data-role="task-viewer-title">Task</strong><div class="task-viewer-badges" data-role="task-viewer-meta"></div></div>
+                    <div class="task-viewer-header-actions"><button type="button" class="task-dialog-close" data-action="close-task-viewer" title="Close viewer" aria-label="Close viewer">${icon("close")}</button></div>
+                </header>
+                <div class="task-viewer-markdown enriched-content" data-role="task-viewer-description"></div>
+                <footer class="modal-footer task-viewer-footer">
+                    <details class="action-menu task-viewer-options">
+                        <summary class="ghost-action task-footer-action" title="Task options">${icon("more")}<span>Options</span></summary>
+                        <div class="action-menu-panel task-viewer-options-panel" data-role="task-viewer-options-panel"></div>
+                    </details>
+                    <button type="button" class="primary-action task-footer-action" data-action="close-task-viewer">${icon("close")}<span>Close</span></button>
+                </footer>
+            </article>
         </dialog>
         <dialog id="visual-reference-modal" class="backlog-dialog visual-reference-dialog">
             <header class="modal-header" style="display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border); background: var(--surface-strong);">
@@ -108,12 +128,11 @@ export function renderBacklogDialogs(): string {
             <div class="modal-body" style="padding: 18px; display: grid; place-items: center; background: var(--bg);"><img data-role="viewer-img" src="" style="max-width: 100%; max-height: 70vh; object-fit: contain; border-radius: var(--radius);"></div>
         </dialog>`;
 }
-
 /**
- * Render one task row, its state actions, and optional visual-reference thumbnail.
+ * Render one compact task row whose title opens the complete task editor.
  *
  * @param {BacklogPipTaskViewModel} task View-ready task to render.
- * @param {readonly string[]} tasksWithImages Task identifiers with persisted reference images.
+ * @param {readonly string[]} tasksWithImages Task identifiers with persisted visual references.
  * @returns {string} Inert task-row markup.
  */
 function renderBacklogTask(task: BacklogPipTaskViewModel, tasksWithImages: readonly string[]): string {
@@ -129,12 +148,15 @@ function renderBacklogTask(task: BacklogPipTaskViewModel, tasksWithImages: reado
         : status === "TODO"
             ? `<button data-action="set-task-status" data-task-id="${escapeHtml(task.id)}" data-task-status="WORKING">${startSpinner}Iniciar trabajo</button><button data-action="set-task-status" data-task-id="${escapeHtml(task.id)}" data-task-status="DONE">${icon("checkSquare")}Mark done</button>`
             : `<button data-action="set-task-status" data-task-id="${escapeHtml(task.id)}" data-task-status="DONE">${icon("checkSquare")}Mark done</button><button data-action="set-task-status" data-task-id="${escapeHtml(task.id)}" data-task-status="TODO">${icon("clock")}Pause (TODO)</button>`;
-    const imageTaskId = task.id.replace(/^#/, "");
-    const thumbnail = tasksWithImages.includes(imageTaskId)
-        ? `<button class="task-image-thumbnail" type="button" data-action="view-image" data-task-id="${escapeHtml(imageTaskId)}" title="View reference image"><img src="/api/backlog/image?taskId=${escapeHtml(imageTaskId)}" alt="Visual reference for ${escapeHtml(task.title)}"></button>`
+    const normalizedTaskId = task.id.replace(/^#/, "");
+    const imageUrl = workspaceScopedUrl(`/api/backlog/image?taskId=${encodeURIComponent(normalizedTaskId)}`);
+    const thumbnail = tasksWithImages.includes(normalizedTaskId)
+        ? `<button type="button" class="task-reference-thumbnail" data-action="view-image" data-task-id="${escapeHtml(normalizedTaskId)}" title="Open visual reference" aria-label="Open visual reference for ${escapeHtml(task.title)}"><img src="${escapeHtml(imageUrl)}" alt=""></button>`
         : "";
-    return `<article class="task-row ${status === "DONE" ? "is-done" : ""}" data-task-row-id="${escapeHtml(task.id)}">
-        <span class="task-status ${statusClass}">${statusIcon}</span><div style="flex: 1; min-width: 0;"><strong>${escapeHtml(task.id)} - ${escapeHtml(task.title)}</strong><p>${escapeHtml(task.description)}</p></div>
-        <div class="task-actions" style="display: inline-flex; align-items: center; gap: 8px; justify-self: end;">${thumbnail}<details class="action-menu"><summary class="icon-action borderless-summary" title="Opciones">${icon("more")}</summary><div class="action-menu-panel"><button data-action="edit-task" data-task-id="${escapeHtml(task.id)}">${icon("edit")}Edit</button>${buttons}<button data-action="delete-task" data-task-id="${escapeHtml(task.id)}" data-task-status="${status}" class="danger-button">${icon("trash")}Delete task</button></div></details></div>
+    return `<article class="task-row ${status === "DONE" ? "is-done" : ""}" data-task-row-id="${escapeHtml(task.id)}" tabindex="-1">
+        <span class="task-status ${statusClass}">${statusIcon}</span>
+        <button type="button" class="task-open-viewer" data-action="view-task" data-task-id="${escapeHtml(task.id)}"><strong>${escapeHtml(task.id)} - ${escapeHtml(task.title)}</strong></button>
+        ${thumbnail}
+        <div class="task-actions" style="display: inline-flex; align-items: center; gap: 8px; justify-self: end;"><details class="action-menu"><summary class="icon-action borderless-summary" title="Options">${icon("more")}</summary><div class="action-menu-panel"><button data-action="edit-task" data-task-id="${escapeHtml(task.id)}">${icon("edit")}Edit</button>${buttons}<button data-action="delete-task" data-task-id="${escapeHtml(task.id)}" data-task-status="${status}" class="danger-button">${icon("trash")}Delete task</button></div></details></div>
     </article>`;
 }

@@ -13,7 +13,16 @@ from brain.infrastructure.runtime.paths import get_agent_home
 
 
 def handle(args: argparse.Namespace) -> int:
-    """List snippets directory."""
+    """List reusable snippets, optionally filtered by a user query.
+
+    Args:
+        args (argparse.Namespace): Parsed command options containing the optional
+            search query and output settings.
+
+    Returns:
+        int: Zero when snippets are listed; otherwise one after reporting an
+            error.
+    """
     color_enabled = getattr(args, "color", False)
     try:
         log_step(args, 'Scanning available snippets...')

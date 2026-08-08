@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from brain.infrastructure.database.knowledge.repository import KnowledgeRepository
 
 
-def search_repository(repository: "KnowledgeRepository", text: str, limit: int = 10) -> list[dict[str, Any]]:
+def search_repository(repository: "KnowledgeRepository", text: str, limit: int | None = 10) -> list[dict[str, Any]]:
     """
     Search entities and evidence through SQLite FTS5.
 
@@ -75,4 +75,4 @@ def search_repository(repository: "KnowledgeRepository", text: str, limit: int =
             ),
         )
     results.sort(key=lambda item: float(item["rank"]))
-    return results[:limit]
+    return results if limit is None else results[:limit]

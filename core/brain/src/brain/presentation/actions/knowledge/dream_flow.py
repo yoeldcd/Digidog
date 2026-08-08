@@ -11,8 +11,8 @@ from typing import Any
 
 # Application Modules Imports
 from brain.application.knowledge.orchestration.dream import DreamRunner
-from brain.application.knowledge.pipeline.delta_apply import apply_pending_delta_rows
-from brain.application.knowledge.pipeline.delta_revalidation import revalidate_pending_delta_rows
+from brain.application.knowledge.pipeline.deltas.delta_apply import apply_pending_delta_rows
+from brain.application.knowledge.pipeline.deltas.delta_revalidation import revalidate_pending_delta_rows
 from brain.presentation.views.knowledge.delta_review import render_delta_review
 from brain.infrastructure.database.knowledge.repository import KnowledgeRepository
 from brain.presentation.actions.knowledge.dream_review import (
@@ -97,13 +97,14 @@ def run_dream_scope(
         runner_dry_run: bool = True
         dream_dto = runner.run(
             domain=source_domain,
+            source_paths=list(getattr(args, "source_path", None) or []),
             limit=args.limit,
             dry_run=runner_dry_run,
             use_llm=True,
             minimum_confidence=args.min_confidence,
             llm_event_callback=llm_event_callback,
             orchestration_event_callback=orchestration_event_callback,
-            force_all=bool(getattr(args, "prune", False)),
+            force_all=bool(getattr(args, "prune", False) or getattr(args, "force", False)),
         )
         pending_rows: list[dict[str, Any]] = load_pending_rows(
             repository=repository,

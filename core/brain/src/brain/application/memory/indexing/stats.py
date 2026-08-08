@@ -27,7 +27,14 @@ def scan_file_stats(path: Path) -> tuple[str, str, int]:
 
 
 def is_entry_line(line: str) -> bool:
-    """Return whether a line should count as a lightweight source entry."""
+    """Return whether a line counts as a lightweight source entry.
+
+    Args:
+        line (str): Source line to classify.
+
+    Returns:
+        bool: True for headings and named list entries.
+    """
     stripped_line = line.strip()
     if stripped_line.startswith("#"):
         return True
@@ -38,14 +45,28 @@ def is_entry_line(line: str) -> bool:
 
 
 def format_size(size_bytes: int) -> str:
-    """Return a compact byte-size label."""
+    """Return a compact byte-size label.
+
+    Args:
+        size_bytes (int): File size in bytes.
+
+    Returns:
+        str: Size expressed in kilobytes or megabytes.
+    """
     if size_bytes >= 1024 * 1024:
         return f"{size_bytes / (1024 * 1024):.1f}MB"
     return f"{size_bytes / 1024:.1f}KB"
 
 
 def format_line_count(line_count: int) -> str:
-    """Return a compact line-count label."""
+    """Return a compact line-count label.
+
+    Args:
+        line_count (int): Number of source lines.
+
+    Returns:
+        str: Exact or abbreviated line count.
+    """
     if line_count >= 1_000_000:
         return f"{line_count / 1_000_000:.1f}M"
     if line_count >= 1_000:

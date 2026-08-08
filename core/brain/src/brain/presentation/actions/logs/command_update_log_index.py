@@ -25,7 +25,16 @@ def _log_update_step(args: argparse.Namespace, message: str) -> None:
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Import file-backed logs into SQLite and rebuild the latest-index projection."""
+    """Import file-backed logs and refresh the latest-entry SQLite projection.
+
+    Args:
+        args (argparse.Namespace): Parsed command options selecting migration mode,
+            output formatting, and activity reporting.
+
+    Returns:
+        int: Zero when the projection refresh succeeds; otherwise one after
+            reporting an error.
+    """
     color_enabled = getattr(args, "color", False)
     verbose_enabled = getattr(args, "verbose_log", False)
     try:

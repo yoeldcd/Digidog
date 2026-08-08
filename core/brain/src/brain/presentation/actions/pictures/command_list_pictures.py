@@ -10,7 +10,15 @@ from brain.infrastructure.pictures.scanner import scan_pictures
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Print bounded picture records after a lightweight incremental scan."""
+    """List bounded picture records after a lightweight incremental scan.
+
+    Args:
+        args (argparse.Namespace): Parsed command options with optional ID, query,
+            domain, limit, inactive-record, and output settings.
+
+    Returns:
+        int: Always zero after rendering the picture record payload.
+    """
     scan_pictures()
     repository = PictureRepository()
     picture_id = str(getattr(args, "id", "") or "")

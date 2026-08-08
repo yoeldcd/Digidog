@@ -35,7 +35,13 @@ KNOWLEDGE_CONSUMER_NAME = "knowledge_graph"
 
 @dataclass(frozen=True, slots=True)
 class SourceCandidate:
-    """Discovered source candidate with external update metadata."""
+    """Discovered source candidate with external update metadata.
+
+    Attributes:
+        source_dto (SourceDTO): Registry-facing source identity and classification.
+        path (Path): Absolute filesystem path used to read the source.
+        mtime (float): Last-modified timestamp used for incremental discovery.
+    """
 
     source_dto: SourceDTO
     path: Path

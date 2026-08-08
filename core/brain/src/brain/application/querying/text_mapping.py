@@ -164,7 +164,15 @@ def source_entry_metadata_from_content(path: str, content: str, line_number: int
 
 
 def normalize_source_entry_time(time_text: str, ampm: str = "") -> str:
-    """Normalize a heading time to HH:MM."""
+    """Normalize a heading time to 24-hour text.
+
+    Args:
+        time_text (str): Clock time containing hours and minutes.
+        ampm (str): Optional meridiem suffix.
+
+    Returns:
+        str: Time normalized to `HH:MM`.
+    """
     clean_time: str = time_text.strip()
     clean_ampm: str = ampm.casefold().strip()
     if not clean_time:
@@ -178,7 +186,14 @@ def normalize_source_entry_time(time_text: str, ampm: str = "") -> str:
 
 
 def remove_dated_entry_headings(text: str) -> str:
-    """Remove dated entry headings from a display excerpt."""
+    """Remove dated entry headings from a display excerpt.
+
+    Args:
+        text (str): Source Markdown text.
+
+    Returns:
+        str: Text without dated entry headings.
+    """
     return "\n".join(
         line
         for line in text.splitlines()
@@ -219,7 +234,15 @@ def read_source_excerpt(source_path: str, query_text: str, fallback_terms: list[
 
 
 def compact_excerpt(text: str, limit: int = 900) -> str:
-    """Return a bounded excerpt while preserving useful line boundaries."""
+    """Return a bounded excerpt while preserving useful line boundaries.
+
+    Args:
+        text (str): Source text to compact.
+        limit (int): Maximum returned character count.
+
+    Returns:
+        str: Normalized excerpt bounded by the requested limit.
+    """
     compact_text: str = "\n".join(
         " ".join(line.split())
         for line in text.splitlines()

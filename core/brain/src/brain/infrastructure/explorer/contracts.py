@@ -12,7 +12,15 @@ from brain.infrastructure.explorer.cli_facade import BrainCliFacade
 
 @dataclass(slots=True)
 class BrainExplorerServerConfig:
-    """Runtime dependencies and network settings for the Explorer server."""
+    """Runtime dependencies and network settings for the Explorer server.
+
+    Attributes:
+        host (str): Interface address bound by the HTTP server.
+        port (int): TCP port bound by the HTTP server.
+        dist_dir (Path): Explorer static distribution directory.
+        api_timeout (float): Compatibility timeout supplied to the CLI facade.
+        facade (BrainCliFacade): In-process Brain command facade.
+    """
 
     host: str
     port: int

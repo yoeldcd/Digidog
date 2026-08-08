@@ -22,6 +22,11 @@ if str(SOURCE_ROOT) not in sys.path:
 
 # Application Modules Imports
 from brain.infrastructure.explorer.cli_facade import BrainCliFacade, CliCommandResult
+from brain.infrastructure.explorer.resources import (
+    build_live_wiki_manifest,
+    find_wiki_markdown_files,
+    resolve_workspace_image,
+)
 from brain.infrastructure.explorer.server import (
     ApiRouteError,
     BrainExplorerRequestHandler,
@@ -46,6 +51,30 @@ class BrainExplorerTests(unittest.TestCase):
 
         self.assertIn("serve-explorer", command_names)
         self.assertTrue(callable(get_action_handler(command_name="serve-explorer")))
+
+    def test_live_wiki_manifest_reads_markdown_without_generated_artifacts(self) -> None:
+        """A project documentation folder is itself the live Wiki contract."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            documentation_dir = Path(temp_dir) / "sample_project" / "documentation"
+            documentation_dir.mkdir(parents=True)
+            (documentation_dir / "README.md").write_text("# Live project docs\n", encoding="utf-8")
+            generated_dir = documentation_dir / "wiki"
+            generated_dir.mkdir()
+            (generated_dir / "stale.md").write_text("# Ignore me\n", encoding="utf-8")
+
+            files = find_wiki_markdown_files(documentation_dir)
+            manifest = build_live_wiki_manifest(documentation_dir)
+
+            self.assertEqual(files, [documentation_dir / "README.md"])
+            self.assertEqual(manifest["projectName"], "sample_project")
+            self.assertEqual(manifest["pages"], [{
+                "id": "readme",
+                "title": "Home",
+                "icon": "\U0001F3E0",
+                "source": "README.md",
+                "sourceHref": "../README.md",
+            }])
+            self.assertEqual(manifest["virtualPages"], [])
 
     def test_static_file_resolution_rejects_path_traversal(self) -> None:
         """Ensure static serving cannot escape the configured dist directory."""
@@ -76,6 +105,84 @@ class BrainExplorerTests(unittest.TestCase):
             )
             with self.assertRaises(ValueError):
                 resolve_workspace_picture(pictures_dir=pictures_dir, picture_name="../secret.png")
+
+    def test_workspace_image_resolution_accepts_supported_local_reference_forms(self) -> None:
+        """Accept workspace references and absolute images outside the workspace."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            workspace = temp_root / "workspace"
+            workspace_image = workspace / "$agent" / "pictures" / "reference image.png"
+            workspace_image.parent.mkdir(parents=True)
+            workspace_image.write_bytes(b"png")
+            outside_image = temp_root / "outside image.jpg"
+            outside_image.write_bytes(b"jpg")
+
+            expected_paths = {
+                "$agent/pictures/reference image.png": workspace_image.resolve(),
+                outside_image.as_uri(): outside_image.resolve(),
+                str(outside_image).replace("/", "\\"): outside_image.resolve(),
+            }
+            for reference, expected_path in expected_paths.items():
+                self.assertEqual(resolve_workspace_image(workspace, reference), expected_path)
+
+    def test_workspace_image_resolution_rejects_unsafe_references(self) -> None:
+        """Reject traversal, network, malformed, missing, and non-image references."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            workspace = temp_root / "workspace"
+            workspace.mkdir()
+            outside_image = temp_root / "outside.png"
+            outside_image.write_bytes(b"png")
+            outside_text = temp_root / "secret.txt"
+            outside_text.write_text("secret", encoding="utf-8")
+            image_directory = temp_root / "directory.png"
+            image_directory.mkdir()
+
+            unsafe_references = (
+                "$agent/../../outside.png",
+                r"\\server\share\image.png",
+                "file://server/share/image.png",
+                "file://localhost/C:/image.png",
+                "file:/C:/image.png",
+                str(outside_text),
+                str(temp_root / "missing.png"),
+                str(image_directory),
+                "$agent/pictures/document.txt",
+            )
+            for reference in unsafe_references:
+                with self.assertRaises(ValueError):
+                    resolve_workspace_image(workspace, reference)
+
+            pictures_dir = workspace / "$agent" / "pictures"
+            pictures_dir.mkdir(parents=True)
+            symlink_path = pictures_dir / "escape.png"
+            try:
+                symlink_path.symlink_to(outside_image)
+            except (OSError, NotImplementedError):
+                symlink_path = None
+            if symlink_path is not None:
+                with self.assertRaises(ValueError):
+                    resolve_workspace_image(workspace, "$agent/pictures/escape.png")
+
+    def test_workspace_image_route_preserves_not_found_for_missing_files(self) -> None:
+        """Keep missing local images as the route's existing 404 response."""
+        responses = []
+        handler = object.__new__(BrainExplorerRequestHandler)
+        handler._send_json = lambda status, payload: responses.append((status, payload))
+        handler._send_picture_file = lambda picture_file: self.fail("Missing image must not be sent.")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            with patch(
+                "brain.infrastructure.explorer.routes.resource_routes.get_workspace_root",
+                return_value=workspace,
+            ):
+                handler._handle_workspace_image("GET", {"path": "$agent/pictures/missing.png"})
+
+        self.assertEqual(responses, [(
+            HTTPStatus.NOT_FOUND,
+            {"ok": False, "error": "Image not found."},
+        )])
 
     def test_voice_file_resolution_rejects_path_traversal(self) -> None:
         """Ensure stored voice playback cannot escape the dialogue directory."""
@@ -115,6 +222,42 @@ class BrainExplorerTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertIn("--deep", calls[0]["arguments"])
         self.assertNotIn("--response", calls[0]["arguments"])
+
+    def test_knowledge_deltas_route_aggregates_all_physical_scopes(self) -> None:
+        """Ensure the Explorer accepts the all-scope delta review emitted by its UI."""
+        calls = []
+        handler = object.__new__(BrainExplorerRequestHandler)
+
+        def fake_run(arguments: list[str], stdin_text: str | None = None, expect_json: bool = True) -> CliCommandResult:
+            calls.append(arguments)
+            scope = arguments[arguments.index("--scope") + 1]
+            data = {
+                "review_rows": [{"id": 1 if scope == "global" else 2}],
+                "candidate_ids": [1 if scope == "global" else 2],
+                "blocked_ids": [],
+            }
+            return CliCommandResult(True, ["fake", *arguments], 0, json.dumps(data), "", 1, data)
+
+        handler._run_cli = fake_run
+
+        result = handler._knowledge_deltas(
+            method="GET",
+            query={"scope": "all", "limit": "80", "status": "pending"},
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual([row["scope"] for row in result["data"]["review_rows"]], ["global", "local"])
+        self.assertEqual(result["data"]["candidate_ids"], [1, 2])
+        self.assertEqual(len(calls), 2)
+
+    def test_knowledge_deltas_route_requires_physical_scope_for_apply(self) -> None:
+        """Prevent ambiguous all-scope delta mutation requests."""
+        handler = object.__new__(BrainExplorerRequestHandler)
+
+        with self.assertRaises(ApiRouteError) as context:
+            handler._knowledge_deltas(method="POST", query={"scope": "all"})
+
+        self.assertEqual(context.exception.status, HTTPStatus.BAD_REQUEST)
 
     def test_global_query_route_accepts_messages_source(self) -> None:
         """Explorer must forward persisted messages as a first-class source."""

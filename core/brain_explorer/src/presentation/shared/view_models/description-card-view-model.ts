@@ -44,6 +44,8 @@ export interface DescriptionCardOptions {
      * @type {boolean | undefined}
      */
     openFirst?: boolean;
+    /** Whether every parsed section starts expanded. */
+    openAll?: boolean;
 }
 
 /**

@@ -18,7 +18,16 @@ def project_picture_descriptions(
     guidance: PictureGuidanceConfigDTO,
     repository: KnowledgeRepository | None = None,
 ) -> dict[str, Any]:
-    """Project described pictures and explicitly recognized configured labels."""
+    """Project described pictures and explicitly recognized configured labels.
+
+    Args:
+        records (Iterable[PictureRecord]): Picture records eligible for projection.
+        guidance (PictureGuidanceConfigDTO): Configured character and tag evidence rules.
+        repository (KnowledgeRepository | None): Optional knowledge repository override.
+
+    Returns:
+        dict[str, Any]: Aggregate counts and per-record projection errors.
+    """
     repo = repository or KnowledgeRepository(scope="global")
     projected: list[dict[str, Any]] = []
     for record in records:
@@ -38,17 +47,33 @@ def project_picture_description(
     guidance: PictureGuidanceConfigDTO,
     repository: KnowledgeRepository | None = None,
 ) -> dict[str, Any]:
-    """Persist a picture, its description, and evidence-bound character/tag relations."""
+    """Persist a picture and its evidence-bound character and tag relations.
+
+    Args:
+        record (PictureRecord): Described picture record to project.
+        guidance (PictureGuidanceConfigDTO): Configured character and tag evidence rules.
+        repository (KnowledgeRepository | None): Optional knowledge repository override.
+
+    Returns:
+        dict[str, Any]: Counts and identifiers produced by the projection.
+    """
     repo = repository or KnowledgeRepository(scope="global")
+    record_scope = str(getattr(record, "scope", "local") or "local")
+    source_path = (
+        f"pictures/{record.relative_path}"
+        if record_scope == "local"
+        else f"pictures/{record_scope}/{record.relative_path}"
+    )
+    entity_path = record.relative_path if record_scope == "local" else f"{record_scope}/{record.relative_path}"
     source_id = repo.upsert_source(
-        SourceDTO(source_type="picture", path=f"pictures/{record.relative_path}", title=record.filename),
+        SourceDTO(source_type="picture", path=source_path, title=record.filename),
     )
     _replace_picture_relations(repository=repo, source_id=source_id)
     picture_id = repo.upsert_entity(
         EntityDTO(
             source_id=source_id,
             entity_class="FILE.Picture",
-            canonical_name=record.relative_path,
+            canonical_name=entity_path,
             description=record.description,
             confidence=1.0,
         ),
@@ -57,7 +82,7 @@ def project_picture_description(
         EntityDTO(
             source_id=source_id,
             entity_class="MISC.Description",
-            canonical_name=f"Description: {record.relative_path}",
+            canonical_name=f"Description: {entity_path}",
             description=record.description,
             confidence=1.0,
         ),

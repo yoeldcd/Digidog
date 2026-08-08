@@ -93,6 +93,7 @@ lives in `brain.presentation.router`, and human query rendering lives in `brain.
 - [Brain models and DTOs](brain-models-dto.md)
 - [Brain CLI commands](brain-cli-commands.md)
 - [Brain security](brain-security.md)
+- [Avatar presentation architecture](avatar-presentation-architecture.md)
 
 ## Getting Started:
 

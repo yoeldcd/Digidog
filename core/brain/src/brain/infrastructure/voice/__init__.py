@@ -5,6 +5,6 @@
 
 from __future__ import annotations
 
-from brain.infrastructure.voice.service import VoiceService
+from brain.infrastructure.voice.service.voice_service import VoiceService
 
 __all__ = ["VoiceService"]

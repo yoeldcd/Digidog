@@ -11,10 +11,36 @@ from brain.infrastructure.runtime.paths import get_workspace_root
 from brain.infrastructure.vectorstores.messages import search_message_vectors
 
 
-def query_messages_backend(text: str, limit: int) -> list[GlobalQueryResultDTO]:
-    """Search persisted avatar words in the active local consumer."""
+from brain.application.querying.language import extract_query_keywords
+
+
+def query_messages_backend(text: str, limit: int | None) -> list[GlobalQueryResultDTO]:
+    """Search persisted avatar messages in the active local consumer with broad keyword fallback.
+
+    Args:
+        text (str): Text query applied to persisted messages. Falls back to extracted keywords when exact match is empty.
+        limit (int): Maximum number of results.
+
+    Returns:
+        list[GlobalQueryResultDTO]: Ranked text-backed message results.
+    """
     repository = MessageRepository(consumer_path=get_workspace_root(), require_registered=False)
     records = repository.list_messages(query=text, limit=limit)
+    if not records:
+        keywords = extract_query_keywords(query=text, min_length=3)
+        if keywords:
+            seen_ids: set[str] = set()
+            records = []
+            for keyword in keywords:
+                keyword_records = repository.list_messages(query=keyword, limit=limit)
+                for record in keyword_records:
+                    if record.id not in seen_ids:
+                        seen_ids.add(record.id)
+                        records.append(record)
+                        if limit is not None and len(records) >= limit:
+                            break
+                if limit is not None and len(records) >= limit:
+                    break
     results: list[GlobalQueryResultDTO] = []
     for rank, record in enumerate(records, 1):
         title: str = record.source_command or f"Avatar message at {record.created_at}"
@@ -47,8 +73,16 @@ def query_messages_backend(text: str, limit: int) -> list[GlobalQueryResultDTO]:
     return results
 
 
-def query_messages_vector_backend(text: str, limit: int) -> list[GlobalQueryResultDTO]:
-    """Search message embeddings and hydrate every result from SQLite."""
+def query_messages_vector_backend(text: str, limit: int | None) -> list[GlobalQueryResultDTO]:
+    """Search message embeddings and hydrate every result from SQLite.
+
+    Args:
+        text (str): Semantic search query.
+        limit (int): Maximum number of results.
+
+    Returns:
+        list[GlobalQueryResultDTO]: Hydrated vector results or an availability warning.
+    """
     workspace_root = get_workspace_root()
     try:
         matches = search_message_vectors(consumer_path=workspace_root, text=text, limit=limit)

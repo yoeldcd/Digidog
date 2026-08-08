@@ -3,7 +3,7 @@
  * @see https://x.com/SAY6267
  */
 
-import { escapeHtml } from "../../shared/utils/html.ts";
+import { escapeHtml, renderMarkdown } from "../../shared/utils/html.ts";
 import { icon } from "../../shared/utils/icons.ts";
 import { isBacklogPipPriority } from "../validators/backlog-pip-priority.ts";
 import type {
@@ -330,7 +330,7 @@ export class BacklogPip extends HTMLElement {
                     <div class="pip-task-detail" style="padding: 6px 8px 8px 8px; border-top: 1px solid var(--border); background: color-mix(in srgb, var(--bg), transparent 60%); font-size: 11px; color: var(--text);">
                         <span style="font-weight: bold; color: var(--primary); margin-right: 8px;">${escapeHtml(task.id)}</span>
                         <span style="background: var(--surface-strong); padding: 1px 4px; border-radius: 3px; font-size: 10px; font-weight: bold;">${escapeHtml(String(task.priority).toUpperCase())}</span>
-                        ${task.description ? `<p class="pip-task-desc" style="margin-top: 4px; line-height: 1.4; white-space: pre-wrap;">${escapeHtml(task.description)}</p>` : ""}
+                        ${task.description ? `<div class="pip-task-desc" style="margin-top: 4px; line-height: 1.4;">${renderMarkdown(task.description)}</div>` : ""}
                     </div>
                 ` : ""}
             </div>

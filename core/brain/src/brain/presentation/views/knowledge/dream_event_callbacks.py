@@ -10,7 +10,7 @@ import argparse
 from typing import Any, Callable
 
 # Application Modules Imports
-from brain.application.knowledge.pipeline.delta_events import ApplicationEventCallback
+from brain.application.knowledge.pipeline.deltas.delta_events import ApplicationEventCallback
 from brain.presentation.terminal import render_placeholders
 from brain.presentation.views.knowledge.dream_application_events import render_application_event_lines
 from brain.presentation.views.knowledge.dream_llm_events import render_llm_event_lines

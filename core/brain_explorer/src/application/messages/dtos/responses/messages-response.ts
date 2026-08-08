@@ -254,6 +254,12 @@ export interface VoiceStatusResponse {
      */
     activeSpeakId: string;
     /**
+     * Whether the daemon owns audible playback or its preparation phase.
+     * Muted visual presentation is deliberately excluded.
+     * @type {boolean}
+     */
+    playbackActive: boolean;
+    /**
      * Whether narration output is currently suppressed.
      * @type {boolean}
      */

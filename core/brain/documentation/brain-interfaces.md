@@ -336,14 +336,21 @@ index state.
 
 **Contract:** Returns a JSON-compatible index dictionary and does not require the vectorstore.
 
-#### `update_index_record()`
+#### `update_index_entry()`
 
-**What It Does:** Updates one memory index record after an entry changes.
+**What It Does:** Updates the memory source index after one memory entry changes.
 
 **Used By:** Memory write and delete commands.
 
-**Contract:** Accepts category, key, and deleted state. It updates the persisted index for that record.
+**Contract:** Accepts category, key, and deleted state. It refreshes the persisted source-index state for that memory entry.
 
+### `core/brain/src/brain/application/records/service.py`
+
+**What It Does:** Owns always-on local records independently from Markdown memory entries.
+
+**Used By:** Record command actions and context/query consumers.
+
+**Contract:** Persists `$agent/data/records.json`, assigns monotonic `rec##` identifiers, validates the indexed record dictionary, and exposes add, list, read, and delete operations. Policy command spellings are CLI aliases and do not create a second persistence layer.
 ### `core/brain/src/brain/application/logs/index_service.py`
 
 **What It Does:** Rebuilds the workspace log index. Parsing, vector synchronization, index rendering,

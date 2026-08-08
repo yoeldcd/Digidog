@@ -21,7 +21,16 @@ WORKSPACE_ROOT = Path(os.environ.get("WORKSPACE_ROOT", "."))
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Export logs to stdout, files, or zip."""
+    """Export filtered DB-backed logs to standard output, files, or a ZIP archive.
+
+    Args:
+        args (argparse.Namespace): Parsed command options selecting export mode,
+            destination, filters, and output settings.
+
+    Returns:
+        int: Zero when the export succeeds; otherwise one after reporting an
+            invalid option combination or export error.
+    """
     color_enabled = getattr(args, "color", False)
     try:
         workspace_root = Path(WORKSPACE_ROOT).resolve()

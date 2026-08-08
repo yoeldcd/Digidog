@@ -12,7 +12,7 @@ import { handleShellSearchShortcut } from "../controllers/shell-keyboard-control
 import { renderShellNavigation } from "../renderers/shell-navigation-renderer.ts";
 import type { RouteId } from "../../../application/shell/contracts/shell-contracts.ts";
 import type { AppState } from "../state/app-state.ts";
-import type { ComponentContext } from "../../shared/view_models/component-context-view-model.ts";
+import type { ComponentContext, ReactiveContentFilterLayout, TargetFocusableLayout } from "../../shared/view_models/component-context-view-model.ts";
 import type { ApiRequestEventDetail, NotificationTimerViewModel, ShellNotificationInput } from "../view_models/app-shell-view-model.ts";
 
 /**
@@ -42,6 +42,7 @@ export class BrainExplorerApp extends HTMLElement {
      * @type {RouteId}
      */
     #activeRouteId: RouteId = "dashboard";
+    #preservedQueryView: HTMLElement | null = null;
     /**
      * Prevents duplicate subscriptions to `AppState` lifecycle events.
      * @type {boolean}
@@ -63,25 +64,35 @@ export class BrainExplorerApp extends HTMLElement {
      */
     #openCallIds = new Set<string>();
     /**
-     * Most recently created voice playback element, or null when idle.
-     * @type {HTMLAudioElement | null}
-     */
-    #latestVoiceAudio: HTMLAudioElement | null = null;
-    /**
      * Dismissal timers indexed by notification identity.
      * @type {Map<string, NotificationTimerViewModel>}
      */
     #notificationTimers = new Map<string, NotificationTimerViewModel>();
     /**
+     * Debounces reactive filtering of the currently mounted layout.
+     * @type {number | null}
+     */
+    #reactiveSearchTimer: number | null = null;
+    /**
      * Stable listener delegating the global search shortcut to its feature controller.
      * @type {(event: KeyboardEvent) => void}
      */
     #handleGlobalKeyDown = (event: KeyboardEvent): void => handleShellSearchShortcut(this, event);
+    /**
+     * Original global error hook restored when the shell detaches.
+     * @type {OnErrorEventHandler | null}
+     */
+    #previousWindowOnError: OnErrorEventHandler | null = null;
+    /**
+     * Prevents duplicate global error subscriptions across remounts.
+     * @type {boolean}
+     */
+    #globalErrorHandlingBound = false;
 
     /**
-     * Assign runtime dependencies.
+     * Assign runtime dependencies and initialize shell state and bindings.
      *
-     * @param {object} context Component context.
+     * @param {ComponentContext} context Component context containing API adapter and presentation state store.
      * @returns {void}
      */
     set context(context: ComponentContext) {
@@ -93,26 +104,109 @@ export class BrainExplorerApp extends HTMLElement {
     }
 
     /**
-     * Render shell when attached.
+     * Render shell and attach global window event listeners when mounted to the DOM.
      *
      * @returns {void}
      */
-    connectedCallback() {
+    connectedCallback(): void {
         if (this.#state && this.#api && !this.querySelector(".app-shell")) {
             this.#renderShell();
         }
         window.addEventListener("keydown", this.#handleGlobalKeyDown);
+        this.#bindGlobalErrorHandling();
     }
 
     /**
-     * Remove keyboard shortcut listener when detached.
+     * Remove global window event listeners and active timers when unmounted from the DOM.
      *
      * @returns {void}
      */
-    disconnectedCallback() {
+    disconnectedCallback(): void {
         window.removeEventListener("keydown", this.#handleGlobalKeyDown);
+        this.#unbindGlobalErrorHandling();
         this.#notificationTimers.forEach(record => window.clearTimeout(record.timer));
         this.#notificationTimers.clear();
+        if (this.#reactiveSearchTimer !== null) {
+            window.clearTimeout(this.#reactiveSearchTimer);
+        }
+    }
+
+    /**
+     * Reports a captured global browser or resource failure through the official notification channel.
+     *
+     * @param {ErrorEvent | Event} event Captured browser error event or element resource loading failure event.
+     * @returns {void}
+     */
+    #handleGlobalError = (event: ErrorEvent | Event): void => {
+        if (event instanceof ErrorEvent) {
+            const fileName = event.filename ? event.filename.split("/").pop() || "" : "";
+            const source = fileName ? `${fileName}:${event.lineno || 0}` : "Script runtime";
+            const message = event.error?.message || event.message || "Unhandled script error.";
+            this.#pushNotification({ tone: "error", title: "Runtime error", message: `${source} - ${message}` });
+            return;
+        }
+
+        const target = event.target;
+        if (target instanceof HTMLElement) {
+            const tag = target.tagName.toLowerCase();
+            const src = (target as HTMLImageElement | HTMLScriptElement | HTMLAudioElement).src
+                || (target as HTMLLinkElement).href
+                || "";
+            const resourceName = src ? src.split("/").pop() || src : tag;
+            const message = src ? `Failed to load <${tag}>: ${resourceName}` : `Failed to load <${tag}> element.`;
+            this.#pushNotification({ tone: "error", title: "Resource error", message });
+            return;
+        }
+
+        const message = (event as CustomEvent).detail || "Unexpected browser event error.";
+        this.#pushNotification({ tone: "error", title: "Browser error", message: String(message) });
+    };
+
+    /**
+     * Reports unhandled async promise rejections through the official notification channel.
+     *
+     * @param {PromiseRejectionEvent} event Unhandled promise rejection event containing the rejection reason.
+     * @returns {void}
+     */
+    #handleUnhandledRejection = (event: PromiseRejectionEvent): void => {
+        const reason = event.reason;
+        const message = reason instanceof Error ? reason.message : String(reason || "Unhandled promise rejection.");
+        const title = reason instanceof Error && reason.name && reason.name !== "Error" ? reason.name : "Async error";
+        this.#pushNotification({ tone: "error", title, message });
+    };
+
+    /**
+     * Bind window error listeners and capture runtime/resource errors into the notification stack.
+     *
+     * @returns {void}
+     */
+    #bindGlobalErrorHandling(): void {
+        if (this.#globalErrorHandlingBound) return;
+        this.#previousWindowOnError = window.onerror;
+        window.onerror = (message, source, lineno, _column, error) => {
+            const fileName = source ? String(source).split("/").pop() || "" : "";
+            const location = fileName ? `${fileName}:${lineno || 0}` : "Runtime";
+            const detail = error?.message || String(message || "Unexpected browser error.");
+            this.#pushNotification({ tone: "error", title: "Runtime error", message: `${location} - ${detail}` });
+            return this.#previousWindowOnError?.(message, source, lineno, _column, error) ?? false;
+        };
+        window.addEventListener("error", this.#handleGlobalError, true);
+        window.addEventListener("unhandledrejection", this.#handleUnhandledRejection);
+        this.#globalErrorHandlingBound = true;
+    }
+
+    /**
+     * Restore the global browser error hooks owned by this shell instance.
+     *
+     * @returns {void}
+     */
+    #unbindGlobalErrorHandling(): void {
+        if (!this.#globalErrorHandlingBound) return;
+        window.removeEventListener("error", this.#handleGlobalError, true);
+        window.removeEventListener("unhandledrejection", this.#handleUnhandledRejection);
+        this.#globalErrorHandlingBound = false;
+        if (window.onerror) window.onerror = this.#previousWindowOnError;
+        this.#previousWindowOnError = null;
     }
 
     /**
@@ -129,9 +223,9 @@ export class BrainExplorerApp extends HTMLElement {
             <div class="app-shell ${this.#state.sidebarOpen ? "is-sidebar-open" : "is-sidebar-collapsed"}">
                 <header class="top-bar">
                     <div class="brand-lockup" style="display: flex; align-items: center; gap: 6px;">
-                        <span class="brain-mark">${icon("pulse")}</span>
+                        <img class="brain-mark" src="./brain-explorer-favicon.png" alt="DigiDog">
                         <span style="font-size: 16px; font-weight: 600; color: var(--text-normal); display: inline-flex; align-items: center;">
-                            Brain ~&nbsp;
+                            Digidog ~&nbsp;
                             <details class="action-menu project-selector-menu" style="position: relative; display: inline-block;">
                                 <summary style="cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: 4px; padding-right: 14px; background-image: url(&quot;data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23888888' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>&quot;); background-repeat: no-repeat; background-position: right center; background-size: 10px; outline: none; user-select: none;" data-role="project-selector-summary">
                                     Loading...
@@ -148,17 +242,20 @@ export class BrainExplorerApp extends HTMLElement {
                             <kbd>Ctrl + Alt + S</kbd>
                         </div>
                         <details class="action-menu search-options-menu">
-                            <summary title="Search sources and modes" aria-label="Search sources and modes">${icon("sliders")}</summary>
+                            <summary title="Search sources and methods" aria-label="Search sources and methods">${icon("sliders")}</summary>
                             <div class="action-menu-panel search-options-panel">
-                                <fieldset>
+                                <fieldset data-search-group="search-source">
                                     <legend>Sources</legend>
+                                    <label class="search-options-master"><input type="checkbox" data-search-select-all="search-source" aria-label="Select or deselect all sources" checked>All sources</label>
                                     <label><input type="checkbox" name="search-source" value="memory" checked>Memory</label>
                                     <label><input type="checkbox" name="search-source" value="knowledge" checked>Knowledge</label>
                                     <label><input type="checkbox" name="search-source" value="messages" checked>Messages</label>
                                     <label><input type="checkbox" name="search-source" value="pictures" checked>Pictures</label>
+                                    <label><input type="checkbox" name="search-source" value="backlog" checked>Backlog</label>
                                 </fieldset>
-                                <fieldset>
-                                    <legend>Modes</legend>
+                                <fieldset data-search-group="search-mechanism">
+                                    <legend>Methods</legend>
+                                    <label class="search-options-master"><input type="checkbox" data-search-select-all="search-mechanism" aria-label="Select or deselect all methods" checked>All methods</label>
                                     <label><input type="checkbox" name="search-mechanism" value="graph" checked>Graph</label>
                                     <label><input type="checkbox" name="search-mechanism" value="vector" checked>Vector</label>
                                     <label><input type="checkbox" name="search-mechanism" value="text" checked>Text</label>
@@ -175,7 +272,7 @@ export class BrainExplorerApp extends HTMLElement {
                 <aside class="side-nav">
                     <button class="sidebar-collapse" data-action="toggle-sidebar"></button>
                     <nav data-role="side-nav-list" aria-label="Main navigation">
-                        ${renderShellNavigation(this.#state.route)}
+                        ${renderShellNavigation(this.#state.route, this.#preservedQueryView !== null)}
                     </nav>
                 </aside>
 
@@ -198,6 +295,10 @@ export class BrainExplorerApp extends HTMLElement {
         this.#bindShellEvents();
         this.#syncTheme();
         this.#syncSidebar();
+        const persistedWorkspace = localStorage.getItem("active_project_path")?.trim() || null;
+        if (persistedWorkspace) {
+            this.#api.setWorkspaceRootOverride(persistedWorkspace);
+        }
         this.#mountRoute();
         this.#syncFooter();
         this.#renderDiagnosticsPanel();
@@ -221,20 +322,17 @@ export class BrainExplorerApp extends HTMLElement {
                                 });
                             }
                             allProjects.sort((a, b) => a.path.localeCompare(b.path));
-                            
                             const activeProjectIsRegistered = allProjects.some(project => project.path === activePath);
                             if (!activeProjectIsRegistered && defaultPath) {
                                 activePath = defaultPath;
                                 localStorage.setItem("active_project_path", defaultPath);
                             }
-                            
                             if (activePath) {
                                 summaryEl.textContent = activePath;
                                 api.setWorkspaceRootOverride(activePath);
                             } else {
                                 summaryEl.textContent = defaultPath;
                             }
-                            
                             allProjects.forEach(proj => {
                                 const btn = document.createElement("button");
                                 btn.type = "button";
@@ -394,33 +492,114 @@ export class BrainExplorerApp extends HTMLElement {
             return;
         }
         shell.addEventListener("click", event => this.#handleShellClick(event));
+        const syncTooltipAnchor = (event: Event): void => {
+            const target = event.target instanceof Element
+                ? event.target.closest<HTMLElement>(".side-nav-item, .sidebar-collapse")
+                : null;
+            if (target) this.#syncTooltipAnchor(target);
+        };
+        shell.addEventListener("pointerover", syncTooltipAnchor);
+        shell.addEventListener("focusin", syncTooltipAnchor);
         shell.addEventListener("submit", event => {
             if (event.target instanceof Element && event.target.matches("[data-role='cli-prompter']")) {
                 event.preventDefault();
                 this.#runCliPrompt();
             }
         });
-        this.querySelector<HTMLInputElement>("[data-role='global-shell-search']")?.addEventListener("keydown", event => {
-            if (event instanceof KeyboardEvent && event.key === "Enter") {
-                const value = event.target instanceof HTMLInputElement ? event.target.value.trim() : "";
-                if (value) {
-                    this.querySelector(".search-options-menu")?.removeAttribute("open");
-                    state.setPendingQuery(value, this.#selectedSearchOptions());
-                    return;
-                }
-                state.setRoute("query");
-            }
+        const searchInput = this.querySelector<HTMLInputElement>("[data-role='global-shell-search']");
+        searchInput?.addEventListener("input", event => {
+            const value = event.currentTarget instanceof HTMLInputElement ? event.currentTarget.value : "";
+            this.#scheduleReactiveSearch(value);
         });
+        searchInput?.addEventListener("keydown", event => {
+            if (!(event instanceof KeyboardEvent) || event.key !== "Enter") return;
+            const value = event.currentTarget instanceof HTMLInputElement ? event.currentTarget.value.trim() : "";
+            const options = this.#selectedSearchOptions();
+            if (!options.sources.length || !options.mechanisms.length) {
+                this.#pushNotification({ tone: "error", title: "Search filters required", message: "Please select at least one source and method." });
+                return;
+            }
+            if (!value) {
+                state.setRoute("query");
+                return;
+            }
+            if (this.#reactiveSearchTimer !== null) window.clearTimeout(this.#reactiveSearchTimer);
+            this.querySelector(".search-options-menu")?.removeAttribute("open");
+            state.setPendingQuery(value, options);
+        });
+        this.querySelector(".search-options-panel")?.addEventListener("change", event => this.#handleSearchOptionChange(event));
+        this.#syncSearchGroupMasters();
+    }
+
+    /**
+     * Anchor a collapsed-rail tooltip to the live centre of its invoking control.
+     *
+     * @param {HTMLElement} target Navigation control that owns the tooltip.
+     * @returns {void} Nothing.
+     */
+    #syncTooltipAnchor(target: HTMLElement): void {
+        const bounds = target.getBoundingClientRect();
+        target.style.setProperty("--tooltip-top", `${Math.round(bounds.top + bounds.height / 2)}px`);
     }
 
     /**
      * Collect non-exclusive search source and mechanism selections.
      * @returns {Record<string, string[]>} A record mapping 'sources' and 'mechanisms' keys to arrays of their respective selected input values.
      */
-    #selectedSearchOptions(): Record<string, string[]> {
+    #selectedSearchOptions(): { sources: string[]; mechanisms: string[] } {
         const selected = (name: string): string[] => Array.from(this.querySelectorAll<HTMLInputElement>(`input[name='${name}']:checked`))
             .map(input => input.value);
         return { sources: selected("search-source"), mechanisms: selected("search-mechanism") };
+    }
+
+    /** Toggle one option group or synchronize its accessible master checkbox. */
+    #handleSearchOptionChange(event: Event): void {
+        const input = event.target instanceof HTMLInputElement ? event.target : null;
+        if (!input) return;
+        const groupName = input.dataset.searchSelectAll;
+        if (groupName) {
+            this.querySelectorAll<HTMLInputElement>(`input[name='${groupName}']`).forEach(child => {
+                child.checked = input.checked;
+            });
+        }
+        this.#syncSearchGroupMasters();
+    }
+
+    /** Reflect checked, unchecked, and partial child state in both master controls. */
+    #syncSearchGroupMasters(): void {
+        this.querySelectorAll<HTMLInputElement>("[data-search-select-all]").forEach(master => {
+            const name = master.dataset.searchSelectAll || "";
+            const children = Array.from(this.querySelectorAll<HTMLInputElement>(`input[name='${name}']`));
+            const checkedCount = children.filter(child => child.checked).length;
+            master.checked = children.length > 0 && checkedCount === children.length;
+            master.indeterminate = checkedCount > 0 && checkedCount < children.length;
+        });
+    }
+
+    /** Debounce local filtering and keep one-character input from narrowing a layout. */
+    #scheduleReactiveSearch(value: string): void {
+        if (this.#reactiveSearchTimer !== null) window.clearTimeout(this.#reactiveSearchTimer);
+        const normalized = value.trim();
+        this.#reactiveSearchTimer = window.setTimeout(() => {
+            this.#reactiveSearchTimer = null;
+            this.#applyReactiveSearch(normalized.length >= 2 ? normalized : "");
+        }, 200);
+    }
+
+    /** Forward the reactive phrase to the mounted route's existing local filter control. */
+    #applyReactiveSearch(query: string): void {
+        const routeView = this.querySelector<HTMLElement>("[data-route-host] > *") as (HTMLElement & Partial<ReactiveContentFilterLayout>) | null;
+        if (this.#activeRouteId === "query") {
+            routeView?.applyReactiveContentFilter?.(query);
+            return;
+        }
+
+        const routeSource: Partial<Record<RouteId, string>> = {
+            memory: "memory", knowledge: "knowledge", messages: "messages", pictures: "pictures", backlog: "backlog"
+        };
+        const source = routeSource[this.#activeRouteId];
+        if (!source || !this.#selectedSearchOptions().sources.includes(source)) return;
+        routeView?.applyReactiveContentFilter?.(query);
     }
 
     /**
@@ -470,6 +649,9 @@ export class BrainExplorerApp extends HTMLElement {
         if (action === "toggle-sidebar") {
             state.toggleSidebar();
         }
+        if (action === "return-to-results") {
+            state.setRoute("query");
+        }
         if (action === "run-cli-command") {
             this.#runCliPrompt();
         }
@@ -479,11 +661,8 @@ export class BrainExplorerApp extends HTMLElement {
      * Replay the latest persisted voice without requesting new synthesis.
      */
     #playLatestVoice() {
-        this.#latestVoiceAudio?.pause();
-        this.#latestVoiceAudio = new Audio(`/api/voice/latest?fresh=${Date.now()}`);
-        void this.#latestVoiceAudio.play().catch(() => {
-            this.#latestVoiceAudio = null;
-        });
+        if (!this.#api) return;
+        void this.#api.replayVoiceMessage().catch(() => undefined);
     }
 
     /**
@@ -516,20 +695,51 @@ export class BrainExplorerApp extends HTMLElement {
         const route = SHELL_ROUTES.find(item => item.id === state.route) ?? DEFAULT_SHELL_ROUTE;
         const host = this.querySelector("[data-route-host]");
         const refreshPendingQuery = route.id === "query" && Boolean(state.pendingQuery);
-        if (!host) {
-            return;
+        if (!host) return;
+
+        const mountedElement = host.firstElementChild as HTMLElement | null;
+        if (this.#activeRouteId === "query" && mountedElement?.querySelector(".query-results")) {
+            this.#preservedQueryView = mountedElement;
         }
-        const activeRouteIsMounted = host.childElementCount > 0 && this.#activeRouteId === route.id;
+
+        const activeRouteIsMounted = mountedElement !== null && this.#activeRouteId === route.id;
         if (activeRouteIsMounted && !refreshPendingQuery) {
+            this.#focusMountedRouteTarget(route.id, mountedElement, state);
             this.#syncActiveNav();
             return;
         }
+
+        if (route.id === "query" && this.#preservedQueryView && !refreshPendingQuery) {
+            host.setAttribute("aria-label", route.label);
+            host.replaceChildren(this.#preservedQueryView);
+            this.#activeRouteId = route.id;
+            this.#focusMountedRouteTarget(route.id, this.#preservedQueryView, state);
+            this.#syncActiveNav();
+            return;
+        }
+
         const element = document.createElement(route.element);
         if ("context" in element) element.context = { api, state };
         host.setAttribute("aria-label", route.label);
         host.replaceChildren(element);
         this.#activeRouteId = route.id;
+        this.#focusMountedRouteTarget(route.id, element, state);
         this.#syncActiveNav();
+    }
+
+    /** Consume and delegate one pending target only for contract-aware layouts. */
+    #focusMountedRouteTarget(route: RouteId, element: HTMLElement | null, state: AppState): void {
+        if (!element || !("focusTarget" in element) || typeof (element as Partial<TargetFocusableLayout>).focusTarget !== "function") {
+            return;
+        }
+        const target = state.consumeRouteTarget(route);
+        if (!target) {
+            return;
+        }
+        const focusResult = (element as HTMLElement & TargetFocusableLayout).focusTarget(target);
+        if (focusResult instanceof Promise) {
+            void focusResult.catch(() => undefined);
+        }
     }
 
     /**
@@ -543,6 +753,8 @@ export class BrainExplorerApp extends HTMLElement {
         this.querySelectorAll("[data-route]").forEach(button => {
             button.classList.toggle("is-active", button.getAttribute("data-route") === state.route);
         });
+        const returnButton = this.querySelector<HTMLButtonElement>("[data-action=\"return-to-results\"]");
+        if (returnButton) returnButton.hidden = this.#preservedQueryView === null || state.route === "query";
     }
 
     /**

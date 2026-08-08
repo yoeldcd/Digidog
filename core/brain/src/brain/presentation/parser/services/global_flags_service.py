@@ -7,7 +7,15 @@ from __future__ import annotations
 
 
 def extract_global_flags(argv: list[str]) -> tuple[list[str], bool, bool]:
-    """Remove global presentation flags from argv and return their runtime values."""
+    """Separate global presentation flags from command-specific arguments.
+
+    Args:
+        argv (list[str]): Raw command-line tokens after the executable name.
+
+    Returns:
+        tuple[list[str], bool, bool]: Remaining tokens, whether color is enabled,
+        and whether verbose activity logging is enabled.
+    """
     color_enabled: bool = "--color" in argv or "-c" in argv
     verbose_log: bool = "--verbose-log" in argv or "-vl" in argv
     cleaned_argv: list[str] = [

@@ -3,6 +3,7 @@
  * @see https://x.com/SAY6267
  */
 
+import type { PictureRecord } from "../../../application/pictures/dtos/responses/pictures-response.ts";
 import type { StructureTreeNode } from "../../shared/view_models/structure-tree-view-model.ts";
 
 /**
@@ -43,14 +44,18 @@ export class PictureDomainTreeProjector {
      * @type {Readonly<Record<string, number>>}
      */
     readonly #domainCounts: Readonly<Record<string, number>>;
+    /** Pictures loaded for a domain and exposed as actionable leaf nodes. */
+    readonly #picturesByDomain: ReadonlyMap<string, readonly PictureRecord[]>;
 
     /**
      * Create a projector for one picture registry snapshot.
      *
      * @param {Readonly<Record<string, number>>} domainCounts Canonical domain-to-direct-count mapping from the API.
+     * @param {ReadonlyMap<string, readonly PictureRecord[]>} picturesByDomain Hydrated pictures keyed by their direct domain.
      */
-    constructor(domainCounts: Readonly<Record<string, number>>) {
+    constructor(domainCounts: Readonly<Record<string, number>>, picturesByDomain: ReadonlyMap<string, readonly PictureRecord[]> = new Map()) {
         this.#domainCounts = domainCounts;
+        this.#picturesByDomain = picturesByDomain;
     }
 
     /**
@@ -91,6 +96,15 @@ export class PictureDomainTreeProjector {
      */
     #projectNode(node: PictureDomainAccumulator): StructureTreeNode {
         const children = [...node.children.values()].map(child => this.#projectNode(child));
+        const pictures = this.#picturesByDomain.get(node.path) || [];
+        const pictureNodes: StructureTreeNode[] = pictures.map(picture => ({
+            id: `picture:${picture.id}`,
+            path: node.path,
+            label: picture.filename,
+            title: picture.relative_path,
+            icon: "camera",
+            actions: [{ id: "download-picture", label: "Download", icon: "download" }],
+        }));
         const descendantCount = children.reduce((total, child) => total + Number(child.count || 0), 0);
         return {
             id: `pictures:${node.path || "all"}`,
@@ -98,7 +112,8 @@ export class PictureDomainTreeProjector {
             label: node.label,
             icon: "folder",
             count: node.ownCount + descendantCount,
-            children,
+            actions: [{ id: "import-picture", label: "Import", icon: "folderPlus" }],
+            children: [...children, ...pictureNodes],
         };
     }
 }

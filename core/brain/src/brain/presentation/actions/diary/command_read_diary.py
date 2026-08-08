@@ -14,7 +14,16 @@ from brain.presentation.terminal import render_placeholders, render_markdown, lo
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Read diary entries."""
+    """Read diary entries for a date and optional time-of-day filter.
+
+    Args:
+        args (argparse.Namespace): Parsed command options selecting the date,
+            optional time, output limit, and formatting settings.
+
+    Returns:
+        int: Zero when the requested diary content is rendered; otherwise one
+            after reporting an input or storage error.
+    """
     log_step(args, 'Reading diary entries...')
     color_enabled = getattr(args, "color", False)
     try:

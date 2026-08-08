@@ -15,7 +15,16 @@ from brain.presentation.terminal import render_placeholders, log_step
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Rebuild local vector collection."""
+    """Rebuild one local vector-store collection after confirmation.
+
+    Args:
+        args (argparse.Namespace): Parsed command options identifying the local
+            collection and its confirmation and output settings.
+
+    Returns:
+        int: Zero when the collection is rebuilt or explicitly aborted; otherwise
+            one after reporting an error.
+    """
     collection = args.collection.strip().lower()
     color_enabled = getattr(args, "color", False)
 

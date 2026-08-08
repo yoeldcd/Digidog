@@ -29,10 +29,36 @@ export interface ProfileEntry {
  */
 export interface ProfilesPayload {
     /**
-     * Stable profile names addressable by the read endpoint.
-     * @type {string[]}
+     * Compact profile summaries addressable by the read endpoint.
+     * @type {ProfileSummary[]}
      */
-    profiles: string[];
+    profiles: ProfileSummary[];
+}
+
+/**
+ * Compact operational profile metadata.
+ */
+export interface ProfileSummary {
+    /**
+     * Stable incremental identifier.
+     * @type {number}
+     */
+    id: number;
+    /**
+     * Canonical profile name.
+     * @type {string}
+     */
+    name: string;
+    /**
+     * Command that retrieves the full profile.
+     * @type {string}
+     */
+    retrieve_command: string;
+    /**
+     * Concise guidance describing when the profile should be selected.
+     * @type {string}
+     */
+    use_when: string;
 }
 
 /**

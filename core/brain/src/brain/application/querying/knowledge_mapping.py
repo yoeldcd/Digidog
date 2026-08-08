@@ -59,7 +59,15 @@ def wrap_knowledge_result(
 
 
 def source_ref_from_knowledge_data(data: dict[str, Any], scope: str) -> QuerySourceRefDTO:
-    """Build a structured source reference from knowledge result data."""
+    """Build a structured source reference from knowledge result data.
+
+    Args:
+        data (dict[str, Any]): Canonical knowledge payload.
+        scope (str): Knowledge scope that owns the payload.
+
+    Returns:
+        QuerySourceRefDTO: Reference to the supporting knowledge source.
+    """
     path: str = str(data.get("source_path") or data.get("path") or "")
     return source_ref_from_path(
         path=path,
@@ -70,7 +78,15 @@ def source_ref_from_knowledge_data(data: dict[str, Any], scope: str) -> QuerySou
 
 
 def knowledge_result_title(kind: str, data: dict[str, Any]) -> str:
-    """Return the display title for a knowledge result."""
+    """Return the display title for a knowledge result.
+
+    Args:
+        kind (str): Knowledge record kind.
+        data (dict[str, Any]): Canonical knowledge payload.
+
+    Returns:
+        str: Reader-facing entity or relation title.
+    """
     if kind == "relation":
         subject_name: str = str(data.get("subject_name") or "")
         object_name: str = str(data.get("object_name") or "")
@@ -92,7 +108,17 @@ def knowledge_content(
     query_text: str,
     source_ref: QuerySourceRefDTO,
 ) -> QueryContentDTO:
-    """Build the content block for a knowledge result."""
+    """Build the normalized content block for a knowledge result.
+
+    Args:
+        data (dict[str, Any]): Canonical knowledge payload.
+        title (str): Reader-facing result title.
+        query_text (str): Query used to produce the result.
+        source_ref (QuerySourceRefDTO): Structured supporting-source reference.
+
+    Returns:
+        QueryContentDTO: Normalized result content for presentation.
+    """
     direct_text: str = str(
         data.get("content_excerpt")
         or data.get("quote")
@@ -122,7 +148,15 @@ def knowledge_content(
 
 
 def query_entities_from_knowledge_data(kind: str, data: dict[str, Any]) -> list[QueryEntityDTO]:
-    """Convert knowledge payload entities into query DTOs."""
+    """Convert knowledge payload entities into query DTOs.
+
+    Args:
+        kind (str): Knowledge record kind.
+        data (dict[str, Any]): Canonical knowledge payload.
+
+    Returns:
+        list[QueryEntityDTO]: Entities represented by the payload.
+    """
     raw_entities: list[dict[str, Any]] = [
         item
         for item in data.get("entities", [])
@@ -143,7 +177,14 @@ def query_entities_from_knowledge_data(kind: str, data: dict[str, Any]) -> list[
 
 
 def query_entity_from_dict(item: dict[str, Any]) -> QueryEntityDTO:
-    """Convert a dictionary into a query entity DTO."""
+    """Convert a dictionary into a query entity DTO.
+
+    Args:
+        item (dict[str, Any]): Canonical entity fields.
+
+    Returns:
+        QueryEntityDTO: Typed entity projection.
+    """
     return QueryEntityDTO(
         id=optional_int(item.get("id")),
         entity_class=str(item.get("entity_class") or item.get("class") or ""),
@@ -159,7 +200,14 @@ def query_entity_from_dict(item: dict[str, Any]) -> QueryEntityDTO:
 
 
 def query_relations_from_knowledge_data(data: dict[str, Any]) -> list[QueryRelationDTO]:
-    """Convert knowledge payload relations into query DTOs."""
+    """Convert knowledge payload relations into query DTOs.
+
+    Args:
+        data (dict[str, Any]): Canonical relation payload.
+
+    Returns:
+        list[QueryRelationDTO]: Relations represented by the payload.
+    """
     raw_relations: list[dict[str, Any]] = [
         item
         for item in data.get("relations", [])
@@ -179,7 +227,14 @@ def query_relations_from_knowledge_data(data: dict[str, Any]) -> list[QueryRelat
 
 
 def optional_int(value: Any) -> int | None:
-    """Convert optional values into integers when possible."""
+    """Convert an optional value into an integer when possible.
+
+    Args:
+        value (Any): Value to convert.
+
+    Returns:
+        int | None: Converted integer, or None when unavailable.
+    """
     if value is None or value == "":
         return None
     try:

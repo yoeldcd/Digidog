@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import json
 import subprocess
 import sys
 import tempfile
@@ -87,6 +88,19 @@ class CliCleanArchitectureTest(unittest.TestCase):
         list_profiles = next(module.SCHEMA for module in COMMAND_MODULES if module.SCHEMA.name == "list-profiles")
         self.assertFalse(any("--no-speak" in argument.flags for argument in list_profiles.arguments))
 
+    def test_task_list_alias_routes_to_show_backlog(self) -> None:
+        """Ensure the concise backlog-listing alias resolves to the canonical command."""
+        from brain.presentation.commands.registry import COMMAND_MODULES
+        from brain.presentation.parser.services.argument_parser_service import build_argument_parser
+
+        parser = build_argument_parser(COMMAND_MODULES)
+        args = parser.parse_args(["task-list", "core.brain", "--all", "--json"])
+
+        self.assertEqual(args.command, "show-backlog")
+        self.assertEqual(args.task_domain, "core.brain")
+        self.assertTrue(args.all)
+        self.assertTrue(args.json)
+
     def test_every_command_parser_accepts_json_output(self) -> None:
         """Ensure the parser supplies `--json` even when a command has no native JSON schema."""
         from brain.presentation.commands.registry import COMMAND_MODULES
@@ -111,15 +125,48 @@ class CliCleanArchitectureTest(unittest.TestCase):
         from brain.presentation.parser.services.argument_parser_service import build_argument_parser
 
         parser = build_argument_parser(COMMAND_MODULES)
-        args = parser.parse_args(["avatar-message", "# Hola", "--emotion", "happy"])
+        args = parser.parse_args(["avatar-message", "# Hola", "--emotion", "happy", "--task-id", "t713"])
 
         self.assertEqual(args.command, "speak")
         self.assertEqual(args.body, "# Hola")
         self.assertEqual(args.emotion, "happy")
+        self.assertEqual(args.task_id, "t713")
+
+        agent_args = parser.parse_args(["agent-message", "Plan listo", "--file", "planning/refactor.md"])
+        self.assertEqual(agent_args.command, "speak")
+        self.assertEqual(agent_args.file, "planning/refactor.md")
 
         stdin_args = parser.parse_args(["avatar-message", "--stdin-json", "--json"])
         self.assertTrue(stdin_args.stdin_json)
         self.assertTrue(stdin_args.json)
+
+    def test_avatar_message_prefixes_task_report_when_task_id_is_provided(self) -> None:
+        """Keep task-report labeling in the CLI runner without changing the voice mechanism."""
+        from brain.presentation.actions.general.command_speak import handle
+
+        args = Namespace(
+            text=None,
+            body="Validación completada.",
+            task_id="t713",
+            file="",
+            lang="es",
+            emotion="focused",
+            codex_thread_id="",
+            stdin_json=False,
+            json=True,
+            color=False,
+        )
+
+        with patch("brain.presentation.actions.general.command_speak.VoiceService.speak") as speak:
+            result = handle(args)
+
+        self.assertEqual(result, 0)
+        speak.assert_called_once_with(
+            text="Reporte de la tarea t713\n\nValidación completada.",
+            lang="es",
+            emotion="focused",
+            codex_thread_id="",
+        )
 
     def test_avatar_message_stdin_json_preserves_multiline_markdown(self) -> None:
         """Keep shell-sensitive Markdown intact at the CLI presentation boundary."""
@@ -151,6 +198,90 @@ class CliCleanArchitectureTest(unittest.TestCase):
             codex_thread_id="",
         )
 
+    def test_agent_message_embeds_and_narrates_a_valid_utf8_markdown_file(self) -> None:
+        """Append exact UI markers while projecting the whole message into speech."""
+        from brain.presentation.actions.general.command_speak import handle
+        from brain.infrastructure.voice.service.voice_service import clean_text_for_speech
+
+        with tempfile.TemporaryDirectory() as directory:
+            file_path = Path(directory) / "plan & safe.md"
+            file_path.write_text("# Paso\n\nValidación **UTF-8**: sí.", encoding="utf-8")
+            args = Namespace(
+                text=None,
+                body="Plan aprobado.",
+                file=str(file_path),
+                lang="es",
+                emotion="focused",
+                codex_thread_id="",
+                stdin_json=False,
+                json=True,
+                color=False,
+            )
+            with patch("brain.presentation.actions.general.command_speak.VoiceService") as service_type:
+                service = service_type.return_value
+                result = handle(args)
+                present = service.present
+
+        self.assertEqual(result, 0)
+        service.speak.assert_called_once_with(
+            text="Plan aprobado.", lang="es", emotion="focused", codex_thread_id=""
+        )
+        display_text = present.call_args.args[0].display_text
+        self.assertIn('<!-- avatar-file:start name="plan &amp; safe.md" -->', display_text)
+        self.assertIn("## 📎 plan &amp; safe.md", display_text)
+        self.assertIn("Validación **UTF-8**: sí.", display_text)
+        self.assertTrue(display_text.endswith("<!-- avatar-file:end -->"))
+        self.assertEqual(present.call_args.args[0].text, clean_text_for_speech(display_text))
+        self.assertIn("plan & safe.md", present.call_args.args[0].text)
+        self.assertNotIn("&amp;", present.call_args.args[0].text)
+        self.assertTrue(present.call_args.args[0].has_embedded_file)
+        self.assertTrue(present.call_args.args[0].manual_speech)
+        self.assertTrue(args.json_payload["hasEmbeddedFile"])
+
+    def test_agent_message_accepts_file_without_base_message(self) -> None:
+        """Queue only the manual file message when no base text is supplied."""
+        from brain.presentation.actions.general.command_speak import handle
+
+        with tempfile.TemporaryDirectory() as directory:
+            file_path = Path(directory) / "solo.md"
+            file_path.write_text("# Solo archivo", encoding="utf-8")
+            args = Namespace(
+                text=None,
+                body=None,
+                file=str(file_path),
+                lang="es",
+                emotion="",
+                codex_thread_id="",
+                stdin_json=False,
+                json=True,
+                color=False,
+            )
+            with patch("brain.presentation.actions.general.command_speak.VoiceService") as service_type:
+                self.assertEqual(handle(args), 0)
+        service = service_type.return_value
+        service.speak.assert_not_called()
+        service.present.assert_called_once()
+        self.assertTrue(service.present.call_args.args[0].manual_speech)
+
+    def test_agent_message_rejects_invalid_file_before_enqueue(self) -> None:
+        """Reject a missing file without partially enqueueing avatar work."""
+        from brain.presentation.actions.general.command_speak import handle
+
+        args = Namespace(
+            text=None,
+            body="No debe encolarse.",
+            file="missing-plan.md",
+            lang="es",
+            emotion="",
+            codex_thread_id="",
+            stdin_json=False,
+            json=True,
+            color=False,
+        )
+        with patch("brain.presentation.actions.general.command_speak.VoiceService") as voice_service:
+            self.assertEqual(handle(args), 1)
+        voice_service.assert_not_called()
+
     def test_query_messages_flag_selects_persisted_messages(self) -> None:
         """Keep the convenience flag equivalent to the explicit messages source."""
         from brain.presentation.actions.general.command_query import _resolve_query_source
@@ -162,6 +293,23 @@ class CliCleanArchitectureTest(unittest.TestCase):
 
         self.assertTrue(args.messages)
         self.assertEqual(_resolve_query_source(args), "messages")
+
+    def test_query_scope_alias_selects_knowledge_scope_without_changing_source(self) -> None:
+        """Bind scope to knowledge database selection while preserving source selection."""
+        from brain.presentation.actions.general.command_query import (
+            _resolve_query_knowledge_scope,
+            _resolve_query_source,
+        )
+        from brain.presentation.commands.registry import COMMAND_MODULES
+        from brain.presentation.parser.services.argument_parser_service import build_argument_parser
+
+        parser = build_argument_parser(COMMAND_MODULES)
+        args = parser.parse_args(
+            ["query", "anchored knowledge", "--source", "knowledge", "--scope", "local", "--json"]
+        )
+
+        self.assertEqual(_resolve_query_knowledge_scope(args), "local")
+        self.assertEqual(_resolve_query_source(args), "knowledge")
 
     def test_avatar_service_uses_the_public_service_command_names(self) -> None:
         """Expose the avatar lifecycle without voice-daemon command terminology."""
@@ -181,9 +329,113 @@ class CliCleanArchitectureTest(unittest.TestCase):
         from brain.presentation.commands.registry import COMMAND_MODULES
 
         command_names = {module.SCHEMA.name for module in COMMAND_MODULES}
-        self.assertTrue({"wiki", "propagate-agent-prompt"} <= command_names)
+        self.assertTrue({"wiki", "apply-patch", "propagate-agent-prompt"} <= command_names)
         self.assertTrue(callable(get_action_handler(command_name="wiki")))
+        self.assertTrue(callable(get_action_handler(command_name="apply-patch")))
         self.assertTrue(callable(get_action_handler(command_name="propagate-agent-prompt")))
+
+    def test_apply_patch_has_no_public_workspace_root_override(self) -> None:
+        """Keep workspace confinement owned by the runtime path service."""
+        from brain.presentation.commands.registry import COMMAND_MODULES
+
+        schema = next(item.SCHEMA for item in COMMAND_MODULES if item.SCHEMA.name == "apply-patch")
+        flags = {flag for argument in schema.arguments for flag in argument.flags}
+
+        self.assertNotIn("--root", flags)
+
+
+    def test_apply_patch_accepts_utf8_anchors_and_replacements_from_stdin(self) -> None:
+        """Validate ancla UTF-8: corazón 🩷 through the real stdin applicator."""
+        from brain.presentation.actions.utilities.command_apply_patch import handle
+
+        specification = json.dumps(
+            {
+                "edits": [
+                    {
+                        "path": "tests/test_cli_clean_architecture.py",
+                        "replacements": [
+                            {
+                                "old": "ancla UTF-8: corazón " + "\N{PINK HEART}",
+                                "new": "reemplazo válido: acción " + "\N{PAW PRINTS}",
+                                "expectedOccurrences": 1,
+                            }
+                        ],
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        )
+        args = Namespace(check=True, json=True, color=False)
+
+        with patch("sys.stdin", StringIO(specification)), patch(
+            "brain.presentation.actions.utilities.command_apply_patch.get_workspace_root",
+            return_value=SOURCE_ROOT,
+        ):
+            result = handle(args)
+
+        self.assertEqual(result, 0, args.json_payload)
+        self.assertTrue(args.json_payload["ok"])
+        self.assertEqual(args.json_payload["mode"], "check")
+        self.assertEqual(args.json_payload["files"][0]["operation"], "edit")
+        self.assertEqual(args.json_payload["files"][0]["replacements"], 1)
+        self.assertNotIn("output", args.json_payload)
+        self.assertNotIn("before", args.json_payload["files"][0])
+        self.assertNotIn("after", args.json_payload["files"][0])
+
+    def test_apply_patch_rejects_omitted_new_before_engine_construction(self) -> None:
+        """Reject the historical null replacement incident before filesystem access."""
+        from brain.presentation.actions.utilities.command_apply_patch import handle
+
+        specification = json.dumps(
+            {
+                "edits": [
+                    {
+                        "path": "unreachable.txt",
+                        "replacements": [{"old": "required", "expectedOccurrences": 1}],
+                    }
+                ]
+            }
+        )
+        args = Namespace(check=True, json=True, color=False)
+
+        with patch("sys.stdin", StringIO(specification)), patch(
+            "brain.presentation.actions.utilities.command_apply_patch.FileSystemPatchEngine"
+        ) as engine_type:
+            result = handle(args)
+
+        self.assertEqual(result, 1)
+        self.assertIn("new must be a string", args.json_payload["error"])
+        engine_type.assert_not_called()
+
+
+    def test_apply_patch_creates_new_file_atomically(self) -> None:
+        """Create a declared UTF-8 file through Brain without weakening existing-target edits."""
+        from brain.presentation.actions.utilities.command_apply_patch import handle
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            specification = json.dumps(
+                {"creates": [{"path": "new_module.py", "content": "VALUE: str = 'patita 🐾'\n"}]},
+                ensure_ascii=False,
+            )
+            args = Namespace(check=False, json=True, color=False)
+
+            with patch("sys.stdin", StringIO(specification)), patch(
+                "brain.presentation.actions.utilities.command_apply_patch.get_workspace_root",
+                return_value=root,
+            ):
+                result = handle(args)
+
+            self.assertEqual(result, 0, args.json_payload)
+            self.assertEqual((root / "new_module.py").read_text(encoding="utf-8"), "VALUE: str = 'patita 🐾'\n")
+            self.assertEqual(args.json_payload["mode"], "apply")
+            self.assertEqual(
+                args.json_payload["files"],
+                ({"path": "new_module.py", "operation": "create"},),
+            )
+            self.assertNotIn("output", args.json_payload)
+            self.assertNotIn("rollback", args.json_payload)
+            self.assertNotIn("cleanup", args.json_payload)
 
     def test_text_commands_declare_semantic_json_payloads(self) -> None:
         """Ensure commands without native serializers explicitly construct domain payloads."""
@@ -271,6 +523,7 @@ class CliCleanArchitectureTest(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(__import__("json").loads(stdout.getvalue()), {"ok": True, "items": [1]})
+        self.assertEqual(stdout.getvalue(), '{"ok":true,"items":[1]}\n')
 
     def test_init_delegates_log_migration_to_update_log_index(self) -> None:
         """Ensure init consumes update-log-index instead of duplicating log migration."""

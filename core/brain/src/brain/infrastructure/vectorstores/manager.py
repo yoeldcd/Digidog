@@ -47,11 +47,29 @@ class VectorStoreManager:
         )
 
     def chunk_content(self, category: str, key: str, content: str) -> list[tuple[str, str, dict]]:
-        """Split content into indexable chunks."""
+        """Split memory content into indexable chunks.
+
+        Args:
+            category (str): Dotted memory category.
+            key (str): Entry key within the category.
+            content (str): Canonical memory content.
+
+        Returns:
+            list[tuple[str, str, dict]]: Chunk IDs, searchable text, and metadata.
+        """
         return chunk_content(category=category, key=key, content=content)
 
     def add_or_update_file(self, category: str, key: str, content: str) -> dict[str, int | str]:
-        """Add or update a memory file in the vector store (global format)."""
+        """Replace all vectors associated with one canonical memory entry.
+
+        Args:
+            category (str): Dotted memory category.
+            key (str): Entry key within the category.
+            content (str): Canonical memory content to index.
+
+        Returns:
+            dict[str, int | str]: Indexed path and created and deleted counts.
+        """
         deleted_count = self.delete_file(category, key)
         chunks = self.chunk_content(category, key, content)
         if not chunks:
@@ -88,7 +106,15 @@ class VectorStoreManager:
         }
 
     def delete_file(self, category: str, key: str) -> int:
-        """Delete all vectors matching a specific memory file (global format)."""
+        """Delete every vector associated with one memory entry.
+
+        Args:
+            category (str): Dotted memory category.
+            key (str): Entry key within the category.
+
+        Returns:
+            int: Number of records deleted.
+        """
         deleted_count = self.count_by_metadata({"$and": [{"category": category}, {"key": key}]})
         self.collection.delete(
             where={"$and": [{"category": category}, {"key": key}]},
@@ -119,6 +145,13 @@ class VectorStoreManager:
         ``text`` is used transiently to calculate the embedding. Canonical
         content remains in Markdown or SQLite and is recovered through the
         reference metadata when a query returns this record.
+
+        Args:
+            doc_id (str): Stable vector record identifier.
+            text (str): Transient source text used to calculate an embedding.
+            metadata (dict): Canonical-reference metadata for hydration.
+            embedding (list[float] | None): Precomputed embedding, or ``None``
+                to generate it from ``text``.
         """
         self.delete_record(doc_id)
         if embedding is None:
@@ -130,14 +163,22 @@ class VectorStoreManager:
         )
 
     def delete_record(self, doc_id: str) -> None:
-        """Delete a record from the collection by ID."""
+        """Delete a collection record by identifier.
+
+        Args:
+            doc_id (str): Vector record identifier to remove.
+        """
         try:
             self.collection.delete(ids=[doc_id])
         except Exception:
             pass
 
     def count_records(self) -> int:
-        """Return the number of records currently stored in the collection."""
+        """Count records currently stored in the collection.
+
+        Returns:
+            int: Record count, or zero if the collection cannot be read.
+        """
         try:
             records = self.collection.get()
         except Exception:
@@ -145,7 +186,14 @@ class VectorStoreManager:
         return len(records.get("ids") or [])
 
     def count_by_metadata(self, filter_dict: dict) -> int:
-        """Return the number of records matching a metadata filter."""
+        """Count records matching a metadata filter.
+
+        Args:
+            filter_dict (dict): Chroma metadata filter expression.
+
+        Returns:
+            int: Matching record count, or zero when lookup fails.
+        """
         try:
             records = self.collection.get(where=filter_dict)
         except Exception:
@@ -153,7 +201,14 @@ class VectorStoreManager:
         return len(records.get("ids") or [])
 
     def delete_by_metadata(self, filter_dict: dict) -> int:
-        """Delete records from the collection matching a metadata filter."""
+        """Delete records matching a metadata filter.
+
+        Args:
+            filter_dict (dict): Chroma metadata filter expression.
+
+        Returns:
+            int: Number of records present before deletion.
+        """
         deleted_count = self.count_by_metadata(filter_dict)
         try:
             self.collection.delete(where=filter_dict)
@@ -161,13 +216,20 @@ class VectorStoreManager:
             pass
         return deleted_count
 
-    def search(self, query: str, limit: int = 5, where_filter: dict | None = None) -> list[dict]:
-        """Perform semantic search on the collection."""
+    def search(self, query: str, limit: int | None = 5, where_filter: dict | None = None) -> list[dict]:
+        """Perform semantic search on the collection.
+
+        Args:
+            query (str): Natural-language search query.
+            limit (int): Maximum number of matches.
+            where_filter (dict | None): Optional Chroma metadata constraints.
+
+        Returns:
+            list[dict]: Ranked and normalized vector matches.
+        """
         query_emb = get_embedding(query)
-        kwargs = {
-            "query_embeddings": [query_emb],
-            "n_results": limit,
-        }
+        result_limit = self.count_by_metadata(where_filter) if limit is None and where_filter else (self.count_records() if limit is None else limit)
+        kwargs = {"query_embeddings": [query_emb], "n_results": max(1, result_limit)}
         if where_filter:
             kwargs["where"] = where_filter
 
@@ -197,15 +259,38 @@ class VectorStoreManager:
         return formatted
 
     def index_log_file(self, file_path: Path) -> dict[str, int | str]:
-        """Parse and index all entries inside a standard `.log.md` file."""
+        """Parse and index entries from one canonical legacy log file.
+
+        Args:
+            file_path (Path): Canonical ``.log.md`` file to index.
+
+        Returns:
+            dict[str, int | str]: Source path and synchronization counts.
+        """
         return index_log_file_records(manager=self, file_path=file_path)
 
     def index_log_entries(self, entries: list[object]) -> dict[str, int | str]:
-        """Index DB-backed log records into the local logs collection."""
+        """Index canonical database-backed log records.
+
+        Args:
+            entries (list[object]): Log entities to index.
+
+        Returns:
+            dict[str, int | str]: Source label and synchronization counts.
+        """
         return index_log_entry_records(manager=self, entries=entries)
 
-    def search_logs(self, query: str, domain_filter: str | None = None, limit: int = 5) -> list[dict]:
-        """Perform semantic search on logs with optional domain filtering and recency decay."""
+    def search_logs(self, query: str, domain_filter: str | None = None, limit: int | None = 5) -> list[dict]:
+        """Search logs with optional domain filtering and recency decay.
+
+        Args:
+            query (str): Natural-language log query.
+            domain_filter (str | None): Optional domain prefix constraint.
+            limit (int): Maximum number of matches.
+
+        Returns:
+            list[dict]: Ranked and hydrated log matches.
+        """
         return search_log_records(
             manager=self,
             query=query,

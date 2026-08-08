@@ -15,7 +15,18 @@ TASK_STATUSES = frozenset({"TODO", "WORKING", "DONE"})
 
 @dataclass(slots=True, frozen=True)
 class BacklogTask:
-    """One durable backlog task stored in the workspace logs database."""
+    """One durable backlog task stored in the workspace logs database.
+
+    Attributes:
+        task_id: `str`. The unique identifier for the task.
+        domain: `str`. The domain category associated with the task.
+        title: `str`. The brief title of the task.
+        description: `str`. The detailed description of the task.
+        priority: `str`. The priority level assigned to the task.
+        status: `str`. The current state of the task, typically one of the supported persisted task states.
+        completed_at: `str`. The timestamp indicating when the task was completed.
+        created_at: `float`. The epoch timestamp indicating when the task was created.
+    """
 
     task_id: str
     domain: str
@@ -28,11 +39,19 @@ class BacklogTask:
 
     @property
     def done(self) -> bool:
-        """Return whether the task has been completed."""
+        """Return whether the task has been completed.
+
+        Returns:
+            bool: A boolean indicating whether the task status is set to DONE.
+        """
         return self.status == "DONE"
 
     def as_mapping(self) -> dict[str, object]:
-        """Return the legacy-compatible shape used by the tree renderer."""
+        """Return the legacy-compatible shape used by the tree renderer.
+
+        Returns:
+            dict[str, object]: A mapping of task attributes to their corresponding values.
+        """
         return {
             "id": self.task_id,
             "priority": self.priority,
@@ -55,5 +74,9 @@ class TaskNode:
         self.children: dict[str, TaskNode] = {}
 
     def is_empty(self) -> bool:
-        """Return True if this node has no tasks and no non-empty descendants."""
+        """Return True if this node has no tasks and no non-empty descendants.
+
+        Returns:
+            bool: A boolean indicating if the node and its subtree are devoid of tasks.
+        """
         return not self.tasks and not any(not child.is_empty() for child in self.children.values())

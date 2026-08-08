@@ -10,6 +10,13 @@ import { KnowledgeCanvasState } from "../state/knowledge-canvas-state.ts";
  */
 export abstract class KnowledgeCanvasRenderer extends KnowledgeCanvasState {
     /**
+     * Clear transient geometry hover when the pointer leaves the canvas.
+     *
+     * @returns {void}
+     */
+    protected abstract clearCanvasHover(): void;
+
+    /**
      * Bind the existing canvas element to resize and pointer lifecycle events.
      */
     protected bindCanvas() {
@@ -23,7 +30,10 @@ export abstract class KnowledgeCanvasRenderer extends KnowledgeCanvasState {
         canvas.addEventListener("pointerdown", event => this.onPointerDown(event, canvas));
         canvas.addEventListener("pointermove", event => this.onPointerMove(event, canvas));
         canvas.addEventListener("pointerup", event => this.onPointerUp(event, canvas));
-        canvas.addEventListener("pointerleave", event => this.onPointerUp(event, canvas));
+        canvas.addEventListener("pointerleave", event => {
+            this.onPointerUp(event, canvas);
+            this.clearCanvasHover();
+        });
         canvas.addEventListener("wheel", event => this.onWheel(event, canvas), { passive: false });
         canvas.addEventListener("dblclick", event => {
             event.preventDefault();
@@ -312,7 +322,7 @@ export abstract class KnowledgeCanvasRenderer extends KnowledgeCanvasState {
             const activeRelationId = this.hoveredRelationId || this.selectedRelationId;
             const selected = edge.id === activeRelationId;
             context.save();
-            context.globalAlpha = 0.92;
+            context.globalAlpha = this.treeHighlightActive && !this.treeHighlightEdgeIds.has(edge.id) ? 0.12 : 0.92;
             context.beginPath();
             context.moveTo(from.x, from.y);
             context.lineTo(to.x, to.y);
@@ -422,10 +432,10 @@ export abstract class KnowledgeCanvasRenderer extends KnowledgeCanvasState {
             const hovered = node.id === this.hoveredNodeId;
             const ranked = rankedNodeIds.has(node.id);
             const relationEndpoint = selectedRelation?.from === node.id || selectedRelation?.to === node.id;
-            const focused = selected || hovered || relationEndpoint || Boolean(focus?.nodeIds.has(node.id));
+            const focused = selected || hovered || relationEndpoint;
             const radius = selected || hovered ? node.radius + 5 : relationEndpoint ? node.radius + 4 : focused ? node.radius + 2 : node.radius;
             context.save();
-            context.globalAlpha = 1;
+            context.globalAlpha = this.treeHighlightActive && !this.treeHighlightNodeIds.has(node.id) ? 0.16 : 1;
             context.beginPath();
             context.arc(node.x, node.y, radius, 0, Math.PI * 2);
             context.fillStyle = selected || hovered || relationEndpoint
@@ -685,6 +695,9 @@ export abstract class KnowledgeCanvasRenderer extends KnowledgeCanvasState {
             : { x: node.x, y: node.y + node.radius + (14 / scale) };
         const x = placement.x;
         const y = placement.y;
+        if (ranked) {
+            this.drawNodeLabelLeader(context, node, placement, width, height);
+        }
         if (ranked || selected) {
             context.fillStyle = styles.getPropertyValue("--surface").trim();
             context.strokeStyle = node.color;
@@ -692,13 +705,13 @@ export abstract class KnowledgeCanvasRenderer extends KnowledgeCanvasState {
             this.roundedRect(context, x - width / 2, y - height / 2, width, height, 8 / scale);
             context.fill();
             context.stroke();
-            this.nodeLabelBounds.set(node.id, {
-                left: x - width / 2,
-                right: x + width / 2,
-                top: y - height / 2,
-                bottom: y + height / 2
-            });
         }
+        this.nodeLabelBounds.set(node.id, {
+            left: x - width / 2,
+            right: x + width / 2,
+            top: y - height / 2,
+            bottom: y + height / 2
+        });
         context.fillStyle = node.color;
         context.shadowColor = styles.getPropertyValue("--surface").trim();
         context.shadowBlur = 4 / scale;
@@ -706,6 +719,44 @@ export abstract class KnowledgeCanvasRenderer extends KnowledgeCanvasState {
         context.fillText(label, x, y);
         context.restore();
     }
+    /**
+     * Draw a dashed ownership leader when collision avoidance materially separates a label.
+     *
+     * @param {CanvasRenderingContext2D} context Canvas context.
+     * @param {KnowledgeGraphNode} node Owner node.
+     * @param {KnowledgePoint} placement Label center.
+     * @param {number} width Label width in graph coordinates.
+     * @param {number} height Label height in graph coordinates.
+     * @returns {void}
+     */
+    protected drawNodeLabelLeader(context: CanvasRenderingContext2D, node: KnowledgeGraphNode, placement: KnowledgePoint, width: number, height: number): void {
+        const dx = placement.x - node.x;
+        const dy = placement.y - node.y;
+        const distance = Math.hypot(dx, dy);
+        if (!distance) return;
+        const labelBoundaryRatio = Math.min(
+            Math.abs(dx) > 0 ? (width / 2) / Math.abs(dx) : Number.POSITIVE_INFINITY,
+            Math.abs(dy) > 0 ? (height / 2) / Math.abs(dy) : Number.POSITIVE_INFINITY
+        );
+        const nodeBoundaryRatio = node.radius / distance;
+        const labelX = placement.x - (dx * labelBoundaryRatio);
+        const labelY = placement.y - (dy * labelBoundaryRatio);
+        const nodeX = node.x + (dx * nodeBoundaryRatio);
+        const nodeY = node.y + (dy * nodeBoundaryRatio);
+        if (Math.hypot(labelX - nodeX, labelY - nodeY) * this.viewport.scale < 8) return;
+        context.save();
+        context.beginPath();
+        context.moveTo(nodeX, nodeY);
+        context.lineTo(labelX, labelY);
+        context.strokeStyle = node.color;
+        context.globalAlpha = 0.58;
+        context.lineWidth = 1 / this.viewport.scale;
+        context.setLineDash([4 / this.viewport.scale, 4 / this.viewport.scale]);
+        context.lineCap = "round";
+        context.stroke();
+        context.restore();
+    }
+
     /**
      * Place one screen-stable ranked label without intersecting earlier ranked labels.      * @param {KnowledgeGraphNode} node The node value used by this operation.
      * @param {number} width The width value used by this operation.

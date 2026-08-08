@@ -5,10 +5,26 @@
 
 from argparse import Namespace
 import io
+from pathlib import Path
 from unittest.mock import patch
 
+from brain.application.backlog.models import BacklogTask
+from brain.application.backlog.rendering import (
+    render_task_table,
+    resolve_task_reference,
+    resolve_task_reference_path,
+)
+from brain.infrastructure.voice.narration.markdown_narration import markdown_text_for_speech
+from brain.infrastructure.avatar.configuration.avatar_config_dtos import AvatarConfigDTO
+from brain.presentation.actions.backlog import command_show_backlog
 from brain.presentation.router.services.command_router_service import dispatch_command
-from brain.presentation.router.services.narration_policy import CommandNarration, build_narration_draft, narration_for
+from brain.presentation.router.services.command_show_policy import command_show_policy
+from brain.presentation.router.services.narration_policy import (
+    CommandNarration,
+    build_narration_draft,
+    narration_for,
+    render_without_refinement,
+)
 from brain.presentation.router.services.narration_templates import NARRATION_TEMPLATE_ROWS
 
 
@@ -116,6 +132,86 @@ def test_complete_work_draft_contains_safe_spanish_fallback_without_payload_cont
     assert "Argumentos reales" not in fallback
 
 
+def test_show_backlog_projects_reference_marker_without_mutating_storage() -> None:
+    """CLI projection must expose the real image path while preserving stored metadata."""
+    task = BacklogTask(
+        task_id="t42",
+        domain="core.brain",
+        title="Inspect screenshot",
+        description="Compare the layout.\n\n{ref_image}",
+        priority="HIGH",
+        status="TODO",
+    )
+    with patch("pathlib.Path.is_file", return_value=True):
+        projected = resolve_task_reference(task=task, workspace_root=Path("workspace"))
+
+    assert projected.description.endswith("$agent/pictures/backlog-pic-t42.png")
+    assert task.description.endswith("{ref_image}")
+
+
+def test_task_reference_path_returns_canonical_existing_extension() -> None:
+    """The reusable resolver keeps extension selection independent of CLI projection."""
+    with patch("pathlib.Path.is_file", side_effect=(False, True)):
+        reference_path = resolve_task_reference_path("t42", Path("workspace"))
+
+    assert reference_path == "$agent/pictures/backlog-pic-t42.jpg"
+
+def test_show_backlog_narrates_only_count_and_keeps_task_table_visual() -> None:
+    """Keep task details visible in Markdown while excluding them from speech."""
+    tasks = [
+        BacklogTask(
+            task_id="t1",
+            domain="core.brain",
+            title="Visible task title",
+            description="Visible detailed summary",
+            priority="HIGH",
+            status="TODO",
+        ),
+        BacklogTask(
+            task_id="t2",
+            domain="core.cli",
+            title="Second visible title",
+            description="Second visible summary",
+            priority="MEDIUM",
+            status="WORKING",
+        ),
+    ]
+    table = render_task_table(tasks=tasks)
+    narration = narration_for("show-backlog", Namespace())
+
+    assert narration is not None
+    assert narration.refine_with_llm is False
+    draft = build_narration_draft(
+        command="show-backlog",
+        template=narration.output_template,
+        args=Namespace(narration_task_count=2),
+        output=table,
+        succeeded=True,
+        phase="output",
+    )
+    spoken = render_without_refinement(draft)
+    assert spoken == "Tengo 2 tareas pendientes."
+    assert "Visible task title" in table
+    assert "Visible detailed summary" in table
+    assert markdown_text_for_speech(table) == ""
+
+
+def test_show_backlog_exposes_semantic_tagged_avatar_columns() -> None:
+    task = BacklogTask(
+        task_id='t7', domain='core.ui', title='Repair footer', description='',
+        priority='HIGH', status='WORKING',
+    )
+    args = Namespace(task_domain=None, all=False, color=False, json=True)
+    with patch.object(command_show_backlog, 'list_backlog_tasks', return_value=[task]):
+        assert command_show_backlog.handle(args) == 0
+    assert args.narration_table_columns == ['estado', 'dominio', 'tarea']
+    assert args.narration_table_rows == [{
+        'estado': '🛠️ `WORKING` · 🔴 `HIGH`',
+        'dominio': 'core.ui',
+        'tarea': '`t7` — Repair footer',
+    }]
+
+
 def test_dispatch_mirrors_output_and_emits_call_then_outcome() -> None:
     narration = CommandNarration("Voy a probar.", "Éxito: Terminé. | Error: Falló: {cause}.", True)
 
@@ -150,8 +246,8 @@ def test_no_speak_bypasses_signals() -> None:
     emit.assert_not_called()
 
 
-def test_json_dispatch_preserves_machine_output_and_emits_narration() -> None:
-    """JSON mode must not bypass automatic avatar narrations."""
+def test_json_dispatch_preserves_machine_output_and_command_narration() -> None:
+    """JSON controls stdout format while the internal silence flag controls narration."""
     narration = CommandNarration("Voy a probar.", "Éxito: Terminé.", False)
 
     def handler(args: Namespace) -> int:
@@ -165,5 +261,39 @@ def test_json_dispatch_preserves_machine_output_and_emits_narration() -> None:
         patch("sys.stdout", new_callable=io.StringIO) as output,
     ):
         assert dispatch_command(Namespace(command="demo", json=True, no_speak=False)) == 0
-    assert '"value": 7' in output.getvalue()
+    assert output.getvalue() == '{"ok":true,"value":7}\n'
     assert [call.kwargs["phase"] for call in emit.call_args_list] == ["call", "output"]
+
+def test_configured_silent_command_bypasses_normal_and_json_narration() -> None:
+    """Configured silent commands preserve outputs while emitting no voice signals."""
+    def handler(args: Namespace) -> int:
+        if getattr(args, "json", False):
+            args.json_payload = {"ok": True}
+        else:
+            print("visible")
+        return 0
+
+    silent = AvatarConfigDTO(silent_commands=("quiet",))
+    for args in (Namespace(command="quiet", no_speak=False), Namespace(command="quiet", json=True, no_speak=False)):
+        with (
+            patch("brain.presentation.router.services.command_router_service.get_action_handler", return_value=handler),
+            patch("brain.presentation.router.services.command_router_service.load_avatar_config", return_value=silent),
+            patch("brain.presentation.router.services.command_router_service.VoiceSignalService.emit_reviewed") as emit,
+            patch("sys.stdout", new_callable=io.StringIO),
+        ):
+            assert dispatch_command(args) == 0
+        emit.assert_not_called()
+
+def test_command_show_policy_normalizes_keys_and_preserves_configured_fields() -> None:
+    """Hyphenated commands resolve their immutable configured presentation policy."""
+    config = AvatarConfigDTO.model_validate({"commands_show_customization": {"show_backlog": {"show_message": False, "speak_message": False, "hiden_on_muted": True, "level": "important", "pre_processor": "Resume: {OUTPUT}", "animation": "celebrating"}}})
+    policy = command_show_policy("show-backlog", config)
+    assert policy is not None
+    assert (policy.show_message, policy.speak_message, policy.hiden_on_muted) == (False, False, True)
+    assert (policy.level, policy.pre_processor, policy.animation) == ("important", "Resume: {OUTPUT}", "celebrating")
+
+
+def test_silent_commands_override_configured_show_customizations() -> None:
+    """Authoritative silent commands suppress even an otherwise configured policy."""
+    config = AvatarConfigDTO.model_validate({"silent_commands": ["show-backlog"], "commands_show_customization": {"show_backlog": {"speak_message": True}}})
+    assert command_show_policy("show-backlog", config) is None

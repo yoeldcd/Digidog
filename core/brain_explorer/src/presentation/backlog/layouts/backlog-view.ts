@@ -3,9 +3,10 @@
  * @see https://x.com/SAY6267
  */
 
-import { escapeHtml } from "../../shared/utils/html.ts";
+import { escapeHtml, highlightRenderedContent, renderMarkdown, workspaceScopedUrl } from "../../shared/utils/html.ts";
 import { icon } from "../../shared/utils/icons.ts";
 import { StructureTree } from "../../shared/components/structure-tree.ts";
+import { renderDomainRenameDialog, requestDomainRename } from "../../shared/components/domain-rename-dialog.ts";
 import type { BacklogAction } from "../../../application/backlog/dtos/requests/backlog-mutation-request.ts";
 import type { BacklogTask } from "../../../application/backlog/dtos/responses/backlog-response.ts";
 import { BacklogPipController } from "../controllers/backlog-pip-controller.ts";
@@ -13,17 +14,53 @@ import { BacklogVisualReferenceController } from "../controllers/backlog-visual-
 import { BACKLOG_PRIORITY_FILTER_OPTIONS, BACKLOG_STATUS_FILTER_OPTIONS } from "../view_models/backlog-view-model.ts";
 import type { BacklogDomainTreeNode } from "../view_models/backlog-view-model.ts";
 import type { BacklogPipCreateTaskInput, BacklogPipTaskViewModel } from "../view_models/backlog-pip-view-model.ts";
-import type { ComponentContext } from "../../shared/view_models/component-context-view-model.ts";
+import type { ComponentContext, TargetFocusableLayout } from "../../shared/view_models/component-context-view-model.ts";
 import type { StructureTreeNode } from "../../shared/view_models/structure-tree-view-model.ts";
 import { BacklogTaskProjector } from "../projectors/backlog-task-projector.ts";
 import { renderBacklogDialogs, renderBacklogTaskList } from "../renderers/backlog-layout-renderer.ts";
+import { parseBacklogNavigationTarget } from "../validators/backlog-navigation-target.ts";
 
 void StructureTree;
+
+const BACKLOG_ROOT_PATH = "__backlog_all__";
+
+/**
+ * Project a persisted backlog image path back to its editable placeholder.
+ *
+ * @param {string} description Persisted task Markdown.
+ * @param {string} taskId Owning task identifier.
+ * @returns {string} Markdown suitable for the task editor.
+ */
+function editableBacklogDescription(description: string, taskId: string): string {
+    const escapedTaskId = taskId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const referencePattern = new RegExp(
+        `(?:\\.\\/)?\\$agent[\\\\/]pictures[\\\\/]backlog-pic-${escapedTaskId}\\.(?:png|jpe?g|gif|webp)`,
+        "gi"
+    );
+    return description.replace(referencePattern, "{ref_image}");
+}
+/**
+ * Project a task description into read-only Markdown with an inline reference image.
+ *
+ * @param {string} description Persisted task Markdown.
+ * @param {string} taskId Owning task identifier.
+ * @param {boolean} hasImage Whether the image inventory contains the task asset.
+ * @returns {string} Viewer-ready Markdown.
+ */
+function viewableBacklogDescription(description: string, taskId: string, hasImage: boolean): string {
+    const editable = editableBacklogDescription(description, taskId);
+    if (!hasImage) return editable;
+    const source = workspaceScopedUrl(`/api/backlog/image?taskId=${encodeURIComponent(taskId.replace(/^#/, ""))}`);
+    const imageMarkdown = `![Task visual reference](${source})`;
+    return editable.includes("{ref_image}")
+        ? editable.replaceAll("{ref_image}", imageMarkdown)
+        : `${imageMarkdown}\n\n${editable}`;
+}
 
 /**
  * BacklogView renders workspace tasks as a domain tree and focused task board.
  */
-export class BacklogView extends HTMLElement {
+export class BacklogView extends HTMLElement implements TargetFocusableLayout {
     /**
      * Provides the unique CSS selector string used to identify the BacklogView component in the DOM.
      * @returns {string} The string identifier 'brain-backlog-view'.
@@ -68,6 +105,8 @@ export class BacklogView extends HTMLElement {
      * @type {string}
      */
     #filter = "";
+    /** Global-shell query applied only to task cards in the content pane. */
+    #contentFilter = "";
     /**
      * Maintains a unique collection of selected task status values used to filter the backlog view.
      *
@@ -122,6 +161,16 @@ export class BacklogView extends HTMLElement {
      * @type {boolean}
      */
     #refreshInFlight = false;
+    /**
+     * Task identifier awaiting one post-render focus operation.
+     * @type {string}
+     */
+    #navigationTaskId = "";
+    /**
+     * Active draft-enrichment request, or null while the editor is idle.
+     * @type {AbortController | null}
+     */
+    #draftEnrichmentController: AbortController | null = null;
 
     /**
      * Assign runtime dependencies.
@@ -132,7 +181,30 @@ export class BacklogView extends HTMLElement {
     set context(context: ComponentContext) {
         this.#api = context.api;
         this.#state = context.state;
-        this.#loadBacklog();
+        void this.#loadBacklog();
+    }
+
+    /**
+     * Focus a canonical Backlog task target after task data is available.
+     *
+     * @param {Readonly<Record<string, unknown>>} target Canonical route target containing taskId.
+     * @returns {Promise<void>} Resolves after the task row is revealed and focused.
+     */
+    public async focusTarget(target: Readonly<Record<string, unknown>>): Promise<void> {
+        const navigationTarget = parseBacklogNavigationTarget({ ...target });
+        if (!navigationTarget) {
+            return;
+        }
+
+        this.#navigationTaskId = navigationTarget.taskId;
+        if (this.#tasks.length === 0) {
+            await this.#loadBacklog();
+            return;
+        }
+
+        this.#applyNavigationTarget();
+        this.#render();
+        this.#focusNavigationTarget();
     }
 
     /**
@@ -152,6 +224,8 @@ export class BacklogView extends HTMLElement {
      */
     disconnectedCallback() {
         this.#stopSilentRefresh();
+        this.#draftEnrichmentController?.abort();
+        this.#draftEnrichmentController = null;
         this.#pipController.close();
     }
 
@@ -231,11 +305,54 @@ export class BacklogView extends HTMLElement {
         this.#backlogSignature = JSON.stringify(this.#tasks);
         this.#tasksWithImages = result.hasImages || [];
         this.#pipController.syncTasks(this.#tasks);
+        this.#applyNavigationTarget();
         this.#selectedDomain = this.#selectedDomain || "";
         if (this.#selectedDomain) {
             this.#taskProjector().ancestorPaths(this.#selectedDomain).forEach(path => this.#expandedNodes.add(path));
         }
         this.#render();
+        this.#focusNavigationTarget();
+    }
+
+    /**
+     * Select the owning domain and expand its hierarchy for a requested task.
+     *
+     * The Backlog endpoint already includes completed tasks, so a completed
+     * navigation target is resolved from the same authoritative collection.
+     *
+     * @returns {void} Nothing; this method mutates only view-local navigation state.
+     */
+    #applyNavigationTarget(): void {
+        if (!this.#navigationTaskId) return;
+        const task = this.#tasks.find(candidate => candidate.id.toLowerCase() === this.#navigationTaskId);
+        if (!task) {
+            this.#navigationTaskId = "";
+            return;
+        }
+        this.#filter = "";
+        this.#statusFilter.clear();
+        this.#priorityFilter.clear();
+        this.#selectedDomain = task.domain;
+        this.#taskProjector().ancestorPaths(task.domain).forEach(path => this.#expandedNodes.add(path));
+        this.#expandedNodes.add(task.domain);
+    }
+
+    /**
+     * Focus and reveal the requested task after its row has been rendered.
+     *
+     * @returns {void} Nothing; the pending target is consumed after one successful focus.
+     */
+    #focusNavigationTarget(): void {
+        if (!this.#navigationTaskId) return;
+        const targetId = this.#navigationTaskId;
+        const row = Array.from(this.querySelectorAll<HTMLElement>("[data-task-row-id]"))
+            .find(candidate => candidate.dataset.taskRowId?.toLowerCase() === targetId);
+        if (!row) return;
+        row.classList.add("is-navigation-target");
+        row.setAttribute("aria-current", "true");
+        row.focus({ preventScroll: true });
+        row.scrollIntoView({ behavior: "smooth", block: "center" });
+        this.#navigationTaskId = "";
     }
 
     /**
@@ -254,6 +371,110 @@ export class BacklogView extends HTMLElement {
             return;
         }
         await this.#loadBacklog(true);
+    }
+
+    /**
+     * Enrich one task specification while preserving view-local navigation state.
+     *
+     * @param {string} taskId Persistent task identifier.
+     * @returns {Promise<void>} Resolves after the row has been refreshed.
+     */
+    async #enrichTask(taskId: string): Promise<void> {
+        if (!this.#api || !taskId) return;
+        const button = Array.from(this.querySelectorAll<HTMLButtonElement>("[data-action='enrich-task']"))
+            .find(candidate => candidate.dataset.taskId === taskId);
+        button?.setAttribute("aria-busy", "true");
+        if (button) button.disabled = true;
+        this.#state?.setActiveCommand(`enrich-task ${taskId}`);
+        try {
+            const result = await this.#api.enrichBacklogTask(taskId);
+            this.#state?.setLastResult(result);
+            if (result.ok) await this.#loadBacklog(true);
+        } finally {
+            button?.removeAttribute("aria-busy");
+            if (button) button.disabled = false;
+        }
+    }
+
+
+
+
+    /**
+     * Replace the current form description with a non-persistent model proposal.
+     *
+     * @returns {Promise<void>} Resolves after the proposal is rendered or the error is reported.
+     */
+    async #enrichTaskDraft(): Promise<void> {
+        if (this.#draftEnrichmentController) {
+            this.#draftEnrichmentController.abort();
+            return;
+        }
+        const api = this.#api;
+        const taskIdInput = this.querySelector<HTMLInputElement>("[data-role='modal-task-id']");
+        const domainInput = this.querySelector<HTMLInputElement>("[data-role='modal-domain']");
+        const titleInput = this.querySelector<HTMLInputElement>("[data-role='modal-title-input']");
+        const descriptionInput = this.querySelector<HTMLTextAreaElement>("[data-role='modal-description']");
+        const priorityInput = this.querySelector<HTMLSelectElement>("[data-role='modal-priority']");
+        const button = this.querySelector<HTMLButtonElement>("[data-action='enrich-task-draft']");
+        if (!api || !taskIdInput || !domainInput || !titleInput || !descriptionInput || !priorityInput || !button) return;
+        const title = titleInput.value.trim();
+        const description = descriptionInput.value.trim();
+        if (!title || !description) {
+            descriptionInput.setCustomValidity("Write a task description before enriching it.");
+            descriptionInput.reportValidity();
+            descriptionInput.setCustomValidity("");
+            return;
+        }
+        const controller = new AbortController();
+        this.#draftEnrichmentController = controller;
+        this.#setDraftEnrichmentActive(true);
+        this.#state?.setActiveCommand(`enrich-task-draft ${taskIdInput.value || "new"}`);
+        try {
+            const priority: BacklogTask["priority"] = priorityInput.value === "MEDIUM" || priorityInput.value === "LOW" ? priorityInput.value : "HIGH";
+            const image = await this.#visualReferenceController.exportPng();
+            const taskId = taskIdInput.value.trim();
+            const result = await api.enrichBacklogDraft({
+                ...(taskId ? { taskId } : {}),
+                domain: domainInput.value.trim() || this.#selectedDomain || "Backlog",
+                title,
+                description,
+                priority,
+                image
+            }, controller.signal);
+            this.#state?.setLastResult(result);
+            if (result.ok && result.data?.description) descriptionInput.value = result.data.description;
+        } catch (error: unknown) {
+            if (!(error instanceof DOMException && error.name === "AbortError")) throw error;
+        } finally {
+            if (this.#draftEnrichmentController === controller) this.#draftEnrichmentController = null;
+            this.#setDraftEnrichmentActive(false);
+        }
+    }
+
+    /**
+     * Toggle the task editor between editable and cancellable enrichment states.
+     * @param {boolean} active Whether enrichment currently owns and locks the draft.
+     * @returns {void} Nothing; the editor DOM is updated synchronously.
+     */
+    #setDraftEnrichmentActive(active: boolean): void {
+        const button = this.querySelector<HTMLButtonElement>("[data-action='enrich-task-draft']");
+        const overlay = this.querySelector<HTMLElement>("[data-role='task-enrichment-overlay']");
+        const controls = this.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>("[data-role='modal-title-input'], [data-role='modal-priority'], [data-role='modal-description']");
+        controls.forEach(control => {
+            control.disabled = active;
+            control.setAttribute("aria-disabled", String(active));
+        });
+        this.querySelectorAll<HTMLButtonElement>("[data-action='open-visual-reference'], [data-action='close-modal'], [data-role='modal-submit-btn']").forEach(control => {
+            control.disabled = active;
+            control.setAttribute("aria-disabled", String(active));
+        });
+        if (button) {
+            button.setAttribute("aria-busy", String(active));
+            button.classList.toggle("is-pause", active);
+            button.innerHTML = active ? `${icon("pause")}<span>Pause</span>` : `${icon("enrich")}<span>Enrich</span>`;
+            button.title = active ? "Cancel task enrichment" : "Enrich this draft with profiles and visual context";
+        }
+        if (overlay) overlay.hidden = !active;
     }
 
     /**
@@ -331,6 +552,7 @@ export class BacklogView extends HTMLElement {
                 </div>
             </section>
             ${renderBacklogDialogs()}
+            ${renderDomainRenameDialog("backlog-domain-rename-dialog")}
         `;
         this.#bindEvents();
         this.#configureTree();
@@ -399,8 +621,8 @@ export class BacklogView extends HTMLElement {
         }
         treeElement.model = {
             nodes: this.#treeNodes(),
-            selectedPath: this.#selectedDomain,
-            expandedPaths: this.#expandedNodes,
+            selectedPath: this.#selectedDomain || BACKLOG_ROOT_PATH,
+            expandedPaths: new Set([BACKLOG_ROOT_PATH, ...this.#expandedNodes]),
             toggleOnBranchSelect: true,
             title: "Backlog",
             toolbarActions: [
@@ -444,13 +666,23 @@ export class BacklogView extends HTMLElement {
                 label: node.label,
                 count,
                 children,
-                actions: []
+                actions: [{ id: "rename-domain", label: "Rename domain", icon: "edit" }]
             };
         };
-        return Array.from(projector.buildTree().children.values())
+        const domainNodes = Array.from(projector.buildTree().children.values())
             .filter(node => projector.matchesNode(node))
             .sort((left, right) => left.label.localeCompare(right.label))
             .map(toNode);
+        return [{
+            id: BACKLOG_ROOT_PATH,
+            path: BACKLOG_ROOT_PATH,
+            label: "Backlog",
+            icon: "database",
+            count: this.#tasks.filter(task => projector.matchesActiveFilters(task)).length,
+            children: domainNodes,
+            actions: [],
+            folder: true,
+        }];
     }
 
     /**
@@ -461,11 +693,20 @@ export class BacklogView extends HTMLElement {
      */
     #onTreeSelected(event: Event): void {
         if (!(event instanceof CustomEvent)) return;
+        if (event.detail.branch) {
+            if (event.detail.expanded) {
+                this.#expandedNodes.add(event.detail.path);
+            } else {
+                this.#expandedNodes.delete(event.detail.path);
+            }
+        }
         if (event.detail.branch && event.detail.clickedCaret) {
             return;
         }
-        this.#selectedDomain = event.detail.path;
-        this.#taskProjector().ancestorPaths(event.detail.path).forEach(path => this.#expandedNodes.add(path));
+        this.#selectedDomain = event.detail.path === BACKLOG_ROOT_PATH ? "" : event.detail.path;
+        if (this.#selectedDomain) {
+            this.#taskProjector().ancestorPaths(this.#selectedDomain).forEach(path => this.#expandedNodes.add(path));
+        }
         this.#render();
     }
 
@@ -502,9 +743,9 @@ export class BacklogView extends HTMLElement {
                     if (imgInput) imgInput.value = "";
                     this.#visualReferenceController.reset();
                     const modalTitle = this.querySelector<HTMLElement>("[data-role='modal-title']");
-                    const submitButton = this.querySelector<HTMLButtonElement>("[data-role='modal-submit-btn']");
+                    const submitLabel = this.querySelector<HTMLElement>("[data-role='modal-submit-label']");
                     if (modalTitle) modalTitle.textContent = `Create task in ${newDomain.trim()}`;
-                    if (submitButton) submitButton.textContent = "Create";
+                    if (submitLabel) submitLabel.textContent = "Create";
                     dialog.showModal();
                 }
             }
@@ -519,10 +760,20 @@ export class BacklogView extends HTMLElement {
      * @param {CustomEvent} event Tree event.
      * @returns {void}
      */
-    #onTreeAction(event: Event): void {
+    async #onTreeAction(event: Event): Promise<void> {
         if (!(event instanceof CustomEvent)) return;
         const node = event.detail.node;
         if (!node?.path) {
+            return;
+        }
+        if (event.detail.action === "rename-domain") {
+            const target = await requestDomainRename(this, "backlog-domain-rename-dialog", node.path);
+            if (!target || !this.#api) return;
+            const result = await this.#api.renameBacklogDomain({ source: node.path, target });
+            if (!result.ok) return;
+            this.#expandedNodes = remapExpandedDomains(this.#expandedNodes, node.path, target);
+            this.#selectedDomain = target;
+            await this.#loadBacklog(true);
             return;
         }
         this.#selectedDomain = node.path;
@@ -539,7 +790,7 @@ export class BacklogView extends HTMLElement {
         return new BacklogTaskProjector({
             tasks: this.#tasks,
             selectedDomain: this.#selectedDomain,
-            filter: this.#filter,
+            filter: this.#contentFilter || this.#filter,
             statusFilter: this.#statusFilter,
             priorityFilter: this.#priorityFilter
         });
@@ -551,6 +802,18 @@ export class BacklogView extends HTMLElement {
      *
      * @returns {void}
      */
+    /**
+     * Apply the shell's reactive query exclusively to content cards.
+     * The domain tree and its own search input remain untouched.
+     *
+     * @param {string} query Debounced global-shell query, or empty text to clear it.
+     * @returns {void}
+     */
+    applyReactiveContentFilter(query: string): void {
+        this.#contentFilter = query.trim();
+        this.#refreshTaskContent();
+    }
+
     #refreshTaskContent() {
         const projector = this.#taskProjector();
         const visibleTasks = projector.visibleTasks();
@@ -584,6 +847,7 @@ export class BacklogView extends HTMLElement {
             const hasVisibleRows = Array.from(group.querySelectorAll<HTMLElement>("[data-task-row-id]")).some(row => !row.hidden);
             group.toggleAttribute("hidden", !hasVisibleRows);
         });
+        highlightRenderedContent(this, this.#contentFilter || this.#filter, "[data-task-row-id]:not([hidden])");
         const emptyState = this.querySelector(".backlog-filter-empty");
         if (emptyState) {
             emptyState.toggleAttribute("hidden", domainTasks.length === 0 || visibleIds.size > 0);
@@ -633,6 +897,12 @@ export class BacklogView extends HTMLElement {
                 if (status === "TODO" || status === "WORKING" || status === "DONE") this.#setTaskStatus(button.dataset.taskId ?? "", status);
             });
         });
+        this.querySelectorAll<HTMLElement>("[data-action='enrich-task']").forEach(button => {
+            button.addEventListener("click", () => this.#enrichTask(button.dataset.taskId ?? ""));
+        });
+        this.querySelector("[data-action='enrich-task-draft']")?.addEventListener("click", () => this.#enrichTaskDraft());
+
+
         this.querySelectorAll<HTMLElement>("[data-action='delete-task']").forEach(button => {
             button.addEventListener("click", () => {
                 const status = button.dataset.taskStatus;
@@ -662,11 +932,70 @@ export class BacklogView extends HTMLElement {
             if (imgUploadZone) {
                 imgUploadZone.style.removeProperty("display");
             }
+
             const modalTitle = this.querySelector<HTMLElement>("[data-role='modal-title']");
-            const submitButton = this.querySelector<HTMLButtonElement>("[data-role='modal-submit-btn']");
+            const submitLabel = this.querySelector<HTMLElement>("[data-role='modal-submit-label']");
+            const statusIndicator = this.querySelector<HTMLElement>("[data-role='modal-status-indicator']");
             if (modalTitle) modalTitle.textContent = "Create task";
-            if (submitButton) submitButton.textContent = "Create";
+            if (submitLabel) submitLabel.textContent = "Create";
+            if (statusIndicator) {
+                statusIndicator.className = "task-status task-editor-status-indicator is-neutral";
+                statusIndicator.innerHTML = icon("clock");
+                statusIndicator.title = "New task";
+            }
+
             dialog.showModal();
+        });
+
+        // Open read-only task viewer.
+        this.querySelectorAll<HTMLElement>("[data-action='view-task']").forEach(button => {
+            button.addEventListener("click", () => {
+                const taskId = button.dataset.taskId ?? "";
+                const task = this.#tasks.find(candidate => candidate.id === taskId);
+                const dialog = this.querySelector<HTMLDialogElement>("#task-viewer-modal");
+                const title = this.querySelector<HTMLElement>("[data-role='task-viewer-title']");
+                const meta = this.querySelector<HTMLElement>("[data-role='task-viewer-meta']");
+                const description = this.querySelector<HTMLElement>("[data-role='task-viewer-description']");
+                const optionsPanel = this.querySelector<HTMLElement>("[data-role='task-viewer-options-panel']");
+                const statusIndicator = this.querySelector<HTMLElement>("[data-role='task-viewer-status-indicator']");
+                if (!task || !dialog || !title || !meta || !description || !optionsPanel || !statusIndicator) return;
+                title.textContent = `${task.id} - ${task.title}`;
+                meta.textContent = `${task.domain} ┬╖ ${task.priority} ┬╖ ${task.status}`;
+                const statusIcon = task.status === "DONE" ? icon("checkSquare") : task.status === "WORKING" ? icon("pulse") : icon("clock");
+                const statusClass = task.status === "DONE" ? "task-status-done" : task.status === "WORKING" ? "task-status-working" : `task-status-${task.priority.toLowerCase()}`;
+                meta.innerHTML = `<span class="task-viewer-badge task-viewer-domain-badge">${icon("folder")}<span>${escapeHtml(task.domain)}</span></span><span class="task-viewer-badge task-viewer-priority-badge is-${task.priority.toLowerCase()}">${icon("pulse")}<span>${escapeHtml(task.priority)}</span></span><span class="task-viewer-badge task-viewer-state-badge is-${task.status.toLowerCase()}">${statusIcon}<span>${escapeHtml(task.status)}</span></span>`;
+                statusIndicator.className = `task-status task-viewer-status-indicator ${statusClass}`;
+                statusIndicator.innerHTML = statusIcon;
+                statusIndicator.title = task.status;
+                const statusOptions = task.status === "DONE"
+                    ? `<button type="button" data-viewer-task-status="TODO">${icon("clock")}<span>Reopen</span></button>`
+                    : task.status === "TODO"
+                        ? `<button type="button" data-viewer-task-status="WORKING">${icon("pulse")}<span>Iniciar trabajo</span></button><button type="button" data-viewer-task-status="DONE">${icon("checkSquare")}<span>Mark done</span></button>`
+                        : `<button type="button" data-viewer-task-status="DONE">${icon("checkSquare")}<span>Mark done</span></button><button type="button" data-viewer-task-status="TODO">${icon("clock")}<span>Pause (TODO)</span></button>`;
+                optionsPanel.innerHTML = `<button type="button" data-viewer-task-action="edit">${icon("edit")}<span>Edit</span></button>${statusOptions}<button type="button" data-viewer-task-action="delete" class="danger-button">${icon("trash")}<span>Delete task</span></button>`;
+                optionsPanel.querySelector<HTMLButtonElement>("[data-viewer-task-action='edit']")?.addEventListener("click", () => {
+                    this.querySelector<HTMLButtonElement>(`.task-row [data-action='edit-task'][data-task-id='${task.id}']`)?.click();
+                });
+                optionsPanel.querySelectorAll<HTMLButtonElement>("[data-viewer-task-status]").forEach(action => {
+                    action.addEventListener("click", () => {
+                        const status = action.dataset.viewerTaskStatus;
+                        if (status === "TODO" || status === "WORKING" || status === "DONE") {
+                            dialog.close();
+                            void this.#setTaskStatus(task.id, status);
+                        }
+                    });
+                });
+                optionsPanel.querySelector<HTMLButtonElement>("[data-viewer-task-action='delete']")?.addEventListener("click", () => {
+                    dialog.close();
+                    void this.#deleteTask(task.id, task.status);
+                });
+                const normalizedTaskId = task.id.replace(/^#/, "");
+                description.innerHTML = renderMarkdown(viewableBacklogDescription(task.description, task.id, this.#tasksWithImages.includes(normalizedTaskId)));
+                dialog.showModal();
+            });
+        });
+        this.querySelectorAll("[data-action='close-task-viewer']").forEach(button => {
+            button.addEventListener("click", () => this.querySelector<HTMLDialogElement>("#task-viewer-modal")?.close());
         });
 
         // Open Edit Modal
@@ -675,6 +1004,7 @@ export class BacklogView extends HTMLElement {
                 const taskId = button.getAttribute("data-task-id") || "";
                 const task = this.#tasks.find(t => t.id === taskId);
                 if (!task) return;
+                this.querySelector<HTMLDialogElement>("#task-viewer-modal")?.close();
                 const dialog = this.querySelector<HTMLDialogElement>("#backlog-modal");
                 const taskIdInput = this.querySelector<HTMLInputElement>("[data-role='modal-task-id']");
                 const domInput = this.querySelector<HTMLInputElement>("[data-role='modal-domain']");
@@ -686,7 +1016,11 @@ export class BacklogView extends HTMLElement {
                 domInput.value = task.domain;
                 domInput.setAttribute("disabled", "true");
                 titleInput.value = task.title;
-                descriptionInput.value = task.description;
+                const editableDescription = editableBacklogDescription(task.description, task.id);
+                const normalizedTaskId = task.id.replace(/^#/, "");
+                descriptionInput.value = this.#tasksWithImages.includes(normalizedTaskId) && !editableDescription.includes("{ref_image}")
+                    ? `${editableDescription}\n\n{ref_image}`
+                    : editableDescription;
                 priorityInput.value = task.priority;
 
                 const imgUploadZone = this.querySelector<HTMLElement>("[data-role='image-upload-zone']");
@@ -696,15 +1030,25 @@ export class BacklogView extends HTMLElement {
             const imgInput = this.querySelector<HTMLInputElement>("[data-role='modal-image-file']");
             if (imgInput) imgInput.value = "";
             this.#visualReferenceController.reset();
-                const imageTaskId = task.id.replace(/^#/, "");
+                const imageTaskId = normalizedTaskId;
                 if (this.#tasksWithImages.includes(imageTaskId)) {
-                    this.#visualReferenceController.displayImage(`/api/backlog/image?taskId=${encodeURIComponent(imageTaskId)}`);
+                    const imageUrl = workspaceScopedUrl(`/api/backlog/image?taskId=${encodeURIComponent(imageTaskId)}`);
+                    this.#visualReferenceController.displayImage(imageUrl);
                 }
 
                 const modalTitle = this.querySelector<HTMLElement>("[data-role='modal-title']");
-                const submitButton = this.querySelector<HTMLButtonElement>("[data-role='modal-submit-btn']");
+                const submitLabel = this.querySelector<HTMLElement>("[data-role='modal-submit-label']");
+                const statusIndicator = this.querySelector<HTMLElement>("[data-role='modal-status-indicator']");
                 if (modalTitle) modalTitle.textContent = `Edit task #${task.id}`;
-                if (submitButton) submitButton.textContent = "Save";
+                if (submitLabel) submitLabel.textContent = "Save";
+                if (statusIndicator) {
+                    const statusIcon = task.status === "DONE" ? icon("checkSquare") : task.status === "WORKING" ? icon("pulse") : icon("clock");
+                    const statusClass = task.status === "DONE" ? "task-status-done" : task.status === "WORKING" ? "task-status-working" : `task-status-${task.priority.toLowerCase()}`;
+                    statusIndicator.className = `task-status task-editor-status-indicator ${statusClass}`;
+                    statusIndicator.innerHTML = statusIcon;
+                    statusIndicator.title = task.status;
+                }
+
                 dialog.showModal();
             });
         });
@@ -717,8 +1061,8 @@ export class BacklogView extends HTMLElement {
         });
 
         // Open & Close Visual Reference Modal
-        this.querySelector("[data-action='open-visual-reference']")?.addEventListener("click", () => {
-            this.querySelector<HTMLDialogElement>("#visual-reference-modal")?.showModal();
+        this.querySelectorAll("[data-action='open-visual-reference']").forEach(button => {
+            button.addEventListener("click", () => this.querySelector<HTMLDialogElement>("#visual-reference-modal")?.showModal());
         });
         this.querySelectorAll("[data-action='close-visual-reference']").forEach(btn => {
             btn.addEventListener("click", () => {
@@ -733,7 +1077,7 @@ export class BacklogView extends HTMLElement {
                 const modal = this.querySelector<HTMLDialogElement>("#image-viewer-modal");
                 const img = this.querySelector<HTMLImageElement>("[data-role='viewer-img']");
                 if (modal && img) {
-                    img.src = `/api/backlog/image?taskId=${taskId}`;
+                    img.src = workspaceScopedUrl(`/api/backlog/image?taskId=${encodeURIComponent(taskId)}`);
                     modal.showModal();
                 }
             });
@@ -863,6 +1207,21 @@ export class BacklogView extends HTMLElement {
             this.#visualReferenceController.captureScreen();
         });
     }
+}
+
+/**
+ * Preserve expanded tree state after moving one complete domain subtree.
+ *
+ * @param {Set<string>} expanded Existing expanded domain paths.
+ * @param {string} source Previous subtree root.
+ * @param {string} target Replacement subtree root.
+ * @returns {Set<string>} Expanded paths rewritten to the new canonical prefix.
+ */
+function remapExpandedDomains(expanded: Set<string>, source: string, target: string): Set<string> {
+    return new Set(Array.from(expanded, path => {
+        if (path === source) return target;
+        return path.startsWith(`${source}.`) ? `${target}${path.slice(source.length)}` : path;
+    }));
 }
 
 customElements.define(BacklogView.selector, BacklogView);

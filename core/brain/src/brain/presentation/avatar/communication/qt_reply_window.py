@@ -14,9 +14,25 @@ from brain.presentation.avatar.communication.models import CodexThreadTargetDTO,
 
 
 class QtReplyWindow(QWidget):
-    """Detached composer that retains the avatar bubble's visual language."""
+    """Detached composer that retains the avatar bubble's visual language.
+
+    Attributes:
+        _controller (AvatarReplyController): Asynchronous reply coordinator.
+        _target (CodexThreadTargetDTO | None): Current conversation target.
+        _drag_pointer (QPoint | None): Header drag start pointer.
+        _drag_origin (QPoint | None): Window position at drag start.
+        _theme_mode (str): Active light or dark theme identifier.
+    """
 
     def __init__(self, controller: AvatarReplyController) -> None:
+        """Initialize the detached composer and its keyboard actions.
+
+        Args:
+            controller (AvatarReplyController): Reply coordinator used for delivery.
+
+        Returns:
+            None: The composer is ready to bind a conversation target.
+        """
         super().__init__(
             None,
             Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint,
@@ -95,7 +111,14 @@ class QtReplyWindow(QWidget):
         self.set_theme("light")
 
     def set_theme(self, mode: str) -> None:
-        """Apply the avatar's active light or dark palette to the reply composer."""
+        """Apply active light or dark palette to the reply composer.
+
+        Args:
+            mode (str): Requested theme identifier.
+
+        Returns:
+            None: Widget colors and the active theme property are updated.
+        """
         normalized = mode if mode in {"light", "dark"} else "light"
         self._theme_mode = normalized
         dark = normalized == "dark"
@@ -120,6 +143,15 @@ class QtReplyWindow(QWidget):
         self.update()
 
     def _action_button(self, text: str, primary: bool) -> QPushButton:
+        """Create and style one reply action button.
+
+        Args:
+            text (str): Visible button label.
+            primary (bool): Whether to use the primary action palette.
+
+        Returns:
+            QPushButton: Configured action button.
+        """
         button = QPushButton(text, self)
         button.setProperty("primaryAction", primary)
         button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -129,7 +161,16 @@ class QtReplyWindow(QWidget):
 
     @staticmethod
     def _style_action_button(button: QPushButton, primary: bool, dark: bool) -> None:
-        """Style one reply action according to role and active theme."""
+        """Style one reply action according to role and active theme.
+
+        Args:
+            button (QPushButton): Button to style.
+            primary (bool): Whether the action is the primary operation.
+            dark (bool): Whether the active theme is dark.
+
+        Returns:
+            None: The button stylesheet is replaced in place.
+        """
         if primary:
             colors = "color: white; background: #d946a0; border: 1px solid #f88dcc;"
         elif dark:
@@ -148,10 +189,23 @@ class QtReplyWindow(QWidget):
 
     @property
     def target(self) -> CodexThreadTargetDTO | None:
+        """Return the conversation target currently bound to the composer.
+
+        Returns:
+            CodexThreadTargetDTO | None: Bound target, or ``None`` when idle.
+        """
         return self._target
 
     def open_for(self, target: CodexThreadTargetDTO, geometry: QRect | None = None) -> None:
-        """Bind to one message target without following later incoming speaks."""
+        """Bind composer to one message target and reveal the window.
+
+        Args:
+            target (CodexThreadTargetDTO): Target inherited from one message.
+            geometry (QRect | None): Optional initial composer geometry.
+
+        Returns:
+            None: The target is bound and the composer is activated.
+        """
         self._target = target
         self.target_label.setText(f"🧵 Task {target.thread_id}")
         self.target_label.setToolTip(target.thread_id)
@@ -166,6 +220,14 @@ class QtReplyWindow(QWidget):
         self.editor.setFocus()
 
     def _submit(self, mode: DeliveryMode) -> None:
+        """Validate and submit the current editor text asynchronously.
+
+        Args:
+            mode (DeliveryMode): Delivery strategy requested by the action.
+
+        Returns:
+            None: Submission is scheduled or its validation error is displayed.
+        """
         if self._target is None or not self.editor.toPlainText().strip():
             self.status_label.setText("Escribe un mensaje antes de enviarlo.")
             return
@@ -178,6 +240,14 @@ class QtReplyWindow(QWidget):
             self.status_label.setText(str(exc))
 
     def _delivery_finished(self, result: ReplyResultDTO) -> None:
+        """Render the completed delivery outcome in the composer.
+
+        Args:
+            result (ReplyResultDTO): Accepted or rejected delivery outcome.
+
+        Returns:
+            None: Editor state and status text reflect the result.
+        """
         self._set_actions_enabled(True)
         if result.accepted:
             self.editor.clear()
@@ -188,9 +258,25 @@ class QtReplyWindow(QWidget):
             self.status_label.setStyleSheet("color: #a33161; background: transparent; padding: 0 3px;")
 
     def _set_actions_enabled(self, enabled: bool) -> None:
+        """Enable or disable reply actions during asynchronous delivery.
+
+        Args:
+            enabled (bool): Whether the send action should accept input.
+
+        Returns:
+            None: The action button state is updated in place.
+        """
         self.steer_button.setEnabled(enabled)
 
     def mousePressEvent(self, event) -> None:  # noqa: N802 - Qt API
+        """Begin drag when the user presses the composer header.
+
+        Args:
+            event (object): Qt mouse-press event.
+
+        Returns:
+            None: The event is accepted when it starts a header drag.
+        """
         if event.button() == Qt.MouseButton.LeftButton and event.position().y() <= 58:
             self._drag_pointer = event.globalPosition().toPoint()
             self._drag_origin = self.pos()
@@ -199,6 +285,14 @@ class QtReplyWindow(QWidget):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event) -> None:  # noqa: N802 - Qt API
+        """Move the detached composer while header drag is active.
+
+        Args:
+            event (object): Qt mouse-move event.
+
+        Returns:
+            None: The window moves while a header drag is active.
+        """
         if self._drag_pointer is not None and self._drag_origin is not None:
             self.move(self._drag_origin + event.globalPosition().toPoint() - self._drag_pointer)
             event.accept()
@@ -206,11 +300,27 @@ class QtReplyWindow(QWidget):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802 - Qt API
+        """Clear composer drag state.
+
+        Args:
+            event (object): Qt mouse-release event.
+
+        Returns:
+            None: Drag state is cleared after the release event.
+        """
         self._drag_pointer = None
         self._drag_origin = None
         super().mouseReleaseEvent(event)
 
     def paintEvent(self, event) -> None:  # noqa: N802 - Qt API
+        """Paint the themed rounded composer surface.
+
+        Args:
+            event (object): Qt paint event.
+
+        Returns:
+            None: The rounded themed surface is painted in the widget.
+        """
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         body = QRectF(2, 2, self.width() - 4, self.height() - 4)

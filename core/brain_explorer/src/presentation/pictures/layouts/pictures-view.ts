@@ -4,13 +4,14 @@
 
 import type { ApiResponse } from "../../../application/shared/contracts/api-response-contract.ts";
 import type { PictureDescriptionPayload, PictureRecord } from "../../../application/pictures/dtos/responses/pictures-response.ts";
-import { escapeHtml } from "../../shared/utils/html.ts";
+import { escapeHtml, filterRenderedContent } from "../../shared/utils/html.ts";
 import { icon } from "../../shared/utils/icons.ts";
 import { renderDescriptionCard } from "../../shared/components/description-card.ts";
 import { StructureTree } from "../../shared/components/structure-tree.ts";
 import type { BrainApiClient } from "../../../infrastructure/shared/http/clients/brain-api-client.ts";
 import type { AppState } from "../../shell/state/app-state.ts";
-import type { ComponentContext } from "../../shared/view_models/component-context-view-model.ts";
+import type { ComponentContext, TargetFocusableLayout } from "../../shared/view_models/component-context-view-model.ts";
+import { treeActionDetail, treeSelectDetail } from "../../shared/view_models/structure-tree-view-model.ts";
 import { PictureDomainTreeProjector } from "../projectors/picture-domain-tree-projector.ts";
 
 void StructureTree;
@@ -19,7 +20,7 @@ void StructureTree;
 /**
  * A custom HTML element that manages the browsing, selection, and viewing of picture records organized by domains via an API.
  */
-export class PicturesView extends HTMLElement {
+export class PicturesView extends HTMLElement implements TargetFocusableLayout {
     /**
      * Provides the unique CSS selector string used to identify the PicturesView component in the DOM.
      * @returns {string} A string representing the component's DOM selector.
@@ -184,10 +185,31 @@ export class PicturesView extends HTMLElement {
     set context(context: ComponentContext) {
         this.#api = context.api;
         this.#state = context.state;
-        const target = this.#state?.consumeRouteTarget?.("pictures") || null;
-        this.#selectedId = String(target?.pictureId || "");
         this.#render();
         void this.#loadStructure();
+    }
+
+    /**
+     * Focus a canonical picture target after registry or domain data is available.
+     *
+     * @param {Readonly<Record<string, unknown>>} target - Canonical route target containing pictureId.
+     * @returns {Promise<void>} Resolves after the owning domain, carousel, thumbnail, and inspector are synchronized.
+     */
+    public async focusTarget(target: Readonly<Record<string, unknown>>): Promise<void> {
+        const pictureId = String(target.pictureId || "").trim();
+        if (!pictureId) return;
+
+        this.#selectedId = pictureId;
+        const registryPicture = this.#pictureById(pictureId);
+        if (registryPicture) {
+            this.#domain = registryPicture.domain;
+            this.#domainFocused = true;
+            await this.#loadDomain(registryPicture.domain, false, pictureId);
+        } else {
+            await this.#loadPictureTarget(pictureId);
+        }
+
+        this.#focusSelectedThumbnail();
     }
 
     /**
@@ -324,6 +346,10 @@ export class PicturesView extends HTMLElement {
     /**
      * Updates the component's innerHTML to render the pictures gallery interface, including the domain tree, image carousel, and inspector panel, based on the current selection and loading state.
      */
+    applyReactiveContentFilter(query: string): void {
+        filterRenderedContent(this, query, ".pictures-stage .picture-thumbnails [data-picture-id]", ".pictures-stage");
+    }
+
     #render() {
         const selected = this.#selected();
         const selectedIndex = selected ? this.#pictures.findIndex(picture => picture.id === selected.id) : -1;
@@ -333,13 +359,14 @@ export class PicturesView extends HTMLElement {
                     <aside class="structure-tree pictures-domains" aria-label="Picture domains">
                         <div class="tree-list scroll-list">
                             <brain-structure-tree data-role="pictures-domain-tree"></brain-structure-tree>
+                            <input data-role="picture-import-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp" multiple hidden>
                         </div>
                     </aside>
                     <main class="pictures-stage">
                     ${this.#loading ? `<div class="loading-state"><span></span><strong>Syncing pictures...</strong></div>` : selected ? `
                         <section class="picture-carousel" aria-label="Picture carousel">
                             <header>
-                                <div><span class="status-pill" data-role="picture-domain">${escapeHtml(selected.domain)}</span><strong data-role="picture-filename">${escapeHtml(selected.filename)}</strong></div>
+                                <div><span class="status-pill" data-role="picture-domain">${escapeHtml(selected.domain)}</span><a class="picture-download-link" data-role="picture-filename" href="${this.#api?.pictureUrl(selected.id) ?? ""}" download="${escapeHtml(selected.filename)}" title="Download ${escapeHtml(selected.filename)}">${escapeHtml(selected.filename)}</a></div>
                                 <span data-role="picture-position">${selectedIndex + 1} / ${this.#pictures.length}</span>
                             </header>
                             <div class="picture-viewport">
@@ -353,7 +380,18 @@ export class PicturesView extends HTMLElement {
                             </div>
                             <div class="picture-thumbnails" role="listbox" aria-label="Thumbnails">
                                 ${this.#pictures.map(picture => `
-                                    <button role="option" aria-selected="${picture.id === selected.id}" data-picture-id="${escapeHtml(picture.id)}" title="${escapeHtml(picture.filename)}">
+                                    <button role="option" aria-selected="${picture.id === selected.id}" data-picture-id="${escapeHtml(picture.id)}" data-reactive-content="${escapeHtml([
+                                        picture.filename,
+                                        picture.relative_path,
+                                        picture.absolute_path,
+                                        picture.domain,
+                                        picture.extension,
+                                        picture.mime_type,
+                                        picture.description,
+                                        picture.description_source,
+                                        picture.described_at,
+                                        `${picture.width} ${picture.height}`,
+                                    ].join(" "))}" title="${escapeHtml(picture.filename)}">
                                         <img src="${this.#api?.pictureUrl(picture.id) ?? ""}" alt="" loading="lazy" decoding="async" fetchpriority="low">
                                     </button>
                                 `).join("")}
@@ -403,7 +441,13 @@ export class PicturesView extends HTMLElement {
     #hydrateSelection(picture: PictureRecord) {
         const position = this.#pictures.findIndex(candidate => candidate.id === picture.id) + 1;
         this.#setText("picture-domain", picture.domain);
-        this.#setText("picture-filename", picture.filename);
+        const filenameLink = this.querySelector<HTMLAnchorElement>("[data-role='picture-filename']");
+        if (filenameLink) {
+            filenameLink.textContent = picture.filename;
+            filenameLink.href = this.#api?.pictureUrl(picture.id) ?? "";
+            filenameLink.download = picture.filename;
+            filenameLink.title = `Download ${picture.filename}`;
+        }
         this.#setText("picture-position", `${position} / ${this.#pictures.length}`);
         this.#setText("picture-dimensions", `${picture.width} × ${picture.height}`);
         this.#setText("picture-path", picture.relative_path);
@@ -598,7 +642,51 @@ export class PicturesView extends HTMLElement {
      * @returns {import("D:/.agents/@Angi/core/brain_explorer/src/presentation/shared/view_models/structure-tree-view-model").StructureTreeNode[]} The result of the projection process from the PictureDomainTreeProjector.
      */
     #domainTreeNodes() {
-        return new PictureDomainTreeProjector(this.#domains).project();
+        return new PictureDomainTreeProjector(this.#domains, this.#picturesByDomain).project();
+    }
+
+    /** Find one hydrated picture by its stable tree leaf identity. */
+    #pictureById(pictureId: string): PictureRecord | null {
+        for (const pictures of this.#picturesByDomain.values()) {
+            const picture = pictures.find(candidate => candidate.id === pictureId);
+            if (picture) return picture;
+        }
+        return null;
+    }
+
+    /** Ask the browser for images that will be imported into the selected folder. */
+    #choosePicturesForImport(domain: string): void {
+        const input = this.querySelector<HTMLInputElement>("[data-role='picture-import-input']");
+        if (!input) return;
+        input.dataset.domain = domain;
+        input.value = "";
+        input.click();
+    }
+
+    /** Import every selected image and then refresh the affected folder. */
+    async #importSelectedPictures(input: HTMLInputElement): Promise<void> {
+        const files = Array.from(input.files || []);
+        const domain = input.dataset.domain || "";
+        input.value = "";
+        if (!this.#api || !files.length) return;
+        for (const file of files) {
+            const response = await this.#api.importPicture(domain, file);
+            this.#state?.setLastResult(response);
+            if (!response.ok) return;
+        }
+        await this.#loadStructure(true);
+        await this.#loadDomain(domain, true);
+    }
+
+    /** Start a safe attachment download without navigating away from Explorer. */
+    #downloadPicture(picture: PictureRecord): void {
+        if (!this.#api) return;
+        const link = document.createElement("a");
+        link.href = this.#api.pictureUrl(picture.id);
+        link.download = picture.filename;
+        document.body.append(link);
+        link.click();
+        link.remove();
     }
 
     /**
@@ -622,10 +710,24 @@ export class PicturesView extends HTMLElement {
         };
         tree.addEventListener("brain-tree-select", event => {
             if (!(event instanceof CustomEvent)) return;
-            if (event.detail.clickedCaret) return;
-            this.#domain = String(event.detail.path || "");
+            const detail = treeSelectDetail(event.detail);
+            if (!detail || detail.clickedCaret) return;
+            this.#domain = detail.path;
             this.#domainFocused = true;
             void this.#loadDomain(this.#domain);
+        });
+        tree.addEventListener("brain-tree-action", event => {
+            if (!(event instanceof CustomEvent)) return;
+            const detail = treeActionDetail(event.detail);
+            if (!detail?.node) return;
+            if (detail.action === "import-picture") {
+                this.#choosePicturesForImport(detail.node.path);
+                return;
+            }
+            if (detail.action === "download-picture") {
+                const picture = this.#pictureById(detail.node.id.replace(/^picture:/, ""));
+                if (picture) this.#downloadPicture(picture);
+            }
         });
         tree.addEventListener("brain-tree-toolbar-action", event => {
             if (event instanceof CustomEvent && event.detail.action === "refresh") void this.#loadStructure(true);
@@ -645,6 +747,9 @@ export class PicturesView extends HTMLElement {
             this.#selectPicture(button.getAttribute("data-picture-id") || "");
         }));
         this.#bindDescriptionEvents();
+        this.querySelector<HTMLInputElement>("[data-role='picture-import-input']")?.addEventListener("change", event => {
+            if (event.currentTarget instanceof HTMLInputElement) void this.#importSelectedPictures(event.currentTarget);
+        });
         this.querySelector("[data-action='copy-picture-path']")?.addEventListener("click", event => {
             if (event.currentTarget instanceof HTMLButtonElement) void this.#copyPicturePath(event.currentTarget);
         });

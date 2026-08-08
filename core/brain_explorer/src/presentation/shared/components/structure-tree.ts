@@ -294,9 +294,9 @@ export class StructureTree extends HTMLElement {
      * @returns {boolean} True if the node's label or path contains the search query, or if any of its children match; otherwise false.
      */
     #matchesFilter(node: StructureTreeNode): boolean {
-        if (this.#disableFilter) return true;
-        if (!this.#searchQuery) return true;
-        const needle = this.#searchQuery.toLowerCase();
+        const query = this.#activeSearchQuery();
+        if (this.#disableFilter || !query) return true;
+        const needle = query.toLowerCase();
         if ((node.label || "").toLowerCase().includes(needle) || (node.path || "").toLowerCase().includes(needle)) {
             return true;
         }
@@ -304,6 +304,18 @@ export class StructureTree extends HTMLElement {
             return node.children.some(child => this.#matchesFilter(child));
         }
         return false;
+    }
+
+    /**
+     * Return the normalized query only after the shared two-character threshold.
+     * Keeping the raw input separately preserves what the user is typing while
+     * preventing one-character tree and consumer matches.
+     *
+     * @returns {string} Search text used for matching, or an empty string below the threshold.
+     */
+    #activeSearchQuery(): string {
+        const query = this.#searchQuery.trim();
+        return query.length >= 2 ? query : "";
     }
 
     /**
@@ -344,8 +356,8 @@ export class StructureTree extends HTMLElement {
                 ${this.#model.title ? `<strong>${escapeHtml(this.#model.title)}</strong>` : "<span></span>"}
                 <div>
                     ${this.#model.toolbarActions.map(action => `
-                    <button class="icon-action ${action.active ? "is-active" : ""}" data-tree-toolbar-action="${escapeHtml(action.id)}" title="${escapeHtml(action.label)}" aria-label="${escapeHtml(action.label)}" ${action.active !== undefined ? `aria-pressed="${String(!!action.active)}"` : ""}>
-                            ${icon(action.icon || "more")}
+                    <button class="icon-action ${action.showLabel ? "structure-tree-toolbar-action--labeled" : ""} ${action.active ? "is-active" : ""}" data-tree-toolbar-action="${escapeHtml(action.id)}" title="${escapeHtml(action.label)}" aria-label="${escapeHtml(action.label)}" ${action.active !== undefined ? `aria-pressed="${String(!!action.active)}"` : ""}>
+                            ${icon(action.icon || "more")}${action.showLabel ? `<span>${escapeHtml(action.label)}</span>` : ""}
                         </button>
                     `).join("")}
                 </div>
@@ -366,7 +378,7 @@ export class StructureTree extends HTMLElement {
         }
         const children = Array.isArray(node.children) ? node.children : [];
         const hasChildren = children.length > 0;
-        const expanded = this.#model.expandedPaths.has(node.id || node.path);
+        const expanded = Boolean(this.#activeSearchQuery()) || this.#model.expandedPaths.has(node.id || node.path);
         const active = node.path === this.#model.selectedPath;
         const sourceClass = node.color ? "tree-node--source" : "";
         const sourceStyle = node.color ? ` style="--tree-source-color: ${escapeHtml(node.color)};"` : "";
@@ -380,7 +392,7 @@ export class StructureTree extends HTMLElement {
                     <div class="tree-item ${active ? "is-active" : ""}">
                         <button class="tree-node tree-terminal-log tree-node--leaf ${active ? "is-active" : ""}"
                             data-tree-id="${escapeHtml(node.id || node.path)}" data-tree-path="${escapeHtml(node.path)}" data-tree-branch="false"
-                            title="${escapeHtml(node.label)}">
+                            title="${escapeHtml(node.title || node.label)}">
                             <span class="tree-node-icon">${icon(node.icon || defaultLeaf)}</span>
                             <time>${escapeHtml(node.timestamp || "No date")}</time>
                             <strong>${escapeHtml(node.label)}</strong>
@@ -405,7 +417,7 @@ export class StructureTree extends HTMLElement {
                 <div class="tree-item ${active ? "is-active" : ""}">
                     <button class="tree-node ${hasChildren ? "" : "tree-node--leaf"} ${sourceClass} ${active ? "is-active" : ""}"${sourceStyle}
                         data-tree-id="${escapeHtml(node.id || node.path)}" data-tree-path="${escapeHtml(node.path)}" data-tree-branch="${hasChildren}"
-                        title="${escapeHtml(node.label)}">
+                        title="${escapeHtml(node.title || node.label)}">
                         <span class="tree-caret ${isFolder && !hasChildren ? "is-empty-folder" : ""}">${caret}</span>
                         ${icon(node.icon || (isFolder ? defaultBranch : defaultLeaf))}
                         <span>${escapeHtml(node.label)}</span>
@@ -489,7 +501,10 @@ export class StructureTree extends HTMLElement {
             
             const nodesContainer = this.querySelector(".structure-tree-nodes");
             if (nodesContainer) {
-                nodesContainer.innerHTML = sortedRootNodes.map(node => this.#renderNode(node, 1)).join("");
+                const visibleNodes = sortedRootNodes.filter(node => this.#matchesFilter(node));
+                nodesContainer.innerHTML = visibleNodes.length
+                    ? visibleNodes.map(node => this.#renderNode(node, 1)).join("")
+                    : `<p class="structure-tree-empty">${escapeHtml(this.#model.emptyText)}</p>`;
             }
             
             // Re-bind listeners on new node elements!
@@ -503,7 +518,7 @@ export class StructureTree extends HTMLElement {
             // Emit search query event to parent view
             this.dispatchEvent(new CustomEvent("brain-tree-search", {
                 bubbles: true,
-                detail: { query: this.#searchQuery }
+                detail: { query: this.#activeSearchQuery() }
             }));
         });
     }

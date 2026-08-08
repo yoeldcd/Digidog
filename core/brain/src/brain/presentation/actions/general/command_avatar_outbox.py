@@ -13,6 +13,16 @@ from brain.presentation.avatar.communication.outbox import AvatarOutboxRepositor
 
 
 def handle(args: argparse.Namespace) -> int:
+    """List, claim, acknowledge, or release durable avatar outbox messages.
+
+    Args:
+        args (argparse.Namespace): Parsed command options selecting the outbox
+            action, message ID, lease token, limit, and output format.
+
+    Returns:
+        int: Zero when the action succeeds, one for an unmatched lease or absent
+            message, or two for invalid arguments.
+    """
     repository = AvatarOutboxRepository(Path.cwd())
     action = str(args.action).casefold().strip()
     if action == "list":

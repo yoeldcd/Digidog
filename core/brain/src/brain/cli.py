@@ -10,7 +10,15 @@ from brain.presentation.router.services.cli_runtime_service import run_cli
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Configure console runtime and delegate CLI execution."""
+    """Configure the console runtime and delegate CLI execution.
+
+    Args:
+        argv (list[str] | None): Argument vector override, or ``None`` for
+            process arguments.
+
+    Returns:
+        int: CLI process exit status.
+    """
     configure_utf8_console()
     return run_cli(argv=argv)
 

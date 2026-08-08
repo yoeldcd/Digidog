@@ -108,6 +108,16 @@ export interface PicturesPayload {
 /**
  * Result of saving or generating one picture description.
  */
+/**
+ * Successful import response for one browser-selected picture.
+ */
+export interface PictureImportPayload {
+    /** Newly registered image. */
+    picture: PictureRecord;
+    /** Scanner diagnostics after registration. */
+    scan: Record<string, unknown>;
+}
+
 export interface PictureDescriptionPayload {
     /**
      * Updated authoritative picture record.

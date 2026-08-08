@@ -11,7 +11,16 @@ from brain.presentation.terminal import render_placeholders, log_step
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Create memory domain."""
+    """Create a memory domain requested through the command-line interface.
+
+    Args:
+        args (argparse.Namespace): Parsed command options containing the domain
+            name and output settings.
+
+    Returns:
+        int: Zero when the domain is created; otherwise one after reporting an
+            error.
+    """
     color_enabled = getattr(args, "color", False)
     log_step(args, "[1/2] Validating domain inputs...")
     try:

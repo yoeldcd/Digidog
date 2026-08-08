@@ -21,7 +21,14 @@ class DomainNode:
 
 
 def build_domain_tree(latest_entries: dict) -> dict[str, DomainNode]:
-    """Build a nested domain tree from latest log entries by domain."""
+    """Build a nested domain tree from latest log entries by domain.
+
+    Args:
+        latest_entries (dict): Latest-entry metadata keyed by dot-separated domain.
+
+    Returns:
+        dict[str, DomainNode]: Root domain nodes containing nested subdomains.
+    """
     parent_nodes = {}
     for domain, entry_info in latest_entries.items():
         parts = domain.split(".")
@@ -39,7 +46,14 @@ def build_domain_tree(latest_entries: dict) -> dict[str, DomainNode]:
 
 
 def render_logs_index(latest_entries: dict) -> str:
-    """Render latest domain entries as the human-readable workspace log index."""
+    """Render latest domain entries as the human-readable workspace log index.
+
+    Args:
+        latest_entries (dict): Latest-entry metadata keyed by dot-separated domain.
+
+    Returns:
+        str: Markdown index grouped by domain hierarchy.
+    """
     parent_nodes = build_domain_tree(latest_entries=latest_entries)
     output_lines = [
         "# Workspace Logs Index",
@@ -71,7 +85,16 @@ def render_logs_index(latest_entries: dict) -> str:
 
 
 def render_node(name: str, node: DomainNode, path_segments: list[str]) -> list[str]:
-    """Render one nested domain node."""
+    """Render one nested domain node.
+
+    Args:
+        name (str): Local name of the domain node.
+        node (DomainNode): Domain node to render.
+        path_segments (list[str]): Ancestor domain segments in root-first order.
+
+    Returns:
+        list[str]: Markdown lines for the node and its descendants.
+    """
     lines = []
     current_path = path_segments + [name]
     full_name = ".".join(current_path)

@@ -63,14 +63,14 @@ def update_index_category(category: str, deleted: bool = False) -> None:
     build_full_index()
 
 
-def update_index_record(category: str, key: str, deleted: bool = False) -> None:
+def update_index_entry(category: str, key: str, deleted: bool = False) -> None:
     """
-    Refresh the memory source registry after a record change.
+    Refresh the memory source registry after a memory-entry change.
 
     Args:
         category: Changed memory category.
         key: Changed memory key.
-        deleted: Whether the record was deleted.
+        deleted: Whether the memory entry was deleted.
     """
     del category, key, deleted
     build_full_index()

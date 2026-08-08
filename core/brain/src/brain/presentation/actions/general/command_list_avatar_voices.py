@@ -9,11 +9,20 @@ import argparse
 import json
 import sys
 
-from brain.infrastructure.voice.service import VoiceService
+from brain.infrastructure.voice.service.voice_service import VoiceService
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Resolve and render an engine voice catalog."""
+    """Resolve and render the voice catalog for the selected avatar engine.
+
+    Args:
+        args (argparse.Namespace): Parsed command options selecting an optional
+            engine and output format.
+
+    Returns:
+        int: Zero when catalog discovery succeeds; otherwise one after reporting
+            the discovery error.
+    """
     try:
         catalog = VoiceService().list_voices(engine_name=str(getattr(args, "engine", "") or ""))
     except Exception as exc:

@@ -25,7 +25,16 @@ from brain.presentation.terminal import render_placeholders, log_step
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Initialize the knowledge graph runtime."""
+    """Initialize selected private knowledge-graph runtime scopes.
+
+    Args:
+        args (argparse.Namespace): Parsed command options selecting scopes,
+            optional reset behavior, confirmation, and output format.
+
+    Returns:
+        int: Zero when all selected runtimes are ready; otherwise one after
+            reporting an initialization error.
+    """
     color_enabled: bool = getattr(args, "color", False)
     try:
         log_step(args, "[1/2] Preparing knowledge runtime...")

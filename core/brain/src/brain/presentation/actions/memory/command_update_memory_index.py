@@ -9,7 +9,16 @@ from brain.presentation.terminal import render_placeholders, log_step
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Refresh memory source registry."""
+    """Refresh the source registry that indexes memory Markdown files.
+
+    Args:
+        args (argparse.Namespace): Parsed command options controlling output
+            formatting and activity logging.
+
+    Returns:
+        int: Zero when the registry refresh succeeds; otherwise one after
+            reporting an error.
+    """
     color_enabled = getattr(args, "color", False)
     log_step(args, 'Rebuilding memory index...')
     try:

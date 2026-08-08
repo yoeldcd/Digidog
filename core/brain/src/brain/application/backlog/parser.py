@@ -19,7 +19,14 @@ TASK_RE = re.compile(r"^\s*-\s*\[([ xX]|WORKING)\]\s*#(t\d+)\s*(?:\((HIGH|MEDIUM
 
 
 def load_tasks(workspace_root: Path) -> TaskNode:
-    """Parse backlog.md into a TaskNode tree."""
+    """Parse backlog.md into a TaskNode tree.
+
+    Args:
+        workspace_root: `Path`. The root directory of the workspace containing the backlog file.
+
+    Returns:
+        TaskNode: A TaskNode representing the root of the parsed backlog hierarchy.
+    """
     tasks_file = get_backlog_path(workspace_root)
     root = TaskNode("", 0)
     if not tasks_file.exists():

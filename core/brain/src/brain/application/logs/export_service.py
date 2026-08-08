@@ -22,7 +22,12 @@ from brain.application.logs.store import list_log_entries, rendered_logs_index
 
 @dataclass(frozen=True)
 class ExportLogsResult:
-    """Result for file or zip log exports."""
+    """Result for file or zip log exports.
+
+    Attributes:
+        files_written (int): Number of Markdown files included in the export.
+        output_path (Path): Directory or archive path containing the export.
+    """
 
     files_written: int
     output_path: Path
@@ -240,7 +245,14 @@ def render_export_entry(entry: LogEntryRecord) -> str:
 
 
 def indent_export_text(text: str) -> str:
-    """Indent export body text using canonical log formatting."""
+    """Indent export body text using canonical log formatting.
+
+    Args:
+        text (str): Multiline log body text.
+
+    Returns:
+        str: Text with every line indented by four spaces.
+    """
     return "\n".join(f"    {line}" for line in text.splitlines())
 
 
@@ -250,7 +262,17 @@ def normalize_export_filters(
     from_text: str | None = None,
     to_text: str | None = None,
 ) -> dict[str, str | None]:
-    """Normalize CLI-facing date/time filters for SQL queries."""
+    """Normalize CLI-facing date/time filters for SQL queries.
+
+    Args:
+        date_text (str | None): Optional exact date in a supported display format.
+        time_text (str | None): Optional exact clock time.
+        from_text (str | None): Optional inclusive lower date or timestamp bound.
+        to_text (str | None): Optional inclusive upper date or timestamp bound.
+
+    Returns:
+        dict[str, str | None]: Canonical filters suitable for log-store queries.
+    """
     normalized_date = normalize_date_filter(date_text) if date_text else None
     normalized_time = normalize_time_filter(time_text) if time_text else None
     from_sort = normalize_timestamp_bound(raw_text=from_text, end_of_day=False) if from_text else None
@@ -264,7 +286,17 @@ def normalize_export_filters(
 
 
 def normalize_date_filter(raw_text: str) -> str:
-    """Normalize DD-MM-YYYY or YYYY-MM-DD dates to DD-MM-YYYY."""
+    """Normalize DD-MM-YYYY or YYYY-MM-DD dates to DD-MM-YYYY.
+
+    Args:
+        raw_text (str): User-supplied date text.
+
+    Returns:
+        str: Date normalized to `DD-MM-YYYY`.
+
+    Raises:
+        ValueError: The value does not match either supported date format.
+    """
     value = raw_text.strip()
     for fmt in ("%d-%m-%Y", "%Y-%m-%d"):
         try:
@@ -275,7 +307,17 @@ def normalize_date_filter(raw_text: str) -> str:
 
 
 def normalize_time_filter(raw_text: str) -> str:
-    """Normalize HH:MM with optional am/pm to HH:MM."""
+    """Normalize HH:MM with optional am/pm to HH:MM.
+
+    Args:
+        raw_text (str): User-supplied clock time.
+
+    Returns:
+        str: Time normalized to 24-hour `HH:MM`.
+
+    Raises:
+        ValueError: The value is not a supported clock-time expression.
+    """
     match = re.match(r"^(\d{1,2}:\d{2})(?:\s*([ap]m))?$", raw_text.strip(), flags=re.IGNORECASE)
     if match is None:
         raise ValueError("Time filters must follow HH:MM with optional am/pm.")
@@ -283,7 +325,15 @@ def normalize_time_filter(raw_text: str) -> str:
 
 
 def normalize_timestamp_bound(raw_text: str, end_of_day: bool) -> str:
-    """Normalize an inclusive date or timestamp bound to timestamp_sort format."""
+    """Normalize an inclusive date or timestamp bound to timestamp-sort format.
+
+    Args:
+        raw_text (str): Date or date-time boundary supplied by the caller.
+        end_of_day (bool): Whether a date-only value resolves to the final minute of its day.
+
+    Returns:
+        str: Boundary formatted as `YYYY-MM-DD HH:MM:SS`.
+    """
     value = raw_text.strip()
     date_part = value
     time_part: str | None = None
@@ -300,7 +350,14 @@ def normalize_timestamp_bound(raw_text: str, end_of_day: bool) -> str:
 
 
 def export_filter_label(filters: dict[str, str | None]) -> str:
-    """Return a compact human-readable label for active timing filters."""
+    """Return a compact human-readable label for active timing filters.
+
+    Args:
+        filters (dict[str, str | None]): Canonical date, time, and range filters.
+
+    Returns:
+        str: Comma-separated label containing only active filters.
+    """
     parts = []
     if filters["date_text"]:
         parts.append(f"date {filters['date_text']}")

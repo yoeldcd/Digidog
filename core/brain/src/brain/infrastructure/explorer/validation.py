@@ -17,7 +17,11 @@ ALLOWED_SCOPE_VALUES = {"all", "global", "local"}
 
 
 def load_registered_projects() -> list[dict[str, str]]:
-    """Load valid agent-owned consumer records from the core mirror registry."""
+    """Load valid agent-owned consumers from the core mirror registry.
+
+    Returns:
+        list[dict[str, str]]: Registered project names and resolved paths.
+    """
     mirrors_file = get_brain_mirrors_path()
     if not mirrors_file.is_file():
         return []
@@ -41,7 +45,17 @@ def load_registered_projects() -> list[dict[str, str]]:
 def resolve_registered_workspace_root(
     requested_root: Path | str,
 ) -> Path:
-    """Resolve one Explorer workspace only when it belongs to this agent."""
+    """Resolve an Explorer workspace only when it belongs to this agent.
+
+    Args:
+        requested_root (Path | str): Candidate consumer workspace.
+
+    Returns:
+        Path: Resolved registered workspace root.
+
+    Raises:
+        ApiRouteError: No consumers exist or the requested root is not registered.
+    """
     candidate = Path(requested_root).expanduser().resolve()
     registered_projects = load_registered_projects()
     if not registered_projects:
@@ -62,12 +76,26 @@ def resolve_registered_workspace_root(
 
 
 def parse_query(raw_query: str) -> dict[str, str]:
-    """Parse a query string into a first-value mapping."""
+    """Parse a query string into a first-value mapping.
+
+    Args:
+        raw_query (str): URL query string.
+
+    Returns:
+        dict[str, str]: First decoded value for each query key.
+    """
     return {key: values[0] for key, values in parse_qs(raw_query, keep_blank_values=True).items()}
 
 
 def parse_prompt_command(command_text: str) -> list[str]:
-    """Parse a small command string without invoking a shell."""
+    """Parse a small command string without invoking a shell.
+
+    Args:
+        command_text (str): Prompt command text to tokenize.
+
+    Returns:
+        list[str]: Parsed argument tokens.
+    """
     arguments: list[str] = []
     current: list[str] = []
     quote: str | None = None
@@ -101,14 +129,31 @@ def parse_prompt_command(command_text: str) -> list[str]:
 
 
 def split_memory_path(query: dict[str, str]) -> tuple[str, str | None]:
-    """Resolve a memory domain and optional key from query fields."""
+    """Resolve a memory domain and optional key from query fields.
+
+    Args:
+        query (dict[str, str]): Decoded request query values.
+
+    Returns:
+        tuple[str, str | None]: Domain and optional entry key.
+    """
     if query.get("path"):
         return split_dot_path(query["path"])
     return require_query(query, "domain"), query.get("key") or None
 
 
 def split_memory_payload(body: dict[str, Any]) -> tuple[str, str]:
-    """Resolve a memory domain and required key from a JSON body."""
+    """Resolve a memory domain and required key from a JSON body.
+
+    Args:
+        body (dict[str, Any]): Decoded request payload.
+
+    Returns:
+        tuple[str, str]: Domain and required entry key.
+
+    Raises:
+        ApiRouteError: The payload omits a non-empty key.
+    """
     if body.get("path"):
         domain, key = split_dot_path(str(body["path"]))
         if key is None:
@@ -118,7 +163,14 @@ def split_memory_payload(body: dict[str, Any]) -> tuple[str, str]:
 
 
 def split_dot_path(path_value: str) -> tuple[str, str | None]:
-    """Split domain.key notation at its final separator."""
+    """Split domain-key notation at its final separator.
+
+    Args:
+        path_value (str): Dot-separated memory path.
+
+    Returns:
+        tuple[str, str | None]: Domain and optional final key.
+    """
     normalized = path_value.strip()
     if "." not in normalized:
         return normalized, None
@@ -126,7 +178,18 @@ def split_dot_path(path_value: str) -> tuple[str, str | None]:
 
 
 def require_query(query: dict[str, str], key: str) -> str:
-    """Return a required non-empty query value."""
+    """Return a required non-empty query value.
+
+    Args:
+        query (dict[str, str]): Decoded query values.
+        key (str): Required query key.
+
+    Returns:
+        str: Stripped query value.
+
+    Raises:
+        ApiRouteError: The key is absent or empty.
+    """
     value = query.get(key, "").strip()
     if not value:
         raise ApiRouteError(HTTPStatus.BAD_REQUEST, f"Missing required query parameter `{key}`.")
@@ -134,7 +197,18 @@ def require_query(query: dict[str, str], key: str) -> str:
 
 
 def require_value(body: dict[str, Any], key: str) -> str:
-    """Return a required non-empty JSON string value."""
+    """Return a required non-empty JSON string value.
+
+    Args:
+        body (dict[str, Any]): Decoded request payload.
+        key (str): Required payload key.
+
+    Returns:
+        str: Stripped string value.
+
+    Raises:
+        ApiRouteError: The key is absent or empty.
+    """
     value = str(body.get(key, "")).strip()
     if not value:
         raise ApiRouteError(HTTPStatus.BAD_REQUEST, f"Missing required JSON field `{key}`.")
@@ -142,18 +216,45 @@ def require_value(body: dict[str, Any], key: str) -> str:
 
 
 def normalize_task_id(task_id: str) -> str:
-    """Normalize a rendered backlog task identifier."""
+    """Normalize a rendered backlog task identifier.
+
+    Args:
+        task_id (str): Rendered or raw task identifier.
+
+    Returns:
+        str: Identifier without whitespace or heading markers.
+    """
     return task_id.strip().lstrip("#")
 
 
 def safe_scope(value: str | None, allow_all: bool = True) -> str:
-    """Validate a knowledge scope selector."""
+    """Validate a knowledge scope selector.
+
+    Args:
+        value (str | None): Requested scope.
+        allow_all (bool): Whether the aggregate scope is permitted.
+
+    Returns:
+        str: Canonical permitted scope.
+    """
     allowed = ALLOWED_SCOPE_VALUES if allow_all else {"global", "local"}
     return safe_choice((value or "all").casefold().strip(), allowed, "scope")
 
 
 def safe_choice(value: str, allowed_values: set[str], label: str) -> str:
-    """Validate and normalize an enum-like string."""
+    """Validate and normalize an enum-like string.
+
+    Args:
+        value (str): Raw choice value.
+        allowed_values (set[str]): Canonical permitted values.
+        label (str): Field label used in diagnostics.
+
+    Returns:
+        str: Normalized permitted value.
+
+    Raises:
+        ApiRouteError: The value is not permitted.
+    """
     normalized = value.casefold().strip()
     if normalized not in allowed_values:
         expected = ", ".join(sorted(allowed_values))
@@ -162,7 +263,20 @@ def safe_choice(value: str, allowed_values: set[str], label: str) -> str:
 
 
 def safe_int(value: str | None, default: int, minimum: int, maximum: int) -> int:
-    """Parse and bounds-check an optional integer."""
+    """Parse and bounds-check an optional integer.
+
+    Args:
+        value (str | None): Optional integer text.
+        default (int): Value used when input is absent.
+        minimum (int): Inclusive lower bound.
+        maximum (int): Inclusive upper bound.
+
+    Returns:
+        int: Parsed or default bounded integer.
+
+    Raises:
+        ApiRouteError: The value is non-numeric or outside the permitted range.
+    """
     if value is None or value == "":
         return default
     try:

@@ -7,6 +7,8 @@ const styles = await readFile(new URL("../src/styles/views.css", import.meta.url
 assert.match(view, /class="structure-layout profiles-layout"/);
 assert.match(view, /class="structure-tree"/);
 assert.match(view, /class="structure-content"/);
+assert.match(view, /profile\.use_when/);
+assert.match(view, /profile\.name === this\.#selectedProfile/);
 assert.match(styles, /\.profiles-layout\s*\{[^}]*grid-template-columns:\s*auto minmax\(0, 1fr\)/s);
 assert.match(styles, /\.profiles-layout > \.structure-content\s*\{[^}]*min-width:\s*0[^}]*isolation:\s*isolate/s);
 assert.doesNotMatch(styles, /\.profiles-layout\s*\{[^}]*grid-template-columns:\s*minmax\(190px, 20%\)/s);

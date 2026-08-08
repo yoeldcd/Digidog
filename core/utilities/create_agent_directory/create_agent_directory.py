@@ -1,4 +1,7 @@
 #!/usr/bin/env python
+# Author: Yoel David <yoeldcd@gmail.com>
+# X: https://x.com/SAY6267
+
 """Create a new agent directory from the versioned core seed."""
 
 from __future__ import annotations
@@ -9,7 +12,9 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
+import tempfile
 import time
 import uuid
 from dataclasses import asdict, dataclass
@@ -29,14 +34,61 @@ STAGE_NAMES = (
 CORE_OWNED_ROOTS = {"configs", "database", "assets"}
 COPY_EXCLUDED_NAMES = {
     ".git",
+    ".tmp",
     "__pycache__",
     ".pytest_cache",
     ".mypy_cache",
     ".ruff_cache",
     "node_modules",
 }
-SYNC_ROOT_NAMES = ("brain", "brain_explorer")
+CORE_SEED_EXCLUDED_ROOT_NAMES = {"AGENTS.md"}
+"""Canonical identity templates that must be rendered for each clone."""
+SYNC_ROOT_NAMES = ("brain", "brain_explorer", "assets/screens")
+PROFILE_SYNC_ROOT_NAMES = ("developer", "worker")
+UTILITY_SYNC_FILES = (
+    "utilities/create_agent_directory/create_agent_directory.py",
+    "utilities/create_agent_directory/documentation/README.md",
+    "utilities/create_agent_directory/templates/AGENTS.md",
+    "utilities/create_agent_directory/templates/LICENSE",
+    "utilities/propagate_agent_prompt/propagate_agent_prompt.py",
+    "utilities/propagate_agent_prompt/documentation/README.md",
+    "utilities/apply_text_patch/apply_text_patch.ps1",
+    "utilities/apply_text_patch/documentation/README.md",
+)
+CONFIG_FILE_NAMES = ("brain_configs.json", "brain_avatar_config.json", "brain_mirrors.json")
+DYNAMIC_CONFIG_MAP_PATHS = {
+    ("pictures", "guidance", "characters"),
+    ("pictures", "guidance", "tags"),
+}
+REQUIRED_EXISTING_ROOT_NAMES = ("brain", "brain_explorer")
+SYNC_AGENT_FILE_NAMES = ("LICENSE", "README.md", "core/AGENTS.md")
 AVATAR_STATE_PATTERN = re.compile(r"^avatar_[A-Za-z0-9_-]+\.gif$", re.IGNORECASE)
+PUBLICATION_TEMPLATE_ROOT = Path(__file__).with_name("templates")
+
+LICENSE_TEMPLATE = PUBLICATION_TEMPLATE_ROOT / "LICENSE"
+GENERIC_AGENT_TEMPLATE = PUBLICATION_TEMPLATE_ROOT / "AGENTS.md"
+README_CONTRACT_MARKERS = (
+    "Digidog",
+    "Brain Explorer",
+    "Picture intelligence",
+    "img2text",
+    "create_agent_directory",
+    "GNU Affero General Public License",
+)
+PUBLIC_SCREEN_NAMES = (
+    "explorer_home_page.png",
+    "explorer_messages_layout.png",
+    "explorer_memory_layout.png",
+    "explorer_knowledge_layout.png",
+    "explorer_image_layout.png",
+    "explorer_profiles_layout.png",
+    "explorer_logs_domains_layout.png",
+    "explorer_logs_times_layout.png",
+    "explorer_backlog_layout.png",
+    "explorer_wiki_layout.png",
+    "explorer_wiki_page.png",
+    "avatar_view.png",
+)
 PRIVATE_STORE_NAMES = (
     "avatar_storage",
     "knowledge",
@@ -67,6 +119,10 @@ node_modules/
 /pictures/
 /$workspaces/
 
+# Agent-local temporary artifacts
+/.tmp/*
+!/.tmp/.gitkeep
+
 # Workspace-local runtime state
 /$agent/.tmp/
 /$agent/database/
@@ -75,35 +131,55 @@ node_modules/
 # Generated documentation exports
 /core/**/documentation/wiki/
 """
-WORKSPACE_README = """# Co-located agent workspace
-
-This `$agent/` directory is the initial local consumer for the agent root.
-Use `$agent/scripts/brain.py` for Brain commands. Global configuration and
-stores belong to the sibling `core/`; local workspace data belongs here.
-"""
-
-
 @dataclass(frozen=True)
 class AgentDirectoryResult:
-    """Paths created by one successful seed operation."""
+    """Paths created by one successful seed operation.
+
+    Attributes:
+        agent_name (str): Published agent identifier.
+        user_name (str): Collaborator display name.
+        agent_root (str): Created agent-root path.
+        core_root (str): Created Core path.
+        consumer_entrypoint (str): Workspace Brain launcher path.
+        license_path (str): Published license path.
+        readme_path (str): Published README path.
+        configs (list[str]): Created versioned configuration paths.
+        stores (list[str]): Created private state-store paths.
+    """
 
     agent_name: str
     user_name: str
     agent_root: str
     core_root: str
     consumer_entrypoint: str
+    license_path: str
+    readme_path: str
     configs: list[str]
     stores: list[str]
 
 
 @dataclass(frozen=True)
 class UpdateAgentResult:
-    """Summary of one content-aware agent code synchronization."""
+    """Summary of one content-aware agent code synchronization.
+
+    Attributes:
+        agent_root (str): Existing agent-root path.
+        source_core (str): Canonical Core source path.
+        target_core (str): Updated target Core path.
+        updated_roots (list[str]): Synchronized code-root names.
+        updated_files (list[str]): Synchronized published root-file names.
+        copied_files (int): Number of changed files copied.
+        unchanged_files (int): Number of identical files preserved.
+        removed_files (int): Number of obsolete synchronized files removed.
+        created_directories (int): Number of synchronized directories created.
+        removed_directories (int): Number of obsolete directories removed.
+    """
 
     agent_root: str
     source_core: str
     target_core: str
     updated_roots: list[str]
+    updated_files: list[str]
     copied_files: int
     unchanged_files: int
     removed_files: int
@@ -123,7 +199,11 @@ class _SyncStats:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the standalone command parser."""
+    """Build the standalone factory command parser.
+
+    Returns:
+        argparse.ArgumentParser: Parser for create-agent and update-agent commands.
+    """
     parser = argparse.ArgumentParser(
         description="Create an agent directory or update its cloned Brain codebases.",
     )
@@ -159,7 +239,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     update_parser = commands.add_parser(
         "update-agent",
-        help="Synchronize only brain/ and brain_explorer/ in an existing agent core.",
+        help=(
+            "Synchronize brain/, brain_explorer/, and canonical root publication files "
+            "in an existing agent."
+        ),
     )
     update_parser.add_argument(
         "path",
@@ -174,7 +257,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def parse_cli_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    """Parse explicit commands while preserving the original create invocation."""
+    """Parse factory arguments while preserving legacy create invocation form.
+
+    Args:
+        argv (Sequence[str] | None): Explicit arguments, or None to use process
+            arguments.
+
+    Returns:
+        argparse.Namespace: Parsed factory command and its options.
+    """
     arguments = list(sys.argv[1:] if argv is None else argv)
     if not arguments or arguments[0] not in {"create-agent", "update-agent"}:
         arguments.insert(0, "create-agent")
@@ -182,7 +273,17 @@ def parse_cli_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 
 def normalize_agent_name(value: str) -> str:
-    """Return a safe agent identifier without its leading at sign."""
+    """Normalize a safe agent identifier without a leading at sign.
+
+    Args:
+        value (str): Raw agent identifier supplied by a caller.
+
+    Returns:
+        str: Validated identifier without its optional leading at sign.
+
+    Raises:
+        ValueError: If the identifier violates the supported naming pattern.
+    """
     normalized = value.strip().lstrip("@").strip()
     if not normalized or not AGENT_NAME_PATTERN.fullmatch(normalized):
         raise ValueError(
@@ -192,7 +293,17 @@ def normalize_agent_name(value: str) -> str:
 
 
 def normalize_user_name(value: str) -> str:
-    """Return a non-empty display name."""
+    """Normalize a non-empty single-line user display name.
+
+    Args:
+        value (str): Raw collaborator display name.
+
+    Returns:
+        str: Trimmed valid display name.
+
+    Raises:
+        ValueError: If the name is empty or contains line-breaking characters.
+    """
     normalized = value.strip()
     if not normalized:
         raise ValueError("user name cannot be empty")
@@ -202,7 +313,14 @@ def normalize_user_name(value: str) -> str:
 
 
 def default_model_config(model: str = "google/gemini-2.5-flash") -> dict[str, object]:
-    """Return one provider-neutral runtime model configuration."""
+    """Build a provider-neutral runtime model configuration.
+
+    Args:
+        model (str): Provider model identifier to configure.
+
+    Returns:
+        dict[str, object]: Versionable model configuration mapping.
+    """
     return {
         "model": model,
         "base_url": "https://openrouter.ai/api/v1",
@@ -213,10 +331,44 @@ def default_model_config(model: str = "google/gemini-2.5-flash") -> dict[str, ob
     }
 
 
-def default_brain_config(agent_root: Path) -> dict[str, object]:
-    """Return default Brain configuration for a new agent identity."""
+def default_picture_config() -> dict[str, object]:
+    """Build disabled provider-neutral picture-intelligence defaults.
+
+    Returns:
+        dict[str, object]: Picture guidance, model, and extension configuration.
+    """
+    return {
+        "guidance": {
+            "tags": {},
+            "characters": {},
+        },
+        "image_model": {
+            "model": "provider/vision-model",
+            "base_url": "https://provider.example/v1",
+            "api_key": "$VISION_API_KEY",
+            "temperature": 0.1,
+            "max_tokens": 1200,
+            "enabled": False,
+        },
+        "supported_extensions": [".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"],
+    }
+
+
+def default_brain_config(agent_root: Path, agent_name: str, user_name: str) -> dict[str, object]:
+    """Build the default Brain configuration for a new agent identity.
+
+    Args:
+        agent_root (Path): Destination agent-root directory.
+        agent_name (str): Raw agent identifier.
+        user_name (str): Raw collaborator display name.
+
+    Returns:
+        dict[str, object]: Complete versionable Brain configuration mapping.
+    """
     return {
         "version": 1,
+        "agent_name": f"@{normalize_agent_name(agent_name)}",
+        "user_name": normalize_user_name(user_name),
         "agent_dir": str(agent_root.resolve()),
         "knowledge": {
             "version": 1,
@@ -227,11 +379,20 @@ def default_brain_config(agent_root: Path) -> dict[str, object]:
             "embedding_model": default_model_config("openai/text-embedding-3-small"),
             "text_model": default_model_config(),
         },
+        "pictures": default_picture_config(),
     }
 
 
 def default_avatar_config(agent_root: Path | None = None) -> dict[str, object]:
-    """Return generic local voice defaults without personal voice identifiers."""
+    """Build generic local avatar voice defaults without personal identifiers.
+
+    Args:
+        agent_root (Path | None): Destination agent root used to derive a stable
+            local service port, or None for the default port.
+
+    Returns:
+        dict[str, object]: Avatar service and engine configuration mapping.
+    """
     service_port = 8133 if agent_root is None else _agent_voice_service_port(agent_root)
     return {
         "service": {"host": "127.0.0.1", "port": service_port},
@@ -270,7 +431,23 @@ def create_agent_directory(
     source_core: Path | None = None,
     instruction_template: Path | None = None,
 ) -> AgentDirectoryResult:
-    """Create one complete agent seed without copying live agent state."""
+    """Create a complete agent seed without copying live private state.
+
+    Args:
+        parent_path (Path): Parent directory that will contain the new agent root.
+        agent_name (str): Requested agent identifier.
+        user_name (str): Collaborator display name.
+        source_core (Path | None): Optional injected canonical Core source.
+        instruction_template (Path | None): Optional injected AGENT template.
+
+    Returns:
+        AgentDirectoryResult: Paths created for the new agent seed.
+
+    Raises:
+        FileExistsError: If the destination agent root already exists.
+        RuntimeError: If creation fails and its private staging tree cannot be
+            cleaned up.
+    """
     safe_agent_name = normalize_agent_name(agent_name)
     safe_user_name = normalize_user_name(user_name)
     parent = parent_path.expanduser().resolve()
@@ -279,11 +456,16 @@ def create_agent_directory(
         raise FileExistsError(f"destination already exists: {agent_root}")
 
     canonical_core = (source_core or Path(__file__).resolve().parents[2]).resolve()
-    template = (instruction_template or Path(__file__).with_name("AGENT.md")).resolve()
-    _validate_seed_sources(canonical_core=canonical_core, template=template)
+    template = (instruction_template or GENERIC_AGENT_TEMPLATE).resolve()
+    _validate_seed_sources(
+        canonical_core=canonical_core,
+        instruction_template=template,
+        license_template=LICENSE_TEMPLATE,
+    )
 
     parent.mkdir(parents=True, exist_ok=True)
     temporary_root = parent / f".{agent_root.name}.creating-{uuid.uuid4().hex}"
+    published = False
     try:
         temporary_root.mkdir()
         temporary_agent_root = temporary_root
@@ -292,24 +474,32 @@ def create_agent_directory(
             agent_root=temporary_agent_root,
             final_agent_root=agent_root,
             agent_name=safe_agent_name,
+            user_name=safe_user_name,
         )
         _create_empty_core_state(
             temporary_agent_root / "core",
             source_core=canonical_core,
         )
         _create_agent_authored_structure(temporary_agent_root)
-        _write_agent_prompt(
+        _sync_public_profiles(agent_root=temporary_agent_root, source_core=canonical_core)
+        _sync_agent_prompt(
             template=template,
-            destination=temporary_agent_root / "AGENT.md",
+            destination=temporary_agent_root / "core" / "AGENTS.md",
             agent_name=safe_agent_name,
             user_name=safe_user_name,
         )
-        consumer = _create_initial_consumer(temporary_agent_root)
+        _write_publication_files(
+            agent_root=temporary_agent_root,
+            readme_source=canonical_core / "README.md",
+        )
         (temporary_agent_root / ".gitignore").write_text(AGENT_ROOT_GITIGNORE, encoding="utf-8")
         _publish_seed(temporary_agent_root, agent_root)
+        published = True
+        consumer = _create_agent_consumer(agent_root=agent_root)
     except Exception as exc:
+        cleanup_root = agent_root if published else temporary_root
         try:
-            _remove_failed_seed(temporary_root)
+            _remove_failed_seed(cleanup_root)
         except OSError as cleanup_exc:
             raise RuntimeError(
                 f"agent creation failed: {exc}; temporary cleanup also failed: {cleanup_exc}",
@@ -321,7 +511,9 @@ def create_agent_directory(
         user_name=safe_user_name,
         agent_root=agent_root.as_posix(),
         core_root=(agent_root / "core").as_posix(),
-        consumer_entrypoint=(agent_root / consumer.relative_to(temporary_root)).as_posix(),
+        consumer_entrypoint=consumer.as_posix(),
+        license_path=(agent_root / "LICENSE").as_posix(),
+        readme_path=(agent_root / "README.md").as_posix(),
         configs=[
             (agent_root / "core" / "configs" / name).as_posix()
             for name in ("brain_configs.json", "brain_avatar_config.json", "brain_mirrors.json")
@@ -335,11 +527,23 @@ def update_agent(
     *,
     source_core: Path | None = None,
 ) -> UpdateAgentResult:
-    """Synchronize only changed Brain code files into one existing agent clone.
+    """Synchronize changed Brain code and canonical publication files.
 
     The source is always the core containing this utility unless explicitly
-    injected by a test. Configuration, databases, assets, identity, and all
-    agent-authored domains remain outside the synchronization boundary.
+    injected by a test. Root README.md and LICENSE are overwriteable;
+    configuration, databases, private avatar assets, identity, utilities, and
+    all agent-authored domains remain outside the synchronization boundary.
+    Versioned Explorer screenshots are synchronized with their README.
+
+    Args:
+        agent_path (Path): Existing agent root or its Core directory.
+        source_core (Path | None): Optional injected canonical Core source.
+
+    Returns:
+        UpdateAgentResult: Counts and paths describing synchronized content.
+
+    Raises:
+        ValueError: If the target resolves to the canonical Core itself.
     """
     canonical_core = (source_core or Path(__file__).resolve().parents[2]).resolve()
     agent_root, target_core = _resolve_existing_agent(agent_path)
@@ -359,11 +563,43 @@ def update_agent(
         total.created_directories += current.created_directories
         total.removed_directories += current.removed_directories
 
+    utilities = _sync_allowlisted_utilities(source_core=canonical_core, target_core=target_core)
+    total.copied_files += utilities.copied_files
+    total.unchanged_files += utilities.unchanged_files
+
+    configs = _reconcile_configs(source_core=canonical_core, target_core=target_core)
+    total.copied_files += configs.copied_files
+    total.unchanged_files += configs.unchanged_files
+
+    publication = _sync_publication_files(
+        agent_root=agent_root,
+        readme_source=canonical_core / "README.md",
+    )
+    total.copied_files += publication.copied_files
+    total.unchanged_files += publication.unchanged_files
+    profiles = _sync_public_profiles(agent_root=agent_root, source_core=canonical_core)
+    total.copied_files += profiles.copied_files
+    total.unchanged_files += profiles.unchanged_files
+    total.removed_files += profiles.removed_files
+    total.created_directories += profiles.created_directories
+    total.removed_directories += profiles.removed_directories
+    agent_name, user_name = _read_agent_identity(agent_root)
+    prompt = _sync_agent_prompt(
+        template=canonical_core / "utilities" / "create_agent_directory" / "templates" / "AGENTS.md",
+        destination=target_core / "AGENTS.md",
+        agent_name=agent_name,
+        user_name=user_name,
+    )
+    total.copied_files += prompt.copied_files
+    total.unchanged_files += prompt.unchanged_files
+    _initialize_agent_consumer(agent_root=agent_root)
+
     return UpdateAgentResult(
         agent_root=agent_root.as_posix(),
         source_core=canonical_core.as_posix(),
         target_core=target_core.as_posix(),
-        updated_roots=list(SYNC_ROOT_NAMES),
+        updated_roots=[*SYNC_ROOT_NAMES, "utilities", "configs", *(f"memory/profiles/{name}" for name in PROFILE_SYNC_ROOT_NAMES)],
+        updated_files=[*SYNC_AGENT_FILE_NAMES, *UTILITY_SYNC_FILES],
         copied_files=total.copied_files,
         unchanged_files=total.unchanged_files,
         removed_files=total.removed_files,
@@ -372,10 +608,119 @@ def update_agent(
     )
 
 
+def _sync_public_profiles(agent_root: Path, source_core: Path) -> _SyncStats:
+    """Mirror developer and worker profiles from the source agent live memory."""
+    source_root = source_core.parent / "memory" / "profiles"
+    destination_root = agent_root / "memory" / "profiles"
+    if not source_root.is_dir():
+        raise FileNotFoundError(f"live profile root not found: {source_root}")
+    total = _SyncStats()
+    for root_name in PROFILE_SYNC_ROOT_NAMES:
+        source = source_root / root_name
+        destination = destination_root / root_name
+        if not source.is_dir():
+            raise FileNotFoundError(f"live profile root not found: {source}")
+        current = _sync_code_tree(source=source, destination=destination)
+        total.copied_files += current.copied_files
+        total.unchanged_files += current.unchanged_files
+        total.removed_files += current.removed_files
+        total.created_directories += current.created_directories
+        total.removed_directories += current.removed_directories
+    return total
+
+
+def _sync_file_by_content(source: Path, destination: Path) -> _SyncStats:
+    """Atomically synchronize one allowlisted file by content."""
+    stats = _SyncStats()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.is_dir():
+        raise OSError(f"directory blocks synchronized file: {destination}")
+    if destination.is_file() and _files_match(source, destination):
+        stats.unchanged_files += 1
+        return stats
+
+    temporary = destination.with_name(f".{destination.name}.updating-{uuid.uuid4().hex}")
+    try:
+        shutil.copy2(source, temporary)
+        os.replace(temporary, destination)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+    stats.copied_files += 1
+    return stats
+
+
+def _sync_allowlisted_utilities(source_core: Path, target_core: Path) -> _SyncStats:
+    """Synchronize canonical utility files without copying test directories."""
+    total = _SyncStats()
+    for relative_name in UTILITY_SYNC_FILES:
+        source = source_core / relative_name
+        if not source.is_file():
+            raise FileNotFoundError(f"canonical utility file not found: {source}")
+        current = _sync_file_by_content(source, target_core / relative_name)
+        total.copied_files += current.copied_files
+        total.unchanged_files += current.unchanged_files
+    return total
+
+
+def _merge_missing_config_fields(
+    source: dict[str, object],
+    target: dict[str, object],
+    path: tuple[str, ...] = (),
+) -> bool:
+    """Add absent canonical object fields while preserving target-owned values."""
+    changed = False
+    for key, source_value in source.items():
+        field_path = (*path, key)
+        if key not in target:
+            target[key] = {} if field_path in DYNAMIC_CONFIG_MAP_PATHS else source_value
+            changed = True
+            continue
+        target_value = target[key]
+        if (
+            field_path not in DYNAMIC_CONFIG_MAP_PATHS
+            and isinstance(source_value, dict)
+            and isinstance(target_value, dict)
+        ):
+            changed = _merge_missing_config_fields(source_value, target_value, field_path) or changed
+    return changed
+
+
+def _reconcile_configs(source_core: Path, target_core: Path) -> _SyncStats:
+    """Add missing config fields without overwriting target values or lists."""
+    stats = _SyncStats()
+    for file_name in CONFIG_FILE_NAMES:
+        source = source_core / "configs" / file_name
+        destination = target_core / "configs" / file_name
+        if not source.is_file() or not destination.is_file():
+            missing = source if not source.is_file() else destination
+            raise FileNotFoundError(f"canonical config file not found: {missing}")
+
+        source_payload = json.loads(source.read_text(encoding="utf-8"))
+        target_payload = json.loads(destination.read_text(encoding="utf-8"))
+        if not isinstance(source_payload, dict) or not isinstance(target_payload, dict):
+            stats.unchanged_files += 1
+            continue
+        if not _merge_missing_config_fields(source_payload, target_payload):
+            stats.unchanged_files += 1
+            continue
+
+        encoded = (json.dumps(target_payload, indent=2, ensure_ascii=False) + chr(10)).encode("utf-8")
+        temporary = destination.with_name(f".{destination.name}.updating-{uuid.uuid4().hex}")
+        try:
+            temporary.write_bytes(encoded)
+            os.replace(temporary, destination)
+        finally:
+            if temporary.exists():
+                temporary.unlink()
+        stats.copied_files += 1
+    return stats
+
+
 def _resolve_existing_agent(agent_path: Path) -> tuple[Path, Path]:
     """Resolve an existing agent root from either the root or core path."""
     candidate = agent_path.expanduser().resolve()
-    candidate_is_core = all((candidate / root_name).is_dir() for root_name in SYNC_ROOT_NAMES)
+    candidate_is_core = all((candidate / root_name).is_dir() for root_name in REQUIRED_EXISTING_ROOT_NAMES)
     target_core = candidate if candidate_is_core else candidate / "core"
     agent_root = target_core.parent
     if not agent_root.is_dir() or not target_core.is_dir():
@@ -384,22 +729,35 @@ def _resolve_existing_agent(agent_path: Path) -> tuple[Path, Path]:
 
 
 def _validate_update_sources(source_core: Path, target_core: Path) -> None:
-    """Ensure both synchronization boundaries expose the required code roots."""
-    missing = [
-        path.as_posix()
-        for core_root in (source_core, target_core)
-        for root_name in SYNC_ROOT_NAMES
-        if not (path := core_root / root_name).is_dir()
-    ]
+    """Validate source roots while allowing update to introduce new destination roots."""
+    required_directories = (
+        *((source_core / root_name) for root_name in SYNC_ROOT_NAMES),
+        *((source_core.parent / "memory" / "profiles" / root_name) for root_name in PROFILE_SYNC_ROOT_NAMES),
+        *((target_core / root_name) for root_name in REQUIRED_EXISTING_ROOT_NAMES),
+    )
+    missing = [path.as_posix() for path in required_directories if not path.is_dir()]
+    required_files = (
+        source_core / "README.md",
+        *(source_core / relative_name for relative_name in UTILITY_SYNC_FILES),
+        *(source_core / "configs" / file_name for file_name in CONFIG_FILE_NAMES),
+        *(target_core / "configs" / file_name for file_name in CONFIG_FILE_NAMES),
+    )
+    missing.extend(path.as_posix() for path in required_files if not path.is_file())
     if missing:
         raise FileNotFoundError(f"incomplete update boundary; missing: {', '.join(missing)}")
+    _validate_readme_contract(canonical_readme=source_core / "README.md")
 
 
 def _sync_code_tree(source: Path, destination: Path) -> _SyncStats:
     """Mirror one code tree by content while preserving excluded runtime trees."""
+    stats = _SyncStats()
+    if destination.exists() and not destination.is_dir():
+        raise OSError(f"file blocks synchronized root: {destination}")
+    if not destination.exists():
+        destination.mkdir(parents=True)
+        stats.created_directories += 1
     source_directories, source_files = _tree_manifest(source)
     destination_directories, destination_files = _tree_manifest(destination)
-    stats = _SyncStats()
 
     for relative_path in sorted(destination_files.keys() - source_files.keys()):
         destination_files[relative_path].unlink()
@@ -496,7 +854,11 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _validate_seed_sources(canonical_core: Path, template: Path) -> None:
+def _validate_seed_sources(
+    canonical_core: Path,
+    instruction_template: Path,
+    license_template: Path,
+) -> None:
     """Validate required, versioned seed sources before writing a destination."""
     required = (
         canonical_core / "core_cli.py",
@@ -505,11 +867,43 @@ def _validate_seed_sources(canonical_core: Path, template: Path) -> None:
         canonical_core / "brain_explorer",
         canonical_core / "utilities",
         canonical_core / "assets" / "avatar",
-        template,
+        canonical_core / "assets" / "avatar" / "avatar_awaiting.gif",
+        canonical_core / "README.md",
+        *(canonical_core / "assets" / "screens" / name for name in PUBLIC_SCREEN_NAMES),
+        *(canonical_core.parent / "memory" / "profiles" / name for name in PROFILE_SYNC_ROOT_NAMES),
+        instruction_template,
+        license_template,
     )
     missing = [path.as_posix() for path in required if not path.exists()]
     if missing:
         raise FileNotFoundError(f"incomplete core seed; missing: {', '.join(missing)}")
+    _validate_readme_contract(canonical_readme=canonical_core / "README.md")
+
+
+def _validate_readme_contract(canonical_readme: Path) -> None:
+    """Validate the single README source before publishing it at an agent root."""
+    canonical_text = canonical_readme.read_text(encoding="utf-8")
+    canonical = canonical_text.casefold()
+    missing: list[str] = []
+    for marker in (*README_CONTRACT_MARKERS, *PUBLIC_SCREEN_NAMES):
+        normalized = marker.casefold()
+        if normalized not in canonical:
+            missing.append(marker)
+    if missing:
+        raise ValueError(f"README publication contract is incomplete: {', '.join(missing)}")
+    invalid_assets: list[str] = []
+    for reference in re.findall(r'<img\s+[^>]*src="([^"]+)"', canonical_text, flags=re.IGNORECASE):
+        if not reference.startswith("core/"):
+            invalid_assets.append(reference)
+            continue
+        source_asset = canonical_readme.parent / reference.removeprefix("core/")
+        if not source_asset.is_file():
+            invalid_assets.append(reference)
+    if invalid_assets:
+        raise ValueError(
+            "README root-publication asset contract is invalid: "
+            f"{', '.join(sorted(set(invalid_assets)))}",
+        )
 
 
 def _remove_failed_seed(temporary_root: Path) -> None:
@@ -548,7 +942,11 @@ def _copy_core_seed(source: Path, destination: Path) -> None:
     """Copy versioned core code while excluding personal and generated state."""
     destination.mkdir(parents=True)
     for item in source.iterdir():
-        if item.name in CORE_OWNED_ROOTS or item.name in COPY_EXCLUDED_NAMES:
+        if (
+            item.name in CORE_OWNED_ROOTS
+            or item.name in COPY_EXCLUDED_NAMES
+            or item.name in CORE_SEED_EXCLUDED_ROOT_NAMES
+        ):
             continue
         target = destination / item.name
         if item.is_dir():
@@ -570,11 +968,15 @@ def _write_agent_configuration(
     agent_root: Path,
     final_agent_root: Path,
     agent_name: str,
+    user_name: str,
 ) -> None:
     """Write default, versionable configuration for the new core."""
     configs = agent_root / "core" / "configs"
     configs.mkdir(parents=True)
-    _write_json(configs / "brain_configs.json", default_brain_config(final_agent_root))
+    _write_json(
+        configs / "brain_configs.json",
+        default_brain_config(final_agent_root, agent_name, user_name),
+    )
     _write_json(configs / "brain_avatar_config.json", default_avatar_config(final_agent_root))
     _write_json(
         configs / "brain_mirrors.json",
@@ -595,7 +997,7 @@ def _create_empty_core_state(core_root: Path, *, source_core: Path) -> None:
     registry = database / "instruction_mirrors"
     registry.mkdir()
     (registry / "agent_prompt_mirrors.txt").write_text(
-        "# Add one absolute AGENT.md mirror destination per line.\n",
+        "# Add one absolute AGENTS.md mirror destination per line.\n",
         encoding="utf-8",
     )
 
@@ -611,6 +1013,11 @@ def _create_empty_core_state(core_root: Path, *, source_core: Path) -> None:
         copied_assets += 1
     if copied_assets == 0:
         (avatar_assets / ".gitkeep").write_text("", encoding="utf-8")
+
+    screen_assets = core_root / "assets" / "screens"
+    screen_assets.mkdir(parents=True)
+    for screen_name in PUBLIC_SCREEN_NAMES:
+        shutil.copy2(source_core / "assets" / "screens" / screen_name, screen_assets / screen_name)
 
 
 def _create_agent_authored_structure(agent_root: Path) -> None:
@@ -632,45 +1039,138 @@ def _create_agent_authored_structure(agent_root: Path) -> None:
         (directory / ".gitkeep").write_text("", encoding="utf-8")
 
 
-def _write_agent_prompt(
+def _read_agent_identity(agent_root: Path) -> tuple[str, str]:
+    """Read the receiving agent and user names from its canonical configuration."""
+    config_path = agent_root / "core" / "configs" / "brain_configs.json"
+    payload = json.loads(config_path.read_text(encoding="utf-8"))
+    agent_name = normalize_agent_name(str(payload.get("agent_name", "")))
+    user_name = normalize_user_name(str(payload.get("user_name", "")))
+    return agent_name, user_name
+
+
+def _sync_agent_prompt(
     template: Path,
     destination: Path,
     agent_name: str,
     user_name: str,
-) -> None:
-    """Render the generic instruction template for the new identity."""
+) -> _SyncStats:
+    """Render only agent/user identity placeholders into the canonical prompt."""
     content = template.read_text(encoding="utf-8")
-    content = content.replace("{{AGENT_NAME}}", agent_name).replace("{{USER_NAME}}", user_name)
-    if "{{" in content or "}}" in content:
-        raise ValueError("unresolved placeholder in generic AGENT.md template")
-    destination.write_text(content, encoding="utf-8")
+    rendered = content.replace("{{AGENT_NAME}}", agent_name).replace("{{USER_NAME}}", user_name)
+    if "{{AGENT_NAME}}" in rendered or "{{USER_NAME}}" in rendered:
+        raise ValueError("unresolved identity placeholder in generic AGENTS.md template")
+    encoded = rendered.encode("utf-8")
+
+    stats = _SyncStats()
+    if destination.is_dir():
+        raise OSError(f"directory blocks synchronized AGENTS template: {destination}")
+    if destination.is_file() and destination.read_bytes() == encoded:
+        stats.unchanged_files += 1
+        return stats
+
+    temporary = destination.with_name(f".{destination.name}.updating-{uuid.uuid4().hex}")
+    try:
+        temporary.write_bytes(encoded)
+        os.replace(temporary, destination)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+    stats.copied_files += 1
+    return stats
+
+def _publication_contents(readme_source: Path) -> dict[str, str]:
+    """Read the single canonical README and canonical AGPL license."""
+    return {
+        "README.md": readme_source.read_text(encoding="utf-8"),
+        "LICENSE": LICENSE_TEMPLATE.read_text(encoding="utf-8"),
+    }
 
 
-def _create_initial_consumer(agent_root: Path) -> Path:
-    """Create the co-located WoSP facade without initializing any database."""
-    workspace = agent_root / "$agent"
-    scripts = workspace / "scripts"
-    scripts.mkdir(parents=True)
-    for relative in ("data", "database", "logs", ".tmp"):
-        (workspace / relative).mkdir()
-    (workspace / "README.md").write_text(WORKSPACE_README, encoding="utf-8")
+def _write_publication_files(agent_root: Path, readme_source: Path) -> None:
+    """Copy the core README and canonical AGPL v3 license to a new clone root."""
+    for file_name, content in _publication_contents(readme_source).items():
+        (agent_root / file_name).write_text(content, encoding="utf-8")
 
+
+def _sync_publication_files(agent_root: Path, readme_source: Path) -> _SyncStats:
+    """Atomically overwrite changed canonical root publication files."""
+    stats = _SyncStats()
+    for file_name, content in _publication_contents(readme_source).items():
+        destination = agent_root / file_name
+        encoded = content.encode("utf-8")
+        if destination.is_file() and destination.read_bytes() == encoded:
+            stats.unchanged_files += 1
+            continue
+        if destination.is_dir():
+            raise OSError(f"directory blocks synchronized publication file: {destination}")
+        temporary = destination.with_name(f".{destination.name}.updating-{uuid.uuid4().hex}")
+        try:
+            temporary.write_bytes(encoded)
+            os.replace(temporary, destination)
+        finally:
+            if temporary.exists():
+                temporary.unlink()
+        stats.copied_files += 1
+    return stats
+
+
+def _create_agent_consumer(agent_root: Path) -> Path:
+    """Create the new agent's root consumer through its cloned Brain CLI.
+
+    Args:
+        agent_root (Path): Newly published agent directory and consumer root.
+
+    Returns:
+        Path: Expected consumer launcher created by `create-brain`.
+    """
     core_cli = agent_root / "core" / "core_cli.py"
-    launcher = core_cli.read_text(encoding="utf-8")
-    relative_core = Path(os.path.relpath(agent_root / "core", start=scripts)).as_posix()
-    launcher, replacements = re.subn(
-        r"^CORE_ROOT\s*=.*$",
-        f'CORE_ROOT = (HOME_ROOT / Path("{relative_core}")).resolve()',
-        launcher,
-        count=1,
-        flags=re.MULTILINE,
-    )
-    if replacements != 1:
-        raise ValueError("core_cli.py does not expose the expected CORE_ROOT assignment")
-    destination = scripts / "brain.py"
-    destination.write_text(launcher, encoding="utf-8")
-    return destination
+    command = [sys.executable, str(core_cli), "create-brain", str(agent_root), "--json"]
+    _run_brain_lifecycle(command=command, cwd=agent_root, operation="create-brain")
+    return agent_root / "$agent" / "scripts" / "brain.py"
 
+
+def _initialize_agent_consumer(agent_root: Path) -> None:
+    """Initialize an updated agent through its existing consumer launcher.
+
+    Args:
+        agent_root (Path): Updated agent directory that owns the consumer.
+
+    Raises:
+        FileNotFoundError: If the agent does not contain a consumer launcher.
+    """
+    launcher = agent_root / "$agent" / "scripts" / "brain.py"
+    if not launcher.is_file():
+        raise FileNotFoundError(f"agent consumer launcher does not exist: {launcher}")
+    command = [sys.executable, str(launcher), "init", "--json"]
+    _run_brain_lifecycle(command=command, cwd=agent_root, operation="init")
+
+
+def _run_brain_lifecycle(command: list[str], cwd: Path, operation: str) -> None:
+    """Run one Brain lifecycle command without inheritable capture pipes.
+
+    Args:
+        command (list[str]): Explicit interpreter and Brain CLI arguments.
+        cwd (Path): Agent root used as the child process working directory.
+        operation (str): Lifecycle name included in failure diagnostics.
+
+    Raises:
+        RuntimeError: If the Brain lifecycle command returns a nonzero status.
+    """
+    with tempfile.TemporaryFile(mode="w+b") as diagnostic_stream:
+        result = subprocess.run(
+            command,
+            cwd=cwd,
+            stdout=diagnostic_stream,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        if result.returncode == 0:
+            return
+
+        diagnostic_stream.seek(0)
+        diagnostic = diagnostic_stream.read().decode("utf-8", errors="replace").strip()
+    detail = diagnostic or "no diagnostic output"
+    raise RuntimeError(f"Brain {operation} failed with exit code {result.returncode}: {detail[-2000:]}")
 
 def _write_json(path: Path, payload: object) -> None:
     """Write stable UTF-8 JSON with a trailing newline."""
@@ -678,7 +1178,15 @@ def _write_json(path: Path, payload: object) -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Run the standalone agent-directory factory."""
+    """Run the standalone agent-directory factory command.
+
+    Args:
+        argv (Sequence[str] | None): Explicit arguments, or None to use process
+            arguments.
+
+    Returns:
+        int: Zero when creation or update succeeds; otherwise one.
+    """
     args = parse_cli_args(argv)
     try:
         if args.command == "update-agent":

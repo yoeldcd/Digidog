@@ -27,6 +27,7 @@ from brain.presentation.actions.general import command_query as command_query_mo
 from brain.presentation.views.help.rendering import get_command_help_text, get_short_help_text
 from brain.presentation.views.query.results import print_human_deep_response
 from brain.application.knowledge.models.dtos.graph import EntityDTO, RelationDTO
+from brain.application.knowledge.vector_sync import search_knowledge_vectors
 from brain.application.knowledge.models.dtos.sources import SourceDTO
 from brain.application.querying.context import build_query_context
 from brain.application.querying.dtos import GlobalQueryResultDTO, QueryContentDTO
@@ -445,7 +446,10 @@ class GlobalQueryTests(unittest.TestCase):
     def test_query_global_supports_knowledge_vector_mechanism(self) -> None:
         """Ensure knowledge vector search returns normalized KG vector evidence."""
         (self.core_root / "database" / "vectorstores" / "brain_vectorstore").mkdir(parents=True)
-        with patch("brain.application.knowledge.vector_sync.VectorStoreManager", FakeKnowledgeVectorStoreManager):
+        with patch("brain.application.knowledge.vector_sync.VectorStoreManager", FakeKnowledgeVectorStoreManager), patch(
+            "brain.application.querying.backends.knowledge._search_global_knowledge_vectors_isolated",
+            side_effect=lambda repository, text, limit: search_knowledge_vectors(repository, text, limit),
+        ):
             results = query_global(
                 text="legacy vectorstore migration",
                 source="knowledge",
@@ -693,9 +697,45 @@ class GlobalQueryTests(unittest.TestCase):
         self.assertIn("    - dream", knowledge_text)
         self.assertIn("    - knowledge-status", knowledge_text)
         self.assertNotIn("Parameters:", help_text)
+
+    def test_help_supports_command_domains(self) -> None:
+        """Ensure focused help accepts domain topics such as `knowledge`."""
+        help_text = get_command_help_text(topic="knowledge", color=False)
+
+        self.assertIn("Domain:", help_text)
+        self.assertIn("knowledge - Command group.", help_text)
+        self.assertIn("knowledge-deltas", help_text)
+        self.assertIn("dream", help_text)
+        self.assertNotIn("--apply", help_text)
+        self.assertIn("  --id <ID> - Review one pending delta by identifier.", help_text)
+        self.assertNotIn("knowledge-deltas: --id", help_text)
+        self.assertNotIn("  knowledge-deltas\n    --id", help_text)
+
+    def test_short_help_lists_only_domains_and_commands(self) -> None:
+        """Ensure short help omits syntax, parameters, and descriptions."""
+        help_text = get_short_help_text(color=False)
+        knowledge_text = get_short_help_text(topic="knowledge", color=False)
+
+        self.assertIn("Domains:", help_text)
+        self.assertIn("  knowledge:", help_text)
+        self.assertIn("    - knowledge-deltas", help_text)
+        self.assertIn("    - dream", knowledge_text)
+        self.assertIn("    - knowledge-status", knowledge_text)
+        self.assertNotIn("Parameters:", help_text)
         self.assertNotIn("--scope", help_text)
         self.assertNotIn("Command:", help_text)
         self.assertNotIn("Command group.", help_text)
+
+
+    def test_extract_query_keywords_and_messages_fallback(self) -> None:
+        """Ensure multi-word queries fall back to non-acronym keywords > 3 chars."""
+        from brain.application.querying.language import extract_query_keywords
+        keywords = extract_query_keywords("charlas pasadas conversacion CULPA de t717", min_length=3)
+        self.assertIn("charlas", keywords)
+        self.assertIn("pasadas", keywords)
+        self.assertIn("conversacion", keywords)
+        self.assertNotIn("de", keywords)
+        self.assertNotIn("CULPA", keywords)
 
 
 if __name__ == "__main__":

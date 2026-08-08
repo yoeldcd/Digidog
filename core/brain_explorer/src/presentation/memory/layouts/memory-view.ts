@@ -3,14 +3,14 @@
  * @see https://x.com/SAY6267
  */
 
-import { compactLabel, escapeHtml, renderMarkdown } from "../../shared/utils/html.ts";
+import { compactLabel, escapeHtml, filterRenderedContent, renderMarkdown } from "../../shared/utils/html.ts";
 import { icon } from "../../shared/utils/icons.ts";
 import { StructureTree } from "../../shared/components/structure-tree.ts";
 import { treeActionDetail, treeSearchDetail, treeSelectDetail } from "../../shared/view_models/structure-tree-view-model.ts";
 import type { StructureTreeNode, TreeActionDetail, TreeSelectDetail } from "../../shared/view_models/structure-tree-view-model.ts";
 import type { BrainApiClient } from "../../../infrastructure/shared/http/clients/brain-api-client.ts";
 import type { AppState } from "../../shell/state/app-state.ts";
-import type { ComponentContext } from "../../shared/view_models/component-context-view-model.ts";
+import type { ComponentContext, TargetFocusableLayout } from "../../shared/view_models/component-context-view-model.ts";
 import { memoryTarget, type MemoryMode, type MemoryNode, type MemoryTarget } from "../view_models/memory-view-model.ts";
 import { MemoryTreeProjector } from "../projectors/memory-tree-projector.ts";
 import { renderMemoryLoadingState } from "../renderers/memory-state-renderer.ts";
@@ -20,7 +20,7 @@ void StructureTree;
 /**
  * MemoryView renders the memory store as a collapsible tree and one focused work area.
  */
-export class MemoryView extends HTMLElement {
+export class MemoryView extends HTMLElement implements TargetFocusableLayout {
     /**
      * Provides the unique CSS selector string used to identify the memory view component in the DOM.
      * @returns {string} The string identifier 'brain-memory-view'.
@@ -117,7 +117,6 @@ export class MemoryView extends HTMLElement {
     set context(context: ComponentContext) {
         this.#api = context.api;
         this.#state = context.state;
-        this.#pendingTarget = memoryTarget(this.#state.consumeRouteTarget("memory")) || this.#pendingTarget;
         this.#loadTree();
     }
 
@@ -164,7 +163,7 @@ export class MemoryView extends HTMLElement {
      * @returns {Promise<boolean>} True when a route target was consumed.
      */
     async #applyPendingTarget(forceRefresh = false) {
-        const target = this.#pendingTarget || memoryTarget(this.#state.consumeRouteTarget("memory"));
+        const target = this.#pendingTarget;
         this.#pendingTarget = null;
         if (!target) {
             return false;
@@ -192,6 +191,34 @@ export class MemoryView extends HTMLElement {
      * @param {boolean} forceRefresh Whether to bypass API cache.
      * @returns {Promise<void>} Resolves after render.
      */
+    public async focusTarget(target: Readonly<Record<string, unknown>>): Promise<void> {
+        const parsedTarget = memoryTarget({ ...target });
+        if (!parsedTarget) {
+            return;
+        }
+
+        while (this.#loadingTree) {
+            await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        }
+
+        if (parsedTarget.path) {
+            await this.#loadEntry(parsedTarget.path, parsedTarget.mode || "read");
+        } else if (parsedTarget.domain) {
+            this.#selectedDomain = parsedTarget.domain;
+            this.#selectedPath = "";
+            this.#expandAncestors(parsedTarget.domain);
+            this.#mode = parsedTarget.mode || "browse";
+            this.#render();
+        }
+
+        const focusPath = parsedTarget.path || parsedTarget.domain || "";
+        const treeNode = Array.from(this.querySelectorAll<HTMLElement>("[data-node-path]")).find(
+            (node) => node.getAttribute("data-node-path") === focusPath,
+        );
+        treeNode?.focus({ preventScroll: true });
+        treeNode?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
     async #loadEntry(path: string, mode: MemoryMode = "read", forceRefresh = false): Promise<void> {
         this.#selectedPath = path;
         this.#selectedDomain = this.#treeProjector().parentPath(path) || path.split(".")[0] || this.#selectedDomain;
@@ -329,6 +356,10 @@ export class MemoryView extends HTMLElement {
      *
      * @returns {void}
      */
+    applyReactiveContentFilter(query: string): void {
+        filterRenderedContent(this, query, ".structure-content .entry-row, .structure-content .domain-tile", ".structure-content");
+    }
+
     #render() {
         this.innerHTML = `
             <section class="page-surface memory-console">
@@ -395,7 +426,7 @@ export class MemoryView extends HTMLElement {
         const action = isBranch ? "select-domain" : "select-entry";
         const count = isBranch ? `${this.#treeProjector().leafPathsUnder(item.path).length} entries` : "Entry";
         return `
-            <button class="entry-row ${item.path === this.#selectedPath ? "is-active" : ""}" data-action="${action}" data-node-path="${escapeHtml(item.path)}">
+            <button class="entry-row ${item.path === this.#selectedPath ? "is-active" : ""}" data-action="${action}" data-node-path="${escapeHtml(item.path)}" data-reactive-content="${escapeHtml(item.path)}">
                 ${icon(isBranch ? "folder" : "document")}
                 <span>
                     <strong>${escapeHtml(item.label)}</strong>
@@ -454,7 +485,7 @@ export class MemoryView extends HTMLElement {
             </div>
             <div class="domain-grid scroll-list">
                 ${this.#treeProjector().topDomains().map(domain => `
-                    <button class="domain-tile ${domain === this.#selectedDomain ? "is-active" : ""}" data-action="select-domain" data-node-path="${escapeHtml(domain)}">
+                    <button class="domain-tile ${domain === this.#selectedDomain ? "is-active" : ""}" data-action="select-domain" data-node-path="${escapeHtml(domain)}" data-reactive-content="${escapeHtml(domain)}">
                         ${icon("database")}
                         <strong>${escapeHtml(domain)}</strong>
                         <span>${escapeHtml(String(this.#treeProjector().leafPathsUnder(domain).length))} entries</span>

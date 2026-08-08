@@ -19,7 +19,15 @@ ANSI_RESET = "\033[0m"
 
 
 def get_color_codes(enabled: bool = False) -> tuple[str, str, str, str, str, str, str, str, str]:
-    """Return ANSI color escapes if enabled is True, else empty strings."""
+    """Return ANSI color escapes or empty strings.
+
+    Args:
+        enabled (bool): Whether terminal color is enabled.
+
+    Returns:
+        tuple[str, str, str, str, str, str, str, str, str]: ANSI escape values
+        in the renderer's fixed order.
+    """
     if enabled:
         return (
             ANSI_BOLD,
@@ -36,7 +44,15 @@ def get_color_codes(enabled: bool = False) -> tuple[str, str, str, str, str, str
 
 
 def render_placeholders(text: str, color_enabled: bool = False) -> str:
-    """Replace basic color placeholders (e.g. __GREEN__) with ANSI codes or strip them."""
+    """Resolve color placeholders into ANSI codes or empty strings.
+
+    Args:
+        text (str): Text containing terminal color placeholders.
+        color_enabled (bool): Whether ANSI color should be emitted.
+
+    Returns:
+        str: Text with placeholders resolved.
+    """
     bold, blue, cyan, green, red, yellow, magenta, dim, reset = get_color_codes(color_enabled)
     placeholders = {
         "__BOLD__": bold,
@@ -55,7 +71,15 @@ def render_placeholders(text: str, color_enabled: bool = False) -> str:
 
 
 def render_markdown(text: str, color_enabled: bool = False) -> str:
-    """Highlight markdown syntax elements using ANSI colors and suppress meta tags."""
+    """Highlight supported Markdown syntax with ANSI colors.
+
+    Args:
+        text (str): Markdown text to render.
+        color_enabled (bool): Whether ANSI color should be emitted.
+
+    Returns:
+        str: Terminal-friendly rendered text.
+    """
     if not color_enabled:
         return text
 
@@ -85,7 +109,16 @@ def render_markdown(text: str, color_enabled: bool = False) -> str:
 
 
 def render_help(text: str, color_enabled: bool = False, subcommands: list[str] | None = None) -> str:
-    """Highlight the specific structure of the Memory CLI help command."""
+    """Highlight the structure of a Brain CLI help command.
+
+    Args:
+        text (str): Help text to render.
+        color_enabled (bool): Whether ANSI color should be emitted.
+        subcommands (list[str] | None): Known command names to emphasize.
+
+    Returns:
+        str: Colorized or unchanged help text.
+    """
     if not color_enabled:
         return text
 
@@ -159,12 +192,13 @@ def render_help(text: str, color_enabled: bool = False, subcommands: list[str] |
     return result_text
 
 
-def log_step(args, msg: str, task: str | None = None) -> None:
+def log_step(args: object, msg: str, task: str | None = None) -> None:
     """Print a high-level step-progress message only with --verbose-log.
 
-    Usage inside command handlers:
-        log_step(args, "[1/3] Parsing inputs...")
-        log_step(args, "[1/7] Migrating stores...", task="initialization")
+    Args:
+        args (object): Parsed command arguments containing verbosity flags.
+        msg (str): Human-readable progress step.
+        task (str | None): Optional parent task name.
     """
     if getattr(args, "verbose_log", False):
         color_enabled = getattr(args, "color", False)
@@ -173,11 +207,12 @@ def log_step(args, msg: str, task: str | None = None) -> None:
         print(render_placeholders(f"__DIM__{step_text}__RESET__", color_enabled), flush=True)
 
 
-def log_verbose(args, msg: str) -> None:
+def log_verbose(args: object, msg: str) -> None:
     """Print a verbose detail message. Only visible with --verbose-log.
 
-    Usage inside command handlers:
-        log_verbose(args, "  Reading file: /path/to/file.md")
+    Args:
+        args (object): Parsed command arguments containing verbosity flags.
+        msg (str): Human-readable detail message.
     """
     if getattr(args, "verbose_log", False):
         color_enabled = getattr(args, "color", False)

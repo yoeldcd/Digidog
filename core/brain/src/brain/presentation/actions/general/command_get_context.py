@@ -13,7 +13,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from brain.application.profiles.service import discover_profile_names
+from brain.application.profiles.service import profile_summaries
 from brain.infrastructure.runtime.paths import get_agent_home
 from brain.presentation.terminal import log_step, render_markdown, render_placeholders
 
@@ -52,68 +52,66 @@ def _profiles_section(agent_home: Path) -> dict[str, Any]:
             "summary": "No profiles directory found.",
             "items": [],
         }
-    profile_names = discover_profile_names(profiles_dir)
+    profiles = profile_summaries(profiles_dir)
     return {
         "kind": "profiles",
         "title": "Available Profiles",
-        "status": "ok" if profile_names else "empty",
-        "summary": f"{len(profile_names)} profiles available.",
-        "items": [
-            {
-                "id": name,
-                "label": name,
-                "command": f"read-profile {name}",
-                "route": "profiles",
-                "target": {
-                    "profile": name,
-                },
-            }
-            for name in profile_names
-        ],
+        "status": "ok" if profiles else "empty",
+        "summary": f"{len(profiles)} profiles available.",
+        "items": profiles,
     }
 
 
-def _diary_memory_path(diary_dir: Path, path: Path) -> str:
-    """Convert a diary markdown file path into the dot-notated memory entry path."""
-    relative_path = path.relative_to(diary_dir).with_suffix("")
-    return ".".join(("diary", *relative_path.parts))
+def _memory_section() -> dict[str, str]:
+    """Build compact operational guidance for durable memory access."""
+    return {
+        "kind": "memory",
+        "use_when": "Use when durable context, preferences, relationships, notes, or reusable knowledge must be read or updated.",
+        "get_structure_command": "memory-structure",
+        "read_entry_template": "get-memory-entry <DOMAIN> [KEY]",
+        "write_item_template": "set-memory-entry <DOMAIN> <KEY> <CONTENT>",
+    }
 
 
-def _diary_header_items(path: Path, content: str, memory_path: str) -> list[dict[str, Any]]:
-    """Build navigable card records for the headings in one diary file."""
+def _diary_header_items(path: Path, content: str) -> list[dict[str, Any]]:
+    """Build compact retrieval records for the headings in one diary file."""
     header_items: list[dict[str, Any]] = []
     headers = [line[3:].strip() for line in content.splitlines() if line.startswith("## ")]
     if not headers:
         return [
             {
-                "id": path.stem,
-                "label": path.stem,
-                "date": path.stem,
-                "command": f"read-diary -d {path.stem}",
-                "route": "memory",
-                "target": {
-                    "path": memory_path,
-                    "domain": "diary",
-                    "mode": "read",
-                },
+                "title": path.stem,
+                "retrieve_command": f"read-diary -d {path.stem}",
             }
         ]
-    for index, header in enumerate(headers, start=1):
+    for header in headers:
+        time_match = re.match(rf"^{re.escape(path.stem)}\s+(\d{{2}}:\d{{2}})(?::\d{{2}})?\b", header)
+        time_argument = f" --time {time_match.group(1)}" if time_match else ""
+        title = re.sub(
+            rf"^{re.escape(path.stem)}\s+\d{{2}}:\d{{2}}(?::\d{{2}})?\s*-\s*",
+            "",
+            header,
+        ).strip() or header
         header_items.append({
-            "id": f"{path.stem}:{index}",
-            "label": header,
-            "date": path.stem,
-            "command": f"read-diary -d {path.stem}",
-            "route": "memory",
-            "target": {
-                "path": memory_path,
-                "domain": "diary",
-                "mode": "read",
-                "heading": header,
-            },
+            "title": title,
+            "retrieve_command": f"read-diary -d {path.stem}{time_argument}",
         })
     return header_items
 
+
+def _policies_section() -> dict[str, Any]:
+    """Build the always-on local policies section for every hydrated context."""
+    from brain.application.records.service import list_live_records
+
+    policies = list_live_records()
+    policy_count = len(policies)
+    return {
+        "kind": "policies",
+        "title": "Workspace Local Policies",
+        "status": "ok",
+        "summary": "{} always-on local {}.".format(policy_count, "policy" if policy_count == 1 else "policies"),
+        "policies": {policy.id: policy.text for policy in policies},
+    }
 
 def _diary_section(agent_home: Path, limit_diary: int) -> dict[str, Any]:
     """Build structured diary index context."""
@@ -128,24 +126,15 @@ def _diary_section(agent_home: Path, limit_diary: int) -> dict[str, Any]:
     diary_files.sort(key=lambda item: item[0], reverse=True)
     items: list[dict[str, Any]] = []
     for _, path in diary_files[:limit_diary]:
-        memory_path = _diary_memory_path(diary_dir, path)
         try:
             content = path.read_text(encoding="utf-8")
-            items.extend(_diary_header_items(path, content, memory_path))
-        except Exception as exc:
+            items.extend(_diary_header_items(path, content))
+        except Exception:
             items.append({
-                "id": path.stem,
-                "label": path.stem,
-                "date": path.stem,
-                "status": "error",
-                "error": str(exc),
-                "route": "memory",
-                "target": {
-                    "path": memory_path,
-                    "domain": "diary",
-                    "mode": "read",
-                },
+                "title": path.stem,
+                "retrieve_command": f"read-diary -d {path.stem}",
             })
+    items = [{"id": index, **item} for index, item in enumerate(items, start=1)]
     return {
         "kind": "diary",
         "title": "Recent Diary Entries",
@@ -156,7 +145,7 @@ def _diary_section(agent_home: Path, limit_diary: int) -> dict[str, Any]:
 
 
 def _parse_log_index_items(domain_lines: list[str]) -> list[dict[str, Any]]:
-    """Parse rendered log-index Markdown into navigable log cards."""
+    """Parse rendered log-index Markdown into compact domain records."""
     items: list[dict[str, Any]] = []
     stack: list[str] = []
     for line in domain_lines:
@@ -180,25 +169,15 @@ def _parse_log_index_items(domain_lines: list[str]) -> list[dict[str, Any]]:
         label = item.group(4).strip() if item.group(4) else terminal_label
         change_type = item.group(2).strip()
         command = item.group(3).strip()
-        date_match = re.search(r"-d\s+(\d{2}-\d{2}-\d{4})", command)
-        time_match = re.search(r"--time\s+(\d{2}:\d{2})", command)
         parent_domain = stack[-1]
         domain = f"{parent_domain}.{terminal_label}" if not terminal_label.startswith("(") else parent_domain
         items.append({
-            "id": f"{domain}:{date_match.group(1) if date_match else ''}:{time_match.group(1) if time_match else ''}",
-            "label": label,
+            "id": len(items) + 1,
             "domain": domain,
-            "changeType": change_type,
-            "date": date_match.group(1) if date_match else "",
-            "time": time_match.group(1) if time_match else "",
-            "command": command,
-            "route": "logs",
-            "target": {
-                "domain": domain,
-                "from": date_match.group(1) if date_match else "",
-                "to": date_match.group(1) if date_match else "",
-                "hourFrom": time_match.group(1) if time_match else "",
-                "hourTo": time_match.group(1) if time_match else "",
+            "last_change": {
+                "title": label,
+                "type": change_type,
+                "retrieve_command": command,
             },
         })
     return items
@@ -219,16 +198,13 @@ def _logs_section(workspace_root: Path, domain_filter: str | None = None) -> tup
                 in_domains = True
             if in_domains:
                 domain_lines.append(line)
-        markdown = "\n".join(domain_lines).strip()
         items = _parse_log_index_items(domain_lines)
         return {
             "kind": "logs",
             "title": "Workspace Changelog Index",
-            "status": "ok" if markdown else "empty",
-            "summary": f"{len(items)} log context cards indexed." if items else "No registered logs.",
-            "markdown": markdown or "No registered logs",
+            "status": "ok" if items else "empty",
+            "summary": f"{len(items)} log domains indexed." if items else "No registered logs.",
             "items": items,
-            "route": "logs",
         }, embedding_warning
     except Exception as exc:
         if _looks_like_embedding_failure(exc):
@@ -238,9 +214,7 @@ def _logs_section(workspace_root: Path, domain_filter: str | None = None) -> tup
             "title": "Workspace Changelog Index",
             "status": "empty",
             "summary": "No registered logs.",
-            "markdown": "No registered logs",
             "items": [],
-            "route": "logs",
         }, embedding_warning
 
 
@@ -270,7 +244,9 @@ def _build_payload(args: argparse.Namespace) -> dict[str, Any]:
             "status": "ok",
             "summary": "Directory index for memories and profiles.",
             "path": workspace_root.as_posix(),
-        }
+        },
+        _memory_section(),
+        _policies_section(),
     ]
 
     log_step(args, "[1/4] Loading available profiles...")
@@ -317,22 +293,43 @@ def _render_payload(payload: dict[str, Any]) -> str:
         kind = section["kind"]
         if kind == "workspace":
             continue
-        output.append(f"## {section['title']}")
+        output.append(f"## {section.get('title') or kind.title()}")
         if kind == "profiles":
             items = section.get("items", [])
             if items:
-                output.extend(f"- **{item['label']}**: read running `{item['command']}`" for item in items)
+                output.extend(f"- **{item['name']}**: read running `{item['retrieve_command']}`" for item in items)
             else:
                 output.append("*(No profiles found)*")
+        elif kind == "memory":
+            output.extend([
+                section["use_when"],
+                f"- Structure: `{section['get_structure_command']}`",
+                f"- Read: `{section['read_entry_template']}`",
+                f"- Write: `{section['write_item_template']}`",
+            ])
+        elif kind == "policies":
+            output.append(section["summary"])
+            policies = section.get("policies", {})
+            if policies:
+                output.extend("- **{}**: {}".format(policy_id, text) for policy_id, text in policies.items())
+            else:
+                output.append("*(No local policies)*")
         elif kind == "diary":
             items = section.get("items", [])
             if items:
                 for item in items:
-                    output.append(f"- **{item['label']}**: `{item.get('command', '')}`")
+                    output.append(f"- **{item['title']}**: `{item['retrieve_command']}`")
             else:
                 output.append("*(No diary entries found)*")
         elif kind == "logs":
-            output.append(section.get("markdown") or "No registered logs")
+            items = section.get("items", [])
+            output.extend(
+                f"- {item['domain']}: ({item['last_change']['type']}) "
+                f"{item['last_change']['title']} `{item['last_change']['retrieve_command']}`"
+                for item in items
+            )
+            if not items:
+                output.append("No registered logs")
         elif kind == "system":
             if section["status"] != "ok":
                 output.append("Memory layout compliance check: **ERRORS DETECTED**")
@@ -345,7 +342,15 @@ def _render_payload(payload: dict[str, Any]) -> str:
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Consolidate key memory logs and print LLM context hydration payload."""
+    """Build and render the compact session-context hydration payload.
+
+    Args:
+        args (argparse.Namespace): Parsed context options selecting output format,
+            diary limit, domain restriction, and activity logging.
+
+    Returns:
+        int: Zero when context is rendered; otherwise one after reporting an error.
+    """
     color_enabled = getattr(args, "color", False)
     try:
         payload = _build_payload(args)

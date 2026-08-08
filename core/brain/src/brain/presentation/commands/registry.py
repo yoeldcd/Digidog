@@ -6,7 +6,16 @@
 from __future__ import annotations
 
 # Application Modules Imports
-from brain.presentation.commands.backlog import command_add_task, command_delete_task, command_edit_task, command_set_task_status, command_show_backlog, command_task_finished
+from brain.presentation.commands.backlog import (
+    command_add_task,
+    command_delete_task,
+    command_edit_task,
+    command_rename_task_domain,
+    command_set_task_status,
+    command_read_task,
+    command_show_backlog,
+    command_task_finished,
+)
 from brain.presentation.commands.diary import command_edit_diary, command_read_diary, command_write_diary
 from brain.presentation.commands.general import (
     command_resolve_avatar_message,
@@ -45,6 +54,7 @@ from brain.presentation.commands.logs import (
     command_log_index,
     command_query_log,
     command_read_log,
+    command_rename_log_domain,
     command_update_log_index,
 )
 from brain.presentation.commands.memory import (
@@ -52,10 +62,11 @@ from brain.presentation.commands.memory import (
     command_delete_memory_entry,
     command_export_domains,
     command_memory_structure,
-    command_read_record,
+    command_get_memory_entry,
     command_update_memory_index,
-    command_write_record,
+    command_set_memory_entry,
 )
+from brain.presentation.commands.records import command_add_record, command_delete_record, command_show_records
 from brain.presentation.commands.profiles import command_list_profiles, command_read_profile
 from brain.presentation.commands.pictures import (
     command_delete_picture_guidance,
@@ -63,11 +74,17 @@ from brain.presentation.commands.pictures import (
     command_list_picture_guidance,
     command_list_pictures,
     command_picture_status,
+    command_registre_image,
     command_scan_pictures,
     command_set_picture_guidance,
 )
 from brain.presentation.commands.snippets import command_clone_snippet, command_list_snippets
-from brain.presentation.commands.utilities import command_propagate_agent_prompt, command_wiki
+from brain.presentation.commands.utilities import (
+    command_apply_patch,
+    command_propagate_agent_prompt,
+    command_search_symbol,
+    command_wiki,
+)
 from brain.presentation.commands.vectorstore import (
     command_local_vectorstore_status,
     command_rebuild_local_vectorstore,
@@ -83,12 +100,15 @@ COMMAND_MODULES = [
     command_avatar_outbox,
     command_memory_structure,
     command_add_memory_domain,
-    command_write_record,
-    command_read_record,
+    command_set_memory_entry,
+    command_add_record,
+    command_get_memory_entry,
+    command_show_records,
     command_check_workspace,
     command_complete_work,
     command_export_domains,
     command_delete_memory_entry,
+    command_delete_record,
     command_write_diary,
     command_read_diary,
     command_edit_diary,
@@ -99,7 +119,9 @@ COMMAND_MODULES = [
     command_list_snippets,
     command_clone_snippet,
     command_wiki,
+    command_apply_patch,
     command_propagate_agent_prompt,
+    command_search_symbol,
     command_update_vectorstore,
     command_rebuild_vectorstore,
     command_query,
@@ -108,6 +130,7 @@ COMMAND_MODULES = [
     command_update_memory_index,
     command_append_log,
     command_edit_log,
+    command_rename_log_domain,
     command_export_logs,
     command_log_index,
     command_update_log_index,
@@ -122,6 +145,8 @@ COMMAND_MODULES = [
     command_task_finished,
     command_set_task_status,
     command_edit_task,
+    command_rename_task_domain,
+    command_read_task,
     command_show_backlog,
     command_delete_task,
     command_knowledge_init,
@@ -139,6 +164,7 @@ COMMAND_MODULES = [
     command_stop_avatar_service,
     command_avatar_service_status,
     command_scan_pictures,
+    command_registre_image,
     command_list_pictures,
     command_describe_picture,
     command_picture_status,

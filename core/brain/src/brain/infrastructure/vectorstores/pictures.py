@@ -18,8 +18,20 @@ PICTURE_VECTOR_COLLECTION = "pictures"
 
 
 def sync_picture_vectors(db_path: Path | None = None, reset: bool = False) -> dict[str, Any]:
-    """Synchronize picture search text while storing only SQLite references."""
-    scan_stats = scan_pictures()
+    """Synchronize picture search text while storing only SQLite references.
+
+    Args:
+        db_path (Path | None): Vectorstore directory override, or ``None`` for
+            the global store.
+        reset (bool): Whether to clear existing picture vectors before syncing.
+
+    Returns:
+        dict[str, Any]: Scan, graph projection, and vector synchronization counts.
+    """
+    scan_stats = {
+        "local": scan_pictures(scope="local"),
+        "global": scan_pictures(scope="global"),
+    }
     repository = PictureRepository()
     graph_stats = project_picture_descriptions(
         records=repository.list(),
@@ -68,8 +80,16 @@ def sync_picture_vectors(db_path: Path | None = None, reset: bool = False) -> di
     }
 
 
-def search_picture_vectors(text: str, limit: int) -> list[dict[str, Any]]:
-    """Search picture embeddings and hydrate matches from SQLite."""
+def search_picture_vectors(text: str, limit: int | None) -> list[dict[str, Any]]:
+    """Search picture embeddings and hydrate active records from SQLite.
+
+    Args:
+        text (str): Natural-language picture query.
+        limit (int): Maximum number of hydrated matches.
+
+    Returns:
+        list[dict[str, Any]]: Ranked matches containing active picture records.
+    """
     manager = VectorStoreManager(collection_name=PICTURE_VECTOR_COLLECTION)
     try:
         matches = manager.search(query=text, limit=limit)

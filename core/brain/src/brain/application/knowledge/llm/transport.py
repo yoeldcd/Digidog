@@ -15,7 +15,13 @@ from typing import Any
 
 @dataclass(frozen=True)
 class ChatCompletionResult:
-    """Raw chat-completion response payload and transport metadata."""
+    """Raw chat-completion response payload and transport metadata.
+
+    Attributes:
+        response_payload: `dict[str, Any]`. The decoded JSON response body from the LLM endpoint.
+        response_chars: `int`. The total number of characters in the raw response text.
+        status: `int | str`. The HTTP status code or identifier returned by the server.
+    """
 
     response_payload: dict[str, Any]
     response_chars: int
@@ -23,7 +29,12 @@ class ChatCompletionResult:
 
 
 class ChatCompletionHTTPError(RuntimeError):
-    """HTTP error returned by an OpenAI-compatible chat-completion endpoint."""
+    """HTTP error returned by an OpenAI-compatible chat-completion endpoint.
+
+    Attributes:
+        status_code: `int`. The HTTP status code associated with the error.
+        response_text: `str`. The raw error message returned by the server.
+    """
 
     status_code: int
     response_text: str
@@ -40,14 +51,17 @@ def post_chat_completion(
     payload: dict[str, Any],
     timeout_seconds: int,
 ) -> ChatCompletionResult:
-    """
-    POST one chat-completion request and return the decoded payload.
+    """POST one chat-completion request and return the decoded payload.
 
     Args:
         endpoint (str): Chat completion endpoint URL.
         api_key (str): Resolved bearer token.
         payload (dict[str, Any]): OpenAI-compatible request payload.
         timeout_seconds (int): Request timeout in seconds.
+        endpoint: `str`. The URL of the chat completion endpoint.
+        api_key: `str`. The bearer token used for authentication.
+        payload: `dict[str, Any]`. The OpenAI-compatible request body containing model parameters and messages.
+        timeout_seconds: `int`. The maximum time to wait for a server response before timing out.
 
     Returns:
         ChatCompletionResult: Decoded JSON payload with response metadata.

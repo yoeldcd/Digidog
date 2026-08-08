@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 
-def fetch_entity_fts_rows(connection: Any, fts_query: str, limit: int) -> list[dict[str, Any]]:
+def fetch_entity_fts_rows(connection: Any, fts_query: str, limit: int | None) -> list[dict[str, Any]]:
     """
     Return entity rows matched through the entity FTS table.
 
@@ -34,14 +34,13 @@ def fetch_entity_fts_rows(connection: Any, fts_query: str, limit: int) -> list[d
         LEFT JOIN sources ON sources.id = entities.source_id
         WHERE entity_fts MATCH ?
         ORDER BY rank
-        LIMIT ?
-        """,
-        (fts_query, max(limit, 1)),
+        """ + (" LIMIT ?" if limit is not None else ""),
+        (fts_query,) if limit is None else (fts_query, max(limit, 1)),
     ).fetchall()
     return [dict(row) for row in rows]
 
 
-def fetch_evidence_fts_rows(connection: Any, fts_query: str, limit: int) -> list[dict[str, Any]]:
+def fetch_evidence_fts_rows(connection: Any, fts_query: str, limit: int | None) -> list[dict[str, Any]]:
     """
     Return evidence rows matched through the evidence FTS table.
 
@@ -66,9 +65,8 @@ def fetch_evidence_fts_rows(connection: Any, fts_query: str, limit: int) -> list
         JOIN sources ON sources.id = evidence.source_id
         WHERE evidence_fts MATCH ?
         ORDER BY rank
-        LIMIT ?
-        """,
-        (fts_query, max(limit, 1)),
+        """ + (" LIMIT ?" if limit is not None else ""),
+        (fts_query,) if limit is None else (fts_query, max(limit, 1)),
     ).fetchall()
     return [dict(row) for row in rows]
 

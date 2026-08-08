@@ -15,12 +15,23 @@ from brain.presentation.terminal import render_placeholders, log_step
 
 
 def print_json(payload: Any) -> None:
-    """Print a payload as stable UTF-8 JSON."""
+    """Print a payload as stable UTF-8 JSON.
+
+    Args:
+        payload (Any): JSON-serializable diagnostic payload.
+    """
     print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Run integrity check on memory directory tree structure."""
+    """Run integrity checks on the workspace memory directory tree.
+
+    Args:
+        args (argparse.Namespace): Parsed output and verbosity flags.
+
+    Returns:
+        int: Zero when diagnostics pass; otherwise one.
+    """
     log_step(args, 'Validating workspace memory structure...')
     report = doctor_report()
     if args.json:

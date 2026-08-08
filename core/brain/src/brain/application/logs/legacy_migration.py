@@ -17,7 +17,14 @@ from brain.application.logs.parsing import is_canonical_log_file, is_previous_lo
 
 
 def migrate_legacy_md_logs(workspace_root: Path) -> list[str]:
-    """Convert legacy `.md` and previous `.log` files to standard `.log.md` files."""
+    """Convert legacy Markdown and previous log files to canonical log files.
+
+    Args:
+        workspace_root (Path): Workspace containing the legacy log directory.
+
+    Returns:
+        list[str]: Workspace-relative paths created by successful migrations.
+    """
     logs_dir = workspace_root / "$agent" / "logs"
     if not logs_dir.exists():
         return []
@@ -111,7 +118,14 @@ def migrate_legacy_md_logs(workspace_root: Path) -> list[str]:
 
 
 def legacy_preamble(date_text: str) -> str:
-    """Return the canonical preamble used for migrated log files."""
+    """Return the canonical preamble used for migrated log files.
+
+    Args:
+        date_text (str): Date label assigned to the migrated file.
+
+    Returns:
+        str: Canonical Markdown preamble and entry template.
+    """
     return (
         f"# Lof file for date {date_text}\n\n"
         "Any entry will use structure:\n\n"
@@ -133,7 +147,14 @@ def legacy_preamble(date_text: str) -> str:
 
 
 def parse_legacy_md_file(file_path: Path) -> list[dict]:
-    """Parse one legacy markdown log file into canonical entry dictionaries."""
+    """Parse one legacy Markdown log file into canonical entry dictionaries.
+
+    Args:
+        file_path (Path): Legacy dated Markdown file to parse.
+
+    Returns:
+        list[dict]: Canonical entry dictionaries extracted from recognized sections.
+    """
     content = file_path.read_text(encoding="utf-8")
     date_match = re.search(r"(\d{4})-(\d{2})-(\d{2})", file_path.name)
     if not date_match:
@@ -196,7 +217,12 @@ def parse_legacy_md_file(file_path: Path) -> list[dict]:
 
 
 def backup_and_delete_migrated_logs(workspace_root: Path, migrated_files: list[Path]) -> None:
-    """Back up and remove legacy log files that migrated successfully."""
+    """Back up and remove legacy log files that migrated successfully.
+
+    Args:
+        workspace_root (Path): Workspace that owns the temporary migration backup.
+        migrated_files (list[Path]): Successfully migrated source files to archive and remove.
+    """
     if not migrated_files:
         return
     backup_dir = workspace_root / "$agent" / ".tmp" / "migrated_logs_backup"

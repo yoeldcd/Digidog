@@ -15,13 +15,15 @@ from brain.application.pictures.config import load_pictures_config
 from brain.application.knowledge.models.dtos.runtime_config import PictureGuidanceConfigDTO
 from brain.infrastructure.pictures.models import PictureRecord
 from brain.infrastructure.pictures.repository import PictureRepository
-from brain.infrastructure.runtime.paths import get_pictures_dir
+from brain.infrastructure.runtime.paths import get_pictures_dir, resolve_picture_path
 
 
 DEFAULT_DESCRIPTION_PROMPT = (
-    "Describe this image for a personal knowledge index. Identify the main subjects, "
-    "setting, activity, visible objects, colors, mood, and any legible text. Be factual, "
-    "concise, and useful for semantic search. Do not infer sensitive attributes."
+    "Describe this image for a personal knowledge index as concise Markdown fields."
+    " Use exactly these labels when evidence is available: **Subjects:**, **Setting:**,"
+    " **Activity:**, **Objects:**, **Colors:**, **Mood:**, and **Text:**."
+    " Add **Semantic Tags:** only for explicit, observable configured tags."
+    " Be factual, useful for semantic search, and do not infer sensitive attributes."
 )
 
 PictureDescriptionProgress = Callable[[int, int, PictureRecord], None]
@@ -36,7 +38,18 @@ def describe_registered_pictures(
     pictures_root: Path | None = None,
     on_progress: PictureDescriptionProgress | None = None,
 ) -> dict[str, Any]:
-    """Describe active pictures in deterministic order while isolating per-file failures."""
+    """Describe active pictures in deterministic order while isolating failures.
+
+    Args:
+        only_undescribed (bool): Whether to skip records that already have descriptions.
+        prompt (str): Optional description instruction passed to the vision model.
+        repository (PictureRepository | None): Optional repository override.
+        pictures_root (Path | None): Optional root used to resolve picture files.
+        on_progress (PictureDescriptionProgress | None): Optional per-record progress callback.
+
+    Returns:
+        dict[str, Any]: Batch totals, updated picture mappings, and isolated errors.
+    """
     repo = repository or PictureRepository()
     records = repo.list(active_only=True)
     candidates = [record for record in records if not only_undescribed or not record.description.strip()]
@@ -78,7 +91,21 @@ def set_picture_description(
     repository: PictureRepository | None = None,
     pictures_root: Path | None = None,
 ) -> PictureRecord:
-    """Persist a manual description or generate one with the configured vision model."""
+    """Persist a manual picture description or generate one with the vision model.
+
+    Args:
+        picture_id (str): Stable identifier of the active picture record.
+        description (str): Optional manual description.
+        prompt (str): Optional generation instruction when no manual description is supplied.
+        repository (PictureRepository | None): Optional repository override.
+        pictures_root (Path | None): Optional root used to resolve the picture file.
+
+    Returns:
+        PictureRecord: Updated picture record.
+
+    Raises:
+        ValueError: The picture is unknown or inactive.
+    """
     repo = repository or PictureRepository()
     record = repo.get(picture_id=picture_id)
     if record is None or not record.active:
@@ -87,9 +114,15 @@ def set_picture_description(
     normalized_description = description.strip()
     source = "manual"
     if not normalized_description:
-        root = (pictures_root or get_pictures_dir()).resolve()
+        if pictures_root is not None:
+            picture_path = (pictures_root.resolve() / record.relative_path).resolve()
+        else:
+            picture_path = resolve_picture_path(
+                scope=str(getattr(record, "scope", "local") or "local"),
+                relative_path=record.relative_path,
+            )
         normalized_description = _generate_description(
-            picture_path=(root / record.relative_path).resolve(),
+            picture_path=picture_path,
             mime_type=record.mime_type,
             prompt=prompt.strip() or DEFAULT_DESCRIPTION_PROMPT,
         )

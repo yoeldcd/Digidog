@@ -1,9 +1,6 @@
 """Command metadata for the `delete-memory-entry` CLI command."""
 
-from __future__ import annotations
-
 from brain.presentation.commands.models import ArgumentSchema, CommandSchema
-
 
 SCHEMA = CommandSchema(
     name="delete-memory-entry",

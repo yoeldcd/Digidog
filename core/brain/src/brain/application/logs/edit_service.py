@@ -25,7 +25,17 @@ class EditLogError(ValueError):
 
 @dataclass(frozen=True)
 class EditLogRequest:
-    """Input contract for editing one workspace log entry."""
+    """Input contract for editing one workspace log entry.
+
+    Attributes:
+        timestamp (str): Canonical timestamp that identifies the stored entry.
+        log_domain (str | None): Optional replacement domain.
+        title (str | None): Optional replacement title.
+        change_type (str | None): Optional replacement change classification.
+        why (str | None): Optional replacement motivation.
+        description (str | None): Optional replacement description.
+        impact (str | None): Optional replacement impact.
+    """
 
     timestamp: str
     log_domain: str | None = None
@@ -38,7 +48,13 @@ class EditLogRequest:
 
 @dataclass(frozen=True)
 class EditLogResult:
-    """Result contract for editing one workspace log entry."""
+    """Result contract for editing one workspace log entry.
+
+    Attributes:
+        log_file (Path): Compatibility source path associated with the entry date.
+        timestamp (str): Canonical timestamp of the edited entry.
+        read_command (str): CLI command that reads the edited entry.
+    """
 
     log_file: Path
     timestamp: str
@@ -55,6 +71,9 @@ def edit_log_entry(workspace_root: Path, request: EditLogRequest) -> EditLogResu
 
     Returns:
         EditLogResult: Edited log metadata.
+
+    Raises:
+        EditLogError: The timestamp is empty or does not identify a stored entry.
     """
     timestamp: str = request.timestamp.strip()
     if not timestamp:

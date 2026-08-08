@@ -38,6 +38,7 @@ vectorstore maintenance, and memory indexing stay in their own modules.
 | `query` | domain, query | `--limit`, `--source`, `--messages`, `--scope`, `--mechanism`, `--knowledge-scope`, `--deep`, `--explain`, `--json` | Searches memory, knowledge, and persisted messages through the global query point. |
 | `serve-explorer` | none | `--host`, `--port`, `--api-timeout` | Serves the Brain Explorer static UI and local JSON API. |
 | `wiki` | mode, documentation_path | `--log-domain`, `--host`, `--port`, `--json` | Checks, generates, or serves a documentation wiki through the core-owned utility. |
+| `apply-patch` | none | `--check`, `--json` | Validates and applies exact-text patch specifications received through standard input. |
 | `propagate-agent-prompt` | none | `--source`, `--mirrors-file`, `--dry-run`, `--json` | Verifies or synchronizes canonical prompt mirrors through the core-owned utility. |
 | `memory-structure` | none | `--json`, `--uptime-order`, `--limit` | Lists memory domains, subdomains, and indexed entries. |
 | `add-memory-domain` | domain | `--json` | Creates a Markdown memory domain or subdomain. |
@@ -46,6 +47,9 @@ vectorstore maintenance, and memory indexing stay in their own modules.
 | `delete-memory-entry` | domain, key | `--confirm`, `--json` | Deletes a memory entry or confirmed memory domain. |
 | `export` | domain, out_dir | `--out` | Exports memory content. |
 | `update-memory-index` | none | `--json` | Refreshes the SQLite memory source registry. |
+| `add-record` | text | `--json` | Persists an always-on local record. Alias: `registre-policie`. |
+| `show-records` | none | `--json` | Lists active local records as an ID-indexed dictionary. Alias: `show-policies`. |
+| `delete-record` | record_id | `--id`, `--json` | Deletes one local record by `rec##` ID. Alias: `deprecate-policie`. |
 | `write-diary` | body | `--datetime`, `--title`, `--text` | Creates a diary entry. |
 | `read-diary` | date | `--datetime`, `--time`, `--limit` | Reads diary entries by date and optional exact minute. |
 | `edit-diary` | timestamp, body | `--datetime`, `--title`, `--text`, `--append`, `--replace`, `--with-text` | Edits a diary entry. |
@@ -79,6 +83,7 @@ vectorstore maintenance, and memory indexing stay in their own modules.
 | `knowledge-show` | entity | `--entities`, `--relations`, `--classes`, `--filter`, `--scope`, `--json` | Shows graph records or one scoped knowledge graph entity view. |
 | `knowledge-export` | none | `--scope`, `--format`, `--json` | Exports scoped knowledge graphs as JSON-LD. |
 | `dream` | none | `--scope`, `--domain`, `--limit`, `--llm`, `--min-confidence`, `--prune`, `--json`, `--verbose-log` | Uses configured LLM stages to propose cognitive deltas for selected source scopes, bootstraps empty graphs, and asks which remaining deltas to apply. |
+| `search-symbol` | none | `--name`, `--language`, `--path`, `--kind`, `--json` | Searches for classes, functions, interfaces, methods, and procedures across multi-language source files (Python, JS/TS, PowerShell, Batch). |
 
 ## Command Details:
 
@@ -283,6 +288,19 @@ configured mirrors must be checked or synchronized.
 | `--mirrors-file` | No | `<core>/database/instruction_mirrors/agent_prompt_mirrors.txt` | Optional mirror-list override. |
 | `--dry-run` | No | false | Reports required updates without writing. |
 
+#### `apply-patch`
+
+**What It Does:** Executes a guarded, source-redacted exact text patch specification received on standard input through the typed Python patching vertical.
+
+**Use It When:** Editing or creating codebase files through standard input JSON specifications.
+
+**Result:** Validates anchors, occurrences, strict encodings, and physical path confinement. In check mode (`--check`), plans and returns redacted SHA-256 evidence without disk writes. In apply mode, performs same-directory exclusive temporary writes, atomic per-file replacement, and batch rollback upon failure.
+
+| Parameter | Required | Default | Description |
+|---|---|---|---|
+| standard input | Yes | none | JSON specification containing `edits` and/or `creates`. |
+| `--check` | No | false | Validate and report evidence without filesystem writes. |
+
 ## `brain.application.memory`
 
 ### Commands Index:
@@ -405,6 +423,36 @@ Memory commands manage editable Markdown memory domains and the memory index.
 |---|---|---|---|
 | `--json` | No | false | Emits the rebuild result as JSON. |
 
+## `brain.application.records`
+
+### Commands Index:
+Record commands manage the always-on local context stored in `$agent/data/records.json`. This domain is independent from Markdown memory entries. Policy spellings are aliases of the three canonical record commands, not separate command schemas or actions.
+
+### Command Details:
+
+#### `add-record`
+
+**What It Does:** Persists one non-empty always-on local record and assigns the next monotonic `rec##` ID.
+
+**Use It When:** Durable local context must accompany every hydrated or queried context. Use `registre-policie` when the record is an imperative policy.
+
+**Result:** Returns the created ID and result. The `--json` payload contains `ok`, `id`, and `result`.
+
+#### `show-records`
+
+**What It Does:** Lists every active local record.
+
+**Use It When:** Inspecting the always-on record store. `show-policies` is the policy-oriented alias.
+
+**Result:** With `--json`, returns `{ "ok": true, "records": { "rec##": "text" } }`.
+
+#### `delete-record`
+
+**What It Does:** Deletes one local record by explicit `rec##` ID while preserving monotonic ID allocation.
+
+**Use It When:** Removing a record that is obsolete or superseded. `deprecate-policie` is the policy-oriented alias.
+
+**Result:** Returns the deleted ID and result. Accepts the ID positionally or through `--id`.
 ## `brain.diary`
 
 ### Commands Index:
@@ -1576,9 +1624,11 @@ metadata.
 
 ### Picture knowledge commands
 
-The picture registry treats `pictures/` as the canonical image tree. Folder hierarchy becomes dot-separated
-domains, while SQLite stores file identity, dimensions, content hash, `mtime_ns`, description provenance, and
-vector indexing state in `core/database/picture_storage/pictures.db`.
+The picture registry accepts scoped images. A local image belongs to the active agent picture collection and a global image belongs to the shared core collection; a dotted domain identifies its semantic placement. Each registration validates the source, preserves a stable record, optionally supplies Markdown, and can force vector synchronization with `--index`.
+
+#### `registre-image`
+
+Registers exactly one image from `--image-file FULLPATH_TO_IMAGE` or `--image-data "BASE64String"` under `--scope local|global` and `--domain a.b.c`. Use `--description "Markdown"` to provide the semantic description explicitly. When omitted, the command requests the configured image-to-text description with the standard fields (Subjects, Setting, Activity, Objects, Colors, Mood, Text, and Semantic Tags). Use `--index` to force picture-vector synchronization after registration. The JSON result contains the registered picture record.
 
 #### `scan-images`
 

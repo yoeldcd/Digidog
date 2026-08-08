@@ -104,7 +104,13 @@ class PictureGuidanceConfigDTO(BaseModel):
 
 
 class PicturesConfigDTO(BaseModel):
-    """Runtime configuration for picture discovery and img2text descriptions."""
+    """Runtime configuration for picture discovery and img2text descriptions.
+
+    Attributes:
+        guidance (PictureGuidanceConfigDTO): Environment-specific recognition rules added to image prompts.
+        image_model (StageModelConfigDTO): Optional vision model used to describe discovered images.
+        supported_extensions (list[str]): Case-insensitive file extensions included in scans.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -125,6 +131,35 @@ class PicturesConfigDTO(BaseModel):
     )
     """Case-insensitive file extensions included by picture scans."""
 
+
+class SymbolsConfigDTO(BaseModel):
+    """
+    Runtime configuration for symbol indexing, AST parsing, and code navigation.
+
+    Attributes:
+        enabled: Whether symbol search and indexing is enabled.
+        default_language: Default source code language parser.
+        model: Stage model configuration for semantic symbol analysis.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = Field(default=True)
+    """Whether symbol search is enabled."""
+
+    default_language: str = Field(default="python")
+    """Default source code language parser."""
+
+    model: StageModelConfigDTO = Field(
+        default_factory=lambda: StageModelConfigDTO(
+            model="google/gemini-2.5-flash",
+            max_tokens=2000,
+            enabled=True,
+        ),
+    )
+    """Model configuration for semantic symbol analysis."""
+
+
 class BrainConfigsDTO(BaseModel):
     """
     Unified runtime configuration for brain services.
@@ -134,8 +169,11 @@ class BrainConfigsDTO(BaseModel):
         agent_name: Canonical agent identity owned by this core.
         user_name: Canonical user identity associated with the agent.
         agent_dir: Canonical global directory for agent-owned memory and snippets.
+        transient_dir: Optional absolute custom directory for rollback backups and temporary patch artifacts.
         knowledge: Knowledge graph configuration.
         memory: Memory and vectorstore configuration.
+        pictures (PicturesConfigDTO): Picture discovery and image-description configuration.
+        symbols (SymbolsConfigDTO): Symbol indexing and code search configuration.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -152,6 +190,9 @@ class BrainConfigsDTO(BaseModel):
     agent_dir: str = Field(default="")
     """Canonical global directory for agent-owned memory and snippets."""
 
+    transient_dir: str = Field(default="")
+    """Optional absolute custom directory for rollback backups and temporary patch artifacts."""
+
     knowledge: KnowledgeConfigDTO = Field(default_factory=KnowledgeConfigDTO)
     """Knowledge graph configuration."""
 
@@ -160,3 +201,6 @@ class BrainConfigsDTO(BaseModel):
 
     pictures: PicturesConfigDTO = Field(default_factory=PicturesConfigDTO)
     """Picture registry and optional img2text configuration."""
+
+    symbols: SymbolsConfigDTO = Field(default_factory=SymbolsConfigDTO)
+    """Symbol indexing and code search configuration."""

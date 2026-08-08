@@ -12,6 +12,7 @@ from typing import Any
 
 
 class KnowledgeDeltaRepositoryMixin:
+    """Persist and manage proposed knowledge-graph deltas."""
     def record_pending_delta(self, source_id: int, payload: dict[str, Any], validation: dict[str, Any]) -> int:
         """
         Store a proposed delta and validation report.

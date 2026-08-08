@@ -11,7 +11,17 @@ from typing import Any
 
 @dataclass(slots=True)
 class ArgumentSchema:
-    """Normalized schema for a command line argument or option."""
+    """Normalized schema for a command line argument or option.
+
+    Attributes:
+        flags (list[str]): Argument flag names.
+        help (str): User-facing usage help.
+        action (str | None): ``argparse`` action name.
+        type (str | None): Declarative value type name.
+        default (Any): Optional default value.
+        required (bool): Whether argument is mandatory.
+        nargs (str | None): Optional argument-cardinality expression.
+    """
 
     flags: list[str]
     help: str = ""
@@ -24,7 +34,13 @@ class ArgumentSchema:
 
 @dataclass(slots=True)
 class SubcommandSchema:
-    """Normalized schema for a nested CLI subcommand."""
+    """Normalized schema for a nested CLI subcommand.
+
+    Attributes:
+        name (str): Subcommand name.
+        help (str): User-facing usage help.
+        arguments (list[ArgumentSchema]): Declarative argument schemas.
+    """
 
     name: str
     help: str
@@ -33,7 +49,17 @@ class SubcommandSchema:
 
 @dataclass(slots=True)
 class CommandSchema:
-    """Normalized schema for a top-level CLI command."""
+    """Normalized schema for a top-level CLI command.
+
+    Attributes:
+        name (str): Canonical command name.
+        help (str): User-facing usage help.
+        aliases (list[str]): Accepted alternate command names.
+        arguments (list[ArgumentSchema]): Top-level argument schemas.
+        subcommands (list[SubcommandSchema]): Nested command schemas.
+        subcommand_dest (str | None): Namespace attribute for nested command.
+        domain (str): Functional ownership domain.
+    """
 
     name: str
     help: str

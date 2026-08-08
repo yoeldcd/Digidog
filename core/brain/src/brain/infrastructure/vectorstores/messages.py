@@ -24,7 +24,16 @@ def sync_all_message_vectors(
     *,
     reset: bool = False,
 ) -> dict[str, Any]:
-    """Synchronize registered consumer messages without copying their text."""
+    """Synchronize registered consumer messages without copying their text.
+
+    Args:
+        db_path (Path | None): Vectorstore directory override, or ``None`` for
+            the global store.
+        reset (bool): Whether to clear the message collection before syncing.
+
+    Returns:
+        dict[str, Any]: Consumer, scan, creation, deletion, and skip counts.
+    """
     vectorstore_path: Path = db_path or get_vectorstore_dir(scope="global")
     manager = VectorStoreManager(db_path=vectorstore_path, collection_name=MESSAGE_VECTOR_COLLECTION)
     try:
@@ -84,8 +93,17 @@ def sync_all_message_vectors(
     }
 
 
-def search_message_vectors(consumer_path: Path, text: str, limit: int) -> list[dict[str, Any]]:
-    """Search message embeddings and hydrate matches from the canonical database."""
+def search_message_vectors(consumer_path: Path, text: str, limit: int | None) -> list[dict[str, Any]]:
+    """Search message vectors and hydrate matches from the canonical database.
+
+    Args:
+        consumer_path (Path): Registered consumer whose messages may match.
+        text (str): Natural-language search query.
+        limit (int): Maximum number of hydrated matches.
+
+    Returns:
+        list[dict[str, Any]]: Ranked matches containing canonical message records.
+    """
     resolved_consumer: Path = consumer_path.resolve()
     manager = VectorStoreManager(collection_name=MESSAGE_VECTOR_COLLECTION)
     try:
@@ -110,7 +128,12 @@ def search_message_vectors(consumer_path: Path, text: str, limit: int) -> list[d
 
 
 def registered_consumer_paths() -> list[Path]:
-    """Return canonical consumer paths declared by the core mirror registry."""
+    """Return canonical consumer paths declared by the core mirror registry.
+
+    Returns:
+        list[Path]: Resolved paths for valid registered consumers, or an empty
+        list when the registry cannot be read.
+    """
     try:
         payload = json.loads(get_brain_mirrors_path().read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -123,6 +146,14 @@ def registered_consumer_paths() -> list[Path]:
 
 
 def message_vector_id(consumer_path: Path, message_id: str) -> str:
-    """Return a stable ID without duplicating the message body."""
+    """Build a stable vector ID without duplicating the message body.
+
+    Args:
+        consumer_path (Path): Canonical consumer database path.
+        message_id (str): Message identifier within that consumer.
+
+    Returns:
+        str: Namespaced vector identifier containing a consumer hash.
+    """
     consumer_hash: str = hashlib.sha256(consumer_path.as_posix().casefold().encode("utf-8")).hexdigest()[:16]
     return f"message:{consumer_hash}:{message_id}"

@@ -10,7 +10,16 @@ from brain.presentation.terminal import render_placeholders, log_step
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Execute deletion of key or memory domain."""
+    """Delete a memory entry or a confirmed complete memory domain.
+
+    Args:
+        args (argparse.Namespace): Parsed command options identifying the target
+            entry or domain and its confirmation token.
+
+    Returns:
+        int: Zero when deletion succeeds; otherwise one after reporting an error
+            or a missing confirmation.
+    """
     color_enabled = getattr(args, "color", False)
     log_step(args, "[1/2] Resolving target...")
     try:

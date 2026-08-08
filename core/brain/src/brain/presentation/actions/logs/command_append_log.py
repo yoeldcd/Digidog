@@ -21,7 +21,16 @@ def _first_present(*values: str | None) -> str | None:
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Append log entry."""
+    """Validate and append a structured workspace log entry.
+
+    Args:
+        args (argparse.Namespace): Parsed command options containing structured
+            log metadata, timestamp, and output settings.
+
+    Returns:
+        int: Zero when the entry is persisted; otherwise one after reporting a
+            validation or storage error.
+    """
     color_enabled = getattr(args, "color", False)
     log_step(args, "[1/3] Parsing and validating inputs...")
     try:

@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
 from pathlib import Path
 
@@ -92,45 +91,31 @@ def _log_source_paths(workspace_root: Path) -> tuple[list[str], list[str]]:
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Run workspace checks, update all indexes, and print context payload in sequence."""
+    """Initialize workspace stores, refresh indexes, and render session context.
+
+    Args:
+        args (argparse.Namespace): Parsed initialization options controlling output
+            format, activity logging, and optional maintenance behavior.
+
+    Returns:
+        int: Zero when initialization completes; otherwise one after reporting an
+            error.
+    """
     from brain.presentation.actions.general import command_check_workspace, command_get_context
     from brain.presentation.actions.logs import command_update_log_index
     from brain.presentation.actions.memory import command_update_memory_index
     from brain.presentation.actions.vectorstore import command_update_vectorstore
     from brain.presentation.terminal import render_placeholders
-    from brain.infrastructure.runtime.migration_service import migrate_brain_runtime_stores
+    from brain.infrastructure.runtime.migrations.migration_service import migrate_brain_runtime_stores
     from brain.application.backlog.service import migrate_legacy_backlog
     from brain.application.logs.store import get_logs_database_path, log_database_summary
 
     color_enabled = getattr(args, "color", False)
     workspace_root = _workspace_root()
     from brain.application.workspace.bootstrap_service import (
-        ensure_workspace_codex_config,
-        ensure_workspace_codex_rules,
         ensure_workspace_structure,
     )
-    from brain.infrastructure.runtime.paths import get_brain_configs_path
-
-    agent_config = json.loads(get_brain_configs_path().read_text(encoding="utf-8"))
-    codex_config_created = ensure_workspace_codex_config(
-        workspace=workspace_root,
-        agent_name=str(agent_config["agent_name"]),
-        agent_dir=Path(str(agent_config["agent_dir"])),
-    )
-    codex_rules_created = ensure_workspace_codex_rules(workspace=workspace_root)
     structure_result = ensure_workspace_structure(workspace=workspace_root)
-    _print_object(
-        args,
-        "Codex local policy",
-        ".codex/config.toml",
-        "created" if codex_config_created else "present",
-    )
-    _print_object(
-        args,
-        "Codex Brain rules",
-        ".codex/rules/default.rules",
-        "created" if codex_rules_created else "present",
-    )
     _print_object(args, "workspace root", workspace_root.as_posix())
     _print_object(args, "logs database", (workspace_root / "$agent" / "database" / "brain_logs.db").as_posix())
     _print_object(args, "messages database", structure_result.messages_database.as_posix())
@@ -340,12 +325,6 @@ def handle(args: argparse.Namespace) -> int:
         "command": "init",
         "workspaceRoot": workspace_root.as_posix(),
         "messagesDatabase": structure_result.messages_database.as_posix(),
-        "codexPolicy": {
-            "config": (workspace_root / ".codex" / "config.toml").as_posix(),
-            "configCreated": codex_config_created,
-            "rules": (workspace_root / ".codex" / "rules" / "default.rules").as_posix(),
-            "rulesCreated": codex_rules_created,
-        },
         "migration": {
             "actions": [
                 {

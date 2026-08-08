@@ -12,7 +12,14 @@ from brain.application.memory.markdown_sections import extract_from_markdown, up
 
 
 def create_category(category: str) -> Path:
-    """Create a category directory structure under MEMORY_ROOT."""
+    """Create a category directory beneath the memory root.
+
+    Args:
+        category (str): Dot-separated category path.
+
+    Returns:
+        Path: Created or existing category directory.
+    """
     paths.ensure_memory_root()
     dir_path = paths.resolve_category_dir(category)
     dir_path.mkdir(parents=True, exist_ok=True)
@@ -23,9 +30,18 @@ def create_category(category: str) -> Path:
 
 
 def write_instance(category: str, key: str, content: str) -> Path:
-    """Write pure Markdown content to the target category/key file."""
+    """Write Markdown content to a memory category and key.
+
+    Args:
+        category (str): Dot-separated category path.
+        key (str): Entry key or embedded section name.
+        content (str): Markdown content to persist.
+
+    Returns:
+        Path: Updated memory file path.
+    """
     paths.ensure_memory_root()
-    from brain.application.memory.indexing.index_service import update_index_record
+    from brain.application.memory.indexing.index_service import update_index_entry
 
     parts = [part.strip() for part in category.split(".") if part.strip()]
     if len(parts) == 2:
@@ -35,19 +51,30 @@ def write_instance(category: str, key: str, content: str) -> Path:
             orig_content = file_path.read_text(encoding="utf-8")
             updated_content = update_markdown(orig_content, key, content)
             paths.write_text_atomic(file_path, updated_content)
-            update_index_record(category, key)
+            update_index_entry(category, key)
             sync_vectorstore_file(parts[0], parts[1], updated_content)
             return file_path
 
     file_path = paths.resolve_file_path(category, key)
     paths.write_text_atomic(file_path, content)
-    update_index_record(category, key)
+    update_index_entry(category, key)
     sync_vectorstore_file(category, key, content)
     return file_path
 
 
 def read_instance(category: str, key: str) -> str:
-    """Read and return Markdown content from the category/key file."""
+    """Read Markdown content from a memory category and key.
+
+    Args:
+        category (str): Dot-separated category path.
+        key (str): Entry key or embedded section name.
+
+    Returns:
+        str: Extracted section or complete entry content.
+
+    Raises:
+        paths.BrainStoreError: The entry is absent or cannot be read.
+    """
     parts = [part.strip() for part in category.split(".") if part.strip()]
     if len(parts) == 2:
         parent_dir = paths.MEMORY_ROOT / parts[0]
@@ -61,7 +88,7 @@ def read_instance(category: str, key: str) -> str:
 
     file_path = paths.resolve_file_path(category, key)
     if not file_path.exists():
-        raise paths.BrainStoreError(f"Record '{key}' does not exist in category '{category}'.")
+        raise paths.BrainStoreError(f"Memory entry '{key}' does not exist in category '{category}'.")
     try:
         return file_path.read_text(encoding="utf-8")
     except Exception as exc:
@@ -69,8 +96,16 @@ def read_instance(category: str, key: str) -> str:
 
 
 def delete_instance(category: str, key: str) -> None:
-    """Delete the .md file for a category/key."""
-    from brain.application.memory.indexing.index_service import update_index_record
+    """Delete a memory entry or embedded Markdown section.
+
+    Args:
+        category (str): Dot-separated category path.
+        key (str): Entry key or embedded section name.
+
+    Raises:
+        paths.BrainStoreError: The entry is absent or cannot be deleted.
+    """
+    from brain.application.memory.indexing.index_service import update_index_entry
 
     parts = [part.strip() for part in category.split(".") if part.strip()]
     if len(parts) == 2:
@@ -80,23 +115,31 @@ def delete_instance(category: str, key: str) -> None:
             orig_content = file_path.read_text(encoding="utf-8")
             updated_content = update_markdown(orig_content, key, None)
             paths.write_text_atomic(file_path, updated_content)
-            update_index_record(category, key)
+            update_index_entry(category, key)
             sync_vectorstore_file(parts[0], parts[1], updated_content)
             return
 
     file_path = paths.resolve_file_path(category, key)
     if not file_path.exists():
-        raise paths.BrainStoreError(f"Record '{key}' does not exist in category '{category}'.")
+        raise paths.BrainStoreError(f"Memory entry '{key}' does not exist in category '{category}'.")
     try:
         file_path.unlink()
-        update_index_record(category, key, deleted=True)
+        update_index_entry(category, key, deleted=True)
         delete_vectorstore_file(category, key)
     except Exception as exc:
         raise paths.BrainStoreError(f"Could not delete file {file_path}: {exc}") from exc
 
 
 def delete_category(category: str, confirmation: str) -> None:
-    """Recursively delete a category directory and all its contents."""
+    """Recursively delete a category directory and its contents.
+
+    Args:
+        category (str): Dot-separated category path.
+        confirmation (str): Exact normalized category required as confirmation.
+
+    Raises:
+        paths.BrainStoreError: Confirmation fails, the category is absent, or deletion fails.
+    """
     from brain.application.memory.indexing.index_service import update_index_category
 
     dir_path = paths.resolve_category_dir(category)
@@ -113,7 +156,13 @@ def delete_category(category: str, confirmation: str) -> None:
 
 
 def sync_vectorstore_file(category: str, key: str, content: str) -> None:
-    """Best-effort vectorstore update for one memory file."""
+    """Update one memory vector record without blocking file persistence.
+
+    Args:
+        category (str): Memory category stored in vector metadata.
+        key (str): Memory entry key.
+        content (str): Current Markdown content.
+    """
     try:
         from brain.infrastructure.vectorstores.manager import VectorStoreManager
 
@@ -122,9 +171,13 @@ def sync_vectorstore_file(category: str, key: str, content: str) -> None:
     except Exception:
         pass
 
-
 def delete_vectorstore_file(category: str, key: str) -> None:
-    """Best-effort vectorstore deletion for one memory file."""
+    """Delete one memory vector record without blocking file deletion.
+
+    Args:
+        category (str): Memory category stored in vector metadata.
+        key (str): Memory entry key.
+    """
     try:
         from brain.infrastructure.vectorstores.manager import VectorStoreManager
 

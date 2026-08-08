@@ -95,7 +95,14 @@ def append_time_bucket_constraints(
     constraints: list[QueryDateConstraintDTO],
     seen: set[tuple[str, str, str]],
 ) -> None:
-    """Append supported time-bucket constraints."""
+    """Append supported time-bucket constraints.
+
+    Args:
+        text (str): Query text to inspect.
+        as_of (datetime): Zoned reference time used for bucket boundaries.
+        constraints (list[QueryDateConstraintDTO]): Mutable normalized constraint output.
+        seen (set[tuple[str, str, str]]): Deduplication keys already emitted.
+    """
     normalized_text: str = normalize_query_text(value=text)
     for matcher in LANGUAGE_MATCHERS:
         for phrase, (start_time, end_time, label) in matcher.TIME_BUCKETS.items():
@@ -120,7 +127,13 @@ def append_absolute_date_constraints(
     constraints: list[QueryDateConstraintDTO],
     seen: set[tuple[str, str, str]],
 ) -> None:
-    """Append ISO and day-month-year date constraints."""
+    """Append ISO and day-month-year date constraints.
+
+    Args:
+        text (str): Query text to inspect.
+        constraints (list[QueryDateConstraintDTO]): Mutable normalized constraint output.
+        seen (set[tuple[str, str, str]]): Deduplication keys already emitted.
+    """
     for match in ISO_DATE_PATTERN.finditer(text):
         append_date_match(match=match, constraints=constraints, seen=seen)
     for match in DMY_DATE_PATTERN.finditer(text):
@@ -132,7 +145,13 @@ def append_date_match(
     constraints: list[QueryDateConstraintDTO],
     seen: set[tuple[str, str, str]],
 ) -> None:
-    """Append one regex date match when it is valid."""
+    """Append one regex date match when it represents a valid date.
+
+    Args:
+        match (re.Match[str]): Regex match exposing year, month, and day groups.
+        constraints (list[QueryDateConstraintDTO]): Mutable normalized constraint output.
+        seen (set[tuple[str, str, str]]): Deduplication keys already emitted.
+    """
     try:
         date_dt = datetime(
             year=int(match.group("year")),
@@ -157,7 +176,14 @@ def append_relative_day_constraints(
     constraints: list[QueryDateConstraintDTO],
     seen: set[tuple[str, str, str]],
 ) -> None:
-    """Append relative day constraints such as today and ayer."""
+    """Append relative-day constraints such as today and yesterday.
+
+    Args:
+        text (str): Query text to inspect.
+        as_of (datetime): Zoned reference time used to resolve relative days.
+        constraints (list[QueryDateConstraintDTO]): Mutable normalized constraint output.
+        seen (set[tuple[str, str, str]]): Deduplication keys already emitted.
+    """
     normalized_text: str = normalize_query_text(value=text)
     time_bucket_phrases: set[str] = {
         normalize_query_text(value=phrase)
@@ -188,7 +214,14 @@ def append_weekday_constraints(
     constraints: list[QueryDateConstraintDTO],
     seen: set[tuple[str, str, str]],
 ) -> None:
-    """Append most-recent weekday constraints."""
+    """Append most-recent weekday constraints.
+
+    Args:
+        text (str): Query text to inspect.
+        as_of (datetime): Zoned reference time used to resolve weekdays.
+        constraints (list[QueryDateConstraintDTO]): Mutable normalized constraint output.
+        seen (set[tuple[str, str, str]]): Deduplication keys already emitted.
+    """
     normalized_text: str = normalize_query_text(value=text)
     for matcher in LANGUAGE_MATCHERS:
         for word, weekday_index in matcher.WEEKDAY_INDEXES.items():
@@ -215,7 +248,16 @@ def append_day_constraint(
     date_dt: datetime,
     granularity: str,
 ) -> None:
-    """Append a full-day constraint."""
+    """Append a normalized full-day constraint.
+
+    Args:
+        constraints (list[QueryDateConstraintDTO]): Mutable normalized constraint output.
+        seen (set[tuple[str, str, str]]): Deduplication keys already emitted.
+        raw (str): Original phrase that produced the constraint.
+        label (str): Reader-facing normalized label.
+        date_dt (datetime): Date and timezone used for day boundaries.
+        granularity (str): Semantic precision assigned to the constraint.
+    """
     start_dt: datetime = datetime.combine(date_dt.date(), time.min, tzinfo=date_dt.tzinfo)
     end_dt: datetime = datetime.combine(date_dt.date(), time.max.replace(microsecond=0), tzinfo=date_dt.tzinfo)
     append_constraint(
@@ -238,7 +280,17 @@ def append_constraint(
     end: datetime,
     granularity: str,
 ) -> None:
-    """Append one normalized date constraint if it is unique."""
+    """Append one normalized date constraint when it is unique.
+
+    Args:
+        constraints (list[QueryDateConstraintDTO]): Mutable normalized constraint output.
+        seen (set[tuple[str, str, str]]): Deduplication keys already emitted.
+        raw (str): Original phrase that produced the constraint.
+        label (str): Reader-facing normalized label.
+        start (datetime): Inclusive lower boundary.
+        end (datetime): Inclusive upper boundary.
+        granularity (str): Semantic precision assigned to the constraint.
+    """
     key: tuple[str, str, str] = (normalize_query_text(value=raw), start.isoformat(), end.isoformat())
     if key in seen:
         return

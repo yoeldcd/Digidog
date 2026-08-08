@@ -36,7 +36,15 @@ def _verbose_description(args: argparse.Namespace, index: int, total: int, recor
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Scan image state, optionally describe pending records, and synchronize vectors once."""
+    """Scan registered images and optionally describe and index changed records.
+
+    Args:
+        args (argparse.Namespace): Parsed command options selecting description,
+            indexing, verbosity, and output format.
+
+    Returns:
+        int: Zero when the scan workflow has no errors; otherwise one.
+    """
     repository = PictureRepository()
     should_describe = bool(getattr(args, "describe", False))
     should_index = bool(getattr(args, "index", False))

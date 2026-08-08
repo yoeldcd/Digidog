@@ -10,13 +10,19 @@ from brain.presentation.commands.models import ArgumentSchema, CommandSchema
 
 SCHEMA = CommandSchema(
     name="speak",
-    aliases=["avatar-message"],
+    aliases=["avatar-message", "agent-message"],
     domain="general",
     help="Present enriched Markdown through the avatar and narrate its spoken projection.",
     arguments=[
         ArgumentSchema(flags=["-tx", "--text"], required=False, help="Text to speak. Can also be passed as a positional argument."),
         ArgumentSchema(flags=["-l", "--lang"], default="es", help="Spoken language code (e.g. es, en). Defaults to es."),
         ArgumentSchema(flags=["--emotion"], default="", help="Avatar animation name resolved as avatar_{emotion}.gif."),
+        ArgumentSchema(
+            flags=["--task-id"],
+            default="",
+            help="Prefix the message with a task report heading for the provided task ID.",
+        ),
+        ArgumentSchema(flags=["--file"], default="", help="Append one UTF-8 Markdown file to the avatar message."),
         ArgumentSchema(
             flags=["--stdin-json"],
             action="store_true",

@@ -105,6 +105,38 @@ def get_workspace_root(workspace_root: Path | None = None) -> Path:
     return (workspace_root or Path(os.environ.get("WORKSPACE_ROOT", DEFAULT_WORKSPACE_ROOT))).resolve()
 
 
+def get_transient_dir(workspace_root: Path | None = None, core_root: Path | None = None) -> Path:
+    """Return the resolved absolute transient directory for patch rollback backups.
+
+    Checks `brain_configs.json` for `transient_dir`. If configured, non-empty, exists,
+    and is a directory, returns that absolute Path. Otherwise, falls back to
+    `<workspace_root>/$agent/tmp/patches_rollback`.
+
+    Args:
+        workspace_root: Optional workspace root override.
+        core_root: Optional core root override.
+
+    Returns:
+        Path: Validated transient directory path.
+    """
+    config_path: Path = get_core_root(core_root=core_root) / CONFIGS_DIR_NAME / BRAIN_CONFIGS_FILE_NAME
+    if config_path.is_file():
+        try:
+            raw_data: object = json.loads(config_path.read_text(encoding="utf-8"))
+            if isinstance(raw_data, dict):
+                configured_value = raw_data.get("transient_dir")
+                if isinstance(configured_value, str) and configured_value.strip():
+                    candidate = Path(configured_value.strip()).resolve()
+                    if candidate.exists() and candidate.is_dir():
+                        return candidate
+        except (OSError, json.JSONDecodeError):
+            pass
+
+    fallback = get_workspace_root(workspace_root=workspace_root) / "$agent" / "tmp" / "patches_rollback"
+    fallback.mkdir(parents=True, exist_ok=True)
+    return fallback
+
+
 def ensure_private_directory(path: Path) -> Path:
     """
     Create one private runtime directory and its internal gitignore.
@@ -123,19 +155,42 @@ def ensure_private_directory(path: Path) -> Path:
 
 
 def ensure_directory(path: Path) -> Path:
-    """Create and return one non-private core directory."""
+    """Create and return one non-private core directory.
+
+    Args:
+        path (Path): Directory to create.
+
+    Returns:
+        Path: Created directory path.
+    """
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
 def get_configs_dir(core_root: Path | None = None, create: bool = True) -> Path:
-    """Return the core-owned configuration directory."""
+    """Return the core-owned configuration directory.
+
+    Args:
+        core_root (Path | None): Optional core-root override.
+        create (bool): Whether to create the directory.
+
+    Returns:
+        Path: Core configuration directory.
+    """
     configs_dir: Path = get_core_root(core_root=core_root) / CONFIGS_DIR_NAME
     return ensure_directory(path=configs_dir) if create else configs_dir
 
 
 def get_core_database_dir(core_root: Path | None = None, create: bool = True) -> Path:
-    """Return the container for all core-owned database families."""
+    """Return the container for all core-owned database families.
+
+    Args:
+        core_root (Path | None): Optional core-root override.
+        create (bool): Whether to create the directory.
+
+    Returns:
+        Path: Core database directory.
+    """
     database_dir: Path = get_core_root(core_root=core_root) / DATABASE_DIR_NAME
     return ensure_private_directory(path=database_dir) if create else database_dir
 
@@ -182,9 +237,9 @@ def get_database_dir(
     Return a database directory by scope.
 
     Args:
-        scope: Runtime scope: `global` or `local`.
-        agent_home: Optional shared agent home.
-        workspace_root: Optional workspace root.
+        scope (str): Runtime scope: `global` or `local`.
+        agent_home (Path | None): Optional shared agent home.
+        workspace_root (Path | None): Optional workspace root.
         create: Whether to create the directory.
 
     Returns:
@@ -217,71 +272,215 @@ def get_brain_configs_path(agent_home: Path | None = None) -> Path:
 
 
 def get_brain_mirrors_path() -> Path:
-    """Return the core-owned consumer workspace registry path."""
+    """Return the core-owned consumer workspace registry path.
+
+    Returns:
+        Path: Canonical Brain mirrors registry path.
+    """
     return get_configs_dir() / BRAIN_MIRRORS_FILE_NAME
 
 
 def get_avatar_config_path() -> Path:
-    """Return the core-owned avatar and voice configuration path."""
+    """Return the core-owned avatar and voice configuration path.
+
+    Returns:
+        Path: Canonical avatar configuration file.
+    """
     return get_configs_dir() / BRAIN_AVATAR_CONFIG_FILE_NAME
 
 
 def get_avatar_storage_dir(create: bool = True) -> Path:
-    """Return the core-owned retained avatar runtime directory."""
+    """Return the core-owned retained avatar runtime directory.
+
+    Args:
+        create (bool): Whether to create the directory.
+
+    Returns:
+        Path: Avatar runtime storage directory.
+    """
     path: Path = get_core_database_dir(create=create) / AVATAR_STORAGE_DIR_NAME
     return ensure_private_directory(path=path) if create else path
 
 
 def get_picture_storage_dir(create: bool = True) -> Path:
-    """Return the core-owned private picture registry directory."""
+    """Return the core-owned private picture registry directory.
+
+    Args:
+        create (bool): Whether to create the directory.
+
+    Returns:
+        Path: Picture registry storage directory.
+    """
     path: Path = get_core_database_dir(create=create) / PICTURE_STORAGE_DIR_NAME
     return ensure_private_directory(path=path) if create else path
 
 
 def get_picture_database_path(create: bool = True) -> Path:
-    """Return the SQLite database used by the picture registry."""
+    """Return the SQLite database used by the picture registry.
+
+    Args:
+        create (bool): Whether to create the parent directory.
+
+    Returns:
+        Path: Picture registry database path.
+    """
     return get_picture_storage_dir(create=create) / PICTURE_STORAGE_DB_NAME
 
 
 def get_pictures_dir(agent_home: Path | None = None, create: bool = True) -> Path:
-    """Return the agent-owned image library root."""
+    """Return the agent-owned image library root.
+
+    Args:
+        agent_home (Path | None): Optional agent-home override.
+        create (bool): Whether to create the directory.
+
+    Returns:
+        Path: Agent picture library root.
+    """
     path: Path = get_agent_home(agent_home=agent_home) / PICTURES_DIR_NAME
     return ensure_directory(path=path) if create else path
 
 
+def normalize_picture_scope(scope: str) -> str:
+    """Normalize and validate the picture registry scope.
+
+    Args:
+        scope (str): Requested picture source scope.
+
+    Returns:
+        str: Canonical lower-case scope.
+
+    Raises:
+        ValueError: If the scope is not local or global.
+    """
+    normalized_scope = str(scope).casefold().strip()
+    if normalized_scope not in {"local", "global"}:
+        raise ValueError(f"Unsupported picture scope {scope}. Use local or global.")
+    return normalized_scope
+
+
+def get_picture_root(
+    scope: str,
+    agent_home: Path | None = None,
+    core_root: Path | None = None,
+    create: bool = True,
+) -> Path:
+    """Return the filesystem root for one picture registry scope.
+
+    Local registrations are rooted below $agent/pictures/images while global
+    registrations are rooted below the core pictures directory.
+
+    Args:
+        scope (str): local or global.
+        agent_home (Path | None): Optional agent-home override for local data.
+        core_root (Path | None): Optional core-root override for global data.
+        create (bool): Whether to create the selected directory.
+
+    Returns:
+        Path: Resolved scope root.
+    """
+    normalized_scope = normalize_picture_scope(scope)
+    if normalized_scope == "local":
+        path = get_pictures_dir(agent_home=agent_home) / "images"
+    else:
+        path = get_core_root(core_root=core_root) / PICTURES_DIR_NAME
+    return ensure_directory(path=path) if create else path
+
+
+def resolve_picture_path(scope: str, relative_path: str, create: bool = False) -> Path:
+    """Resolve a registered picture path without allowing scope escape.
+
+    Local records may be legacy files below ``$agent/pictures`` or canonical
+    registrations below ``$agent/pictures/images``; global records resolve
+    below the core picture root.
+    """
+    normalized_scope = normalize_picture_scope(scope)
+    normalized_relative = Path(str(relative_path).replace(chr(92), "/")).as_posix()
+    if not normalized_relative or normalized_relative in {".", ".."} or Path(normalized_relative).is_absolute():
+        raise ValueError("Picture relative path is invalid.")
+    roots = [get_picture_root(scope=normalized_scope, create=create)]
+    if normalized_scope == "local":
+        roots.append(get_pictures_dir(create=create))
+    for root in roots:
+        candidate = (root / normalized_relative).resolve()
+        try:
+            candidate.relative_to(root.resolve())
+        except ValueError as exc:
+            raise ValueError("Registered picture path escapes its scope root.") from exc
+        if candidate.is_file():
+            return candidate
+    candidate = (roots[0] / normalized_relative).resolve()
+    candidate.relative_to(roots[0].resolve())
+    return candidate
+
+
 def get_avatar_assets_dir(create: bool = False) -> Path:
-    """Return the core-owned avatar state asset directory."""
+    """Return the core-owned avatar state asset directory.
+
+    Args:
+        create (bool): Whether to create the directory.
+
+    Returns:
+        Path: Avatar state asset directory.
+    """
     path: Path = get_core_root() / ASSETS_DIR_NAME / AVATAR_ASSETS_DIR_NAME
     return ensure_directory(path=path) if create else path
 
 
 def get_brain_explorer_dist_dir() -> Path:
-    """Return the generated Brain Explorer distribution directory."""
+    """Return the generated Brain Explorer distribution directory.
+
+    Returns:
+        Path: Explorer frontend distribution directory.
+    """
     return get_core_root() / "brain_explorer" / "dist"
 
 
 def get_core_cli_path() -> Path:
-    """Return the canonical consumer-factory entrypoint."""
+    """Return the canonical consumer-factory entrypoint.
+
+    Returns:
+        Path: Core CLI factory script.
+    """
     return get_core_root() / "core_cli.py"
 
 
 def get_utilities_dir() -> Path:
-    """Return the core-owned reusable utilities directory."""
+    """Return the core-owned reusable utilities directory.
+
+    Returns:
+        Path: Shared utilities directory.
+    """
     return get_core_root() / "utilities"
 
 
 def get_documentation_utility_cli_path() -> Path:
-    """Return the canonical Documentation Utils CLI entrypoint."""
+    """Return the canonical documentation utility CLI entrypoint.
+
+    Returns:
+        Path: Documentation utility script.
+    """
     return get_utilities_dir() / "documentation_utils" / "documentation_cli.js"
 
 
 def get_prompt_propagator_path() -> Path:
-    """Return the canonical agent-prompt propagator entrypoint."""
+    """Return the canonical agent-prompt propagator entrypoint.
+
+    Returns:
+        Path: Prompt propagation script.
+    """
     return get_utilities_dir() / "propagate_agent_prompt" / "propagate_agent_prompt.py"
 
 
 def get_instruction_mirrors_registry_path(create: bool = True) -> Path:
-    """Return the core-owned registry of canonical prompt mirror destinations."""
+    """Return the registry of canonical prompt mirror destinations.
+
+    Args:
+        create (bool): Whether to create the parent directory.
+
+    Returns:
+        Path: Instruction mirror registry path.
+    """
     directory: Path = get_core_database_dir(create=create) / INSTRUCTION_MIRRORS_DIR_NAME
     if create:
         directory = ensure_private_directory(path=directory)
@@ -303,6 +502,9 @@ def get_knowledge_database_path(
 
     Returns:
         Path: Scoped knowledge graph database path.
+
+    Raises:
+        ValueError: The scope is neither global nor local.
     """
     normalized_scope: str = scope.casefold().strip()
     if normalized_scope == "global":
@@ -321,12 +523,15 @@ def get_source_registry_path(
     Return the scoped source registry database path.
 
     Args:
-        scope: Runtime scope: `global` or `local`.
-        agent_home: Optional shared agent home.
-        workspace_root: Optional workspace root.
+        scope (str): Runtime scope: `global` or `local`.
+        agent_home (Path | None): Optional shared agent home.
+        workspace_root (Path | None): Optional workspace root.
 
     Returns:
         Path: Scoped source registry database path.
+
+    Raises:
+        ValueError: The scope is neither global nor local.
     """
     normalized_scope: str = scope.casefold().strip()
     if normalized_scope == "global":
@@ -348,13 +553,16 @@ def get_vectorstore_dir(
     Return the scoped vectorstore directory.
 
     Args:
-        scope: Runtime scope: `global` or `local`.
-        agent_home: Optional shared agent home.
-        workspace_root: Optional workspace root.
-        create: Whether to create the private vectorstore directory.
+        scope (str): Runtime scope: `global` or `local`.
+        agent_home (Path | None): Optional shared agent home.
+        workspace_root (Path | None): Optional workspace root.
+        create (bool): Whether to create the private vectorstore directory.
 
     Returns:
         Path: Scoped vectorstore directory.
+
+    Raises:
+        ValueError: The scope is neither global nor local.
     """
     normalized_scope: str = scope.casefold().strip()
     if normalized_scope == "global":
@@ -367,13 +575,24 @@ def get_vectorstore_dir(
 
 
 def get_global_logs_database_dir(create: bool = True) -> Path:
-    """Return the core-owned global logs database directory."""
+    """Return the core-owned global logs database directory.
+
+    Args:
+        create (bool): Whether to create the directory.
+
+    Returns:
+        Path: Global logs database directory.
+    """
     path: Path = get_core_database_dir(create=create) / GLOBAL_LOGS_DIR_NAME
     return ensure_private_directory(path=path) if create else path
 
 
 def register_project_path(project_path: Path) -> None:
-    """Register a local project workspace path to the brain mirrors JSON list."""
+    """Register a local project workspace in the Brain mirrors registry.
+
+    Args:
+        project_path (Path): Workspace root to register.
+    """
     import json
     mirrors_file: Path = get_brain_mirrors_path()
 

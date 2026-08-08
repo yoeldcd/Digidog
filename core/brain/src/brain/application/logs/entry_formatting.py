@@ -23,7 +23,11 @@ VALID_LOG_TYPES = (
 
 
 def valid_log_types_text() -> str:
-    """Return the canonical log types in their documented display order."""
+    """Return the canonical log types in their documented display order.
+
+    Returns:
+        str: Comma-separated canonical change types.
+    """
     return ", ".join(VALID_LOG_TYPES)
 
 
@@ -49,6 +53,9 @@ def normalize_log_type(change_type: str) -> str:
 
     Returns:
         str: Normalized changelog type.
+
+    Raises:
+        ValueError: The normalized value is not a supported change type.
     """
     normalized_type = change_type.lower().strip()
     if normalized_type not in VALID_LOG_TYPES:
@@ -84,6 +91,9 @@ def parse_log_entry_date(timestamp: str) -> datetime.datetime:
 
     Returns:
         datetime.datetime: Parsed date at midnight.
+
+    Raises:
+        ValueError: The timestamp does not begin with a `DD-MM-YYYY` date.
     """
     date_part = timestamp.split(" ")[0]
     try:

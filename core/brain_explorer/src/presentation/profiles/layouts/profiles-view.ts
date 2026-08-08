@@ -6,7 +6,7 @@
 import { escapeHtml, renderMarkdown } from "../../shared/utils/html.ts";
 import { icon } from "../../shared/utils/icons.ts";
 import type { ApiResponse } from "../../../application/shared/contracts/api-response-contract.ts";
-import type { ProfileEntry, ProfileReadPayload } from "../../../application/profiles/dtos/responses/profiles-response.ts";
+import type { ProfileEntry, ProfileReadPayload, ProfileSummary } from "../../../application/profiles/dtos/responses/profiles-response.ts";
 import type { BrainApiClient } from "../../../infrastructure/shared/http/clients/brain-api-client.ts";
 import type { AppState } from "../../shell/state/app-state.ts";
 import type { ComponentContext } from "../../shared/view_models/component-context-view-model.ts";
@@ -38,9 +38,9 @@ export class ProfilesView extends HTMLElement {
     /**
      * Maintains a private collection of profile identifiers used within the ProfilesView component.
      *
-     * @type {string[]}
+     * @type {ProfileSummary[]}
      */
-    #profiles: string[] = [];
+    #profiles: ProfileSummary[] = [];
     /**
      * Maintains the unique identifier of the currently active profile within the view state.
      *
@@ -118,14 +118,14 @@ export class ProfilesView extends HTMLElement {
         }
         const result = await this.#api.profiles({ forceRefresh });
         this.#state?.setLastResult(result);
-        this.#profiles = Array.isArray(result.data?.profiles) ? result.data.profiles : Array.isArray(result.data) ? result.data : [];
+        this.#profiles = Array.isArray(result.data?.profiles) ? result.data.profiles : [];
         const target = this.#pendingTarget || this.#state?.consumeRouteTarget?.("profiles");
         this.#pendingTarget = null;
         const targetProfile = typeof target?.profile === "string" ? target.profile : "";
         if (targetProfile && targetProfile !== this.#selectedProfile) {
             this.#profileText = "";
         }
-        this.#selectedProfile = targetProfile || this.#selectedProfile || this.#profiles[0] || "";
+        this.#selectedProfile = targetProfile || this.#selectedProfile || this.#profiles[0]?.name || "";
         this.#render();
         if (this.#selectedProfile && !this.#profileText) {
             await this.#readProfile(this.#selectedProfile, forceRefresh);
@@ -234,11 +234,11 @@ export class ProfilesView extends HTMLElement {
             return `<p class="empty-state">No profiles.</p>`;
         }
         return this.#profiles.map(profile => `
-            <button class="profile-row ${profile === this.#selectedProfile ? "is-active" : ""}" data-profile="${escapeHtml(profile)}">
+            <button class="profile-row ${profile.name === this.#selectedProfile ? "is-active" : ""}" data-profile="${escapeHtml(profile.name)}" title="${escapeHtml(profile.use_when)}">
                 ${icon("users")}
                 <span>
-                    <strong>${escapeHtml(profile)}</strong>
-                    <small>read-profile ${escapeHtml(profile)}</small>
+                    <strong>${escapeHtml(profile.name)}</strong>
+                    <small>${escapeHtml(profile.use_when)}</small>
                 </span>
             </button>
         `).join("");

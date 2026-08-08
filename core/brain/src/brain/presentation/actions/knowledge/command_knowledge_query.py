@@ -20,7 +20,16 @@ from brain.presentation.terminal import render_markdown, render_placeholders, lo
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Search knowledge graph records."""
+    """Search selected knowledge-graph scopes using the requested query mode.
+
+    Args:
+        args (argparse.Namespace): Parsed command options with the query, scopes,
+            result limit, hybrid mode, explanation flag, and output format.
+
+    Returns:
+        int: Zero when the search completes; otherwise one after reporting an
+            error.
+    """
     color_enabled: bool = getattr(args, "color", False)
     try:
         log_step(args, "Querying knowledge graph...")

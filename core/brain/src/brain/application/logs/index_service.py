@@ -204,7 +204,14 @@ def legacy_markdown_entries(log_file: Path, source_path: str) -> list[LogEntryRe
 
 
 def normalize_legacy_change_type(change_type: str) -> str:
-    """Normalize legacy change types with a conservative fallback."""
+    """Normalize legacy change types with a conservative fallback.
+
+    Args:
+        change_type (str): Legacy change classification.
+
+    Returns:
+        str: Canonical change type, defaulting to `feature` when unknown.
+    """
     try:
         return normalize_log_type(change_type=change_type)
     except ValueError:

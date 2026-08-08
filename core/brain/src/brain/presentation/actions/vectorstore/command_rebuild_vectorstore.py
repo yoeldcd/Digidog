@@ -20,7 +20,16 @@ from brain.presentation.terminal import render_placeholders, log_step
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Rebuild vectorstore."""
+    """Rebuild the global vector-store generation after confirmation.
+
+    Args:
+        args (argparse.Namespace): Parsed command options for confirmation,
+            output format, and activity reporting.
+
+    Returns:
+        int: Zero when the new generation is validated and activated; otherwise
+            one after reporting an error.
+    """
     color_enabled = getattr(args, "color", False)
 
     # Prompt for confirmation unless --yes is supplied
@@ -83,7 +92,21 @@ def build_vectorstore_generation(
     args: argparse.Namespace,
     color_enabled: bool,
 ) -> dict[str, object]:
-    """Build every global vector collection inside an isolated directory."""
+    """Build every global vector collection inside an isolated directory.
+
+    Args:
+        generation_path (Path): Empty generation directory receiving the rebuilt
+            vector-store collections.
+        args (argparse.Namespace): Parsed rebuild command options.
+        color_enabled (bool): Whether terminal progress messages use ANSI color.
+
+    Returns:
+        dict[str, object]: Build counts and per-source synchronization statistics.
+
+    Raises:
+        RuntimeError: If a knowledge vector-store synchronization warning prevents
+            activation of the replacement generation.
+    """
     manager = VectorStoreManager(db_path=generation_path, collection_name="memories")
     indexed_count: int = 0
     entries_created: int = 0

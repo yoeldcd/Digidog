@@ -2,7 +2,7 @@
 
 # Digidog
 
-<img src="core/assets/avatar/avatar_awaiting.gif" alt="Digidog avatar awaiting" width="320" />
+<img src="core/brain_explorer/src/brain-explorer-favicon.png" alt="Digidog emblem" width="240" />
 
 Digidog is a nuclear framework that provides an evolutionary knowledge schema
 for agents and offers interactive channels for communication and supervision.
@@ -417,6 +417,7 @@ Common command groups include:
 |---|---|
 | Context | `wakeup`, `get-context` |
 | Memory | `memory-structure`, `get-memory-entry`, `set-memory-entry`, `delete-memory-entry` |
+| Records | `add-record`, `show-records`, `delete-record` (policy spellings are aliases) |
 | Search | `query`, `query-log`, `knowledge-query` |
 | Knowledge | `knowledge-status`, `knowledge-show`, `knowledge-export`, `dream`, `knowledge-deltas` |
 | Work | `add-task`, `show-backlog`, `set-task-status`, `complete-work` |

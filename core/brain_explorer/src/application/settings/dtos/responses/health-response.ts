@@ -8,22 +8,12 @@ export interface HealthStatus {
      */
     ok: boolean;
     /**
-     * Human-readable service name.
-     * @type {string}
-     */
-    name: string;
-    /**
-     * Absolute path from which compiled frontend assets are served.
-     * @type {string}
-     */
-    distDir: string;
-    /**
      * Canonical workspace root currently served by Explorer.
      * @type {string}
      */
     workspaceRoot: string;
     /**
-     * Canonical shared agent-home directory used by the server.
+     * Consumer-local agent directory within the active workspace.
      * @type {string}
      */
     agentHome: string;

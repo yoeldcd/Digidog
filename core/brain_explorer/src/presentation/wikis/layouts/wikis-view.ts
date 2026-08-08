@@ -41,6 +41,8 @@ export class WikisView extends HTMLElement {
      * @type {WikiRecord[]}
      */
     #wikis: WikiRecord[] = [];
+    /** Active workspace root associated with the loaded wiki registry. */
+    #workspaceRoot = "";
     /**
      * Tracks the asynchronous loading state of the WikisView component.
      *
@@ -91,8 +93,9 @@ export class WikisView extends HTMLElement {
         this.#loading = true;
         this.#render();
         try {
-            const res = await this.#api.getWikis();
+            const res = await this.#api.getWikis({ forceRefresh: true });
             this.#wikis = res.data?.wikis ?? [];
+            this.#workspaceRoot = res.data?.workspaceRoot ?? localStorage.getItem("active_project_path") ?? "";
             this.#state?.setLastResult(res);
         } catch (err) {
             console.error("Error fetching wikis:", err);
@@ -116,10 +119,7 @@ export class WikisView extends HTMLElement {
         this.innerHTML = `
             <section class="page-surface settings-console wiki-console ${this.#loading ? "is-loading" : (this.#wikis.length ? "has-items" : "is-empty")}">
                 <header class="view-header" style="display: flex; justify-content: space-between; align-items: center; padding-bottom: var(--spacing-md); border-bottom: 1px solid var(--border); margin-bottom: var(--spacing-lg);">
-                    <div>
-                        <h2 style="margin: 0; font-size: var(--font-size-xl); color: var(--text-strong);">Subproject Wikis</h2>
-                        <small style="color: var(--text-muted);">Interactive documentation available in the active path</small>
-                    </div>
+                    <h2 class="wiki-console-title">Subproject Wikis</h2>
                     <button data-action="refresh-wikis" class="primary-action compact-action" title="Find wikis">${icon("refresh")}</button>
                 </header>
                 
@@ -136,9 +136,7 @@ export class WikisView extends HTMLElement {
         
         this.querySelectorAll("[data-action='view-wiki']").forEach(btn => {
             btn.addEventListener("click", () => {
-                this.#activeWikiName = btn.getAttribute("data-name");
-                this.#wikiLoading = true;
-                this.#render();
+                void this.#openWiki(btn.getAttribute("data-name") || "");
             });
             btn.addEventListener("keydown", (event: Event) => {
                 if (!(event instanceof KeyboardEvent)) return;
@@ -148,6 +146,35 @@ export class WikisView extends HTMLElement {
                 }
             });
         });
+    }
+
+    /**
+     * Open a selected wiki while keeping its frame hidden until its response is valid.
+     *
+     * @param {string} name Selected wiki name.
+     * @returns {void} Nothing.
+     */
+    async #openWiki(name: string): Promise<void> {
+        if (!this.#api || !name) return;
+        try {
+            const result = await this.#api.getWikis({ forceRefresh: true, commandLabel: "Refresh wikis" });
+            this.#state?.setLastResult(result);
+            this.#wikis = result.data?.wikis ?? [];
+            this.#workspaceRoot = result.data?.workspaceRoot ?? localStorage.getItem("active_project_path") ?? "";
+            const currentWiki = this.#wikis.find(wiki => wiki.name === name);
+            if (!result.ok || !currentWiki) {
+                const failure = this.#api.reportClientFailure("Open wiki", "Wiki list changed. Select the refreshed entry.");
+                this.#state?.setLastResult(failure);
+                this.#render();
+                return;
+            }
+            this.#activeWikiName = currentWiki.name;
+            this.#wikiLoading = true;
+            this.#render();
+        } catch {
+            const failure = this.#api.reportClientFailure("Open wiki", "Could not refresh the wiki list.");
+            this.#state?.setLastResult(failure);
+        }
     }
 
     /**
@@ -175,7 +202,7 @@ export class WikisView extends HTMLElement {
                             <div class="wiki-list-heading">
                                 <strong>${escapeHtml(wiki.name)}</strong>
                                 <span style="font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: 600; background: ${wiki.hasWiki ? "rgba(16, 185, 129, 0.15); color: #10b981;" : "rgba(156, 163, 175, 0.15); color: #9ca3af;"};">
-                                    ${wiki.hasWiki ? "Available" : "Not built"}
+                                    ${wiki.hasWiki ? "Available" : "No Markdown"}
                                 </span>
                             </div>
                             <span class="wiki-list-path">
@@ -188,7 +215,7 @@ export class WikisView extends HTMLElement {
                                     ${icon("book")} Ver Wiki
                                 </button>
                             ` : `
-                                <span style="font-size: var(--font-size-sm); color: var(--text-muted); padding: 6px 0;">Run <code>generate</code> to enable</span>
+                                <span style="font-size: var(--font-size-sm); color: var(--text-muted); padding: 6px 0;">No documentation pages</span>
                             `}
                         </div>
                     </article>
@@ -203,14 +230,15 @@ export class WikisView extends HTMLElement {
      * @returns {void}
      */
     #renderIframeView() {
+        const activeWikiName = this.#activeWikiName ?? "";
         this.innerHTML = `
             <div class="wiki-frame-view">
                 <header class="wiki-frame-toolbar">
                     <div style="display: flex; align-items: center; gap: 12px;">
                         <button data-action="close-wiki" class="secondary-action compact-action" style="min-height: 32px; display: flex; align-items: center; gap: 4px;">
-                            ${icon("chevronRight")} Back
+                            ${icon("chevronLeft")} Back
                         </button>
-                        <h2 style="margin: 0; font-size: var(--font-size-lg); color: var(--text-strong);">Wiki ~ ${escapeHtml(this.#activeWikiName)}</h2>
+                        <h2 style="margin: 0; font-size: var(--font-size-lg); color: var(--text-strong);">Wiki ~ ${escapeHtml(activeWikiName)}</h2>
                     </div>
                 </header>
                 <div class="wiki-frame-container">
@@ -218,7 +246,7 @@ export class WikisView extends HTMLElement {
                         <span class="loading-spinner" aria-hidden="true"></span>
                         <strong>Resolviendo wiki...</strong>
                     </div>
-                    <iframe src="/wiki/${this.#activeWikiName}/wiki/index.html" scrolling="yes" style="width: 100%; height: 100%; border: none;" title="Wiki Frame"></iframe>
+                    <iframe hidden src="/wiki/workspace/${encodeURIComponent(this.#workspaceRoot)}/${encodeURIComponent(activeWikiName)}/wiki/index.html" scrolling="yes" style="width: 100%; height: 100%; border: none;" title="Wiki Frame"></iframe>
                 </div>
             </div>
         `;
@@ -228,10 +256,39 @@ export class WikisView extends HTMLElement {
             this.#render();
         });
         this.querySelector("iframe")?.addEventListener("load", event => {
-            this.#wikiLoading = false;
-            this.querySelector(".wiki-frame-loading")?.setAttribute("hidden", "");
-            if (event.currentTarget instanceof HTMLIFrameElement) this.#hideIframeScrollbar(event.currentTarget);
+            if (event.currentTarget instanceof HTMLIFrameElement) this.#handleWikiFrameLoad(event.currentTarget);
         });
+    }
+
+    /**
+     * Reject JSON error documents before they become visible inside the wiki frame.
+     *
+     * @param {HTMLIFrameElement} iframe Loaded same-origin wiki frame.
+     * @returns {void} Nothing.
+     */
+    #handleWikiFrameLoad(iframe: HTMLIFrameElement): void {
+        const text = iframe.contentDocument?.body?.textContent?.trim() || "";
+        let error = "";
+        try {
+            const payload: unknown = JSON.parse(text);
+            if (typeof payload === "object" && payload !== null && "ok" in payload && payload.ok === false) {
+                error = "error" in payload && typeof payload.error === "string" ? payload.error : "Could not open wiki.";
+            }
+        } catch {
+            // A rendered wiki is HTML, not a JSON error document.
+        }
+        if (error) {
+            this.#activeWikiName = null;
+            this.#wikiLoading = false;
+            const result = this.#api?.reportClientFailure("Open wiki", error) ?? null;
+            this.#state?.setLastResult(result);
+            void this.#loadWikis();
+            return;
+        }
+        this.#wikiLoading = false;
+        iframe.hidden = false;
+        this.querySelector(".wiki-frame-loading")?.setAttribute("hidden", "");
+        this.#hideIframeScrollbar(iframe);
     }
 
     /**

@@ -16,7 +16,16 @@ from brain.presentation.terminal import render_placeholders, log_step
 
 
 def handle(args: argparse.Namespace) -> int:
-    """Write or update diary entry."""
+    """Write or replace the diary entry for a supplied timestamp.
+
+    Args:
+        args (argparse.Namespace): Parsed command options containing the diary
+            text, optional title, timestamp, and output settings.
+
+    Returns:
+        int: Zero when the entry is saved; otherwise one after reporting an input
+            or storage error.
+    """
     color_enabled = getattr(args, "color", False)
     try:
         log_step(args, '[1/2] Parsing inputs...')
@@ -93,6 +102,15 @@ def handle(args: argparse.Namespace) -> int:
 
         # Sort chronologically by parsing keys back to datetime
         def get_dt_key(k_str: str) -> datetime.datetime:
+            """Parse a persisted diary timestamp for chronological sorting.
+
+            Args:
+                k_str (str): Stored timestamp string from the diary entry map.
+
+            Returns:
+                datetime.datetime: Parsed timestamp, or the minimum datetime when
+                the stored value is malformed.
+            """
             try:
                 return datetime.datetime.strptime(k_str, "%d-%m-%Y %H:%M:%S")
             except ValueError:

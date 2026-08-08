@@ -21,17 +21,49 @@ class LogVectorManagerProtocol(Protocol):
     """Protocol for manager methods used by log vector helpers."""
 
     def delete_by_metadata(self, filter_dict: dict) -> int:
-        """Delete records matching `filter_dict`."""
+        """Delete records whose metadata matches a filter.
+
+        Args:
+            filter_dict (dict): Metadata equality constraints.
+
+        Returns:
+            int: Number of deleted records.
+        """
 
     def add_record(self, doc_id: str, text: str, metadata: dict, embedding: list[float] | None = None) -> None:
-        """Add or replace a vector record."""
+        """Add or replace a vector record.
+
+        Args:
+            doc_id (str): Stable vector record identifier.
+            text (str): Searchable source text.
+            metadata (dict): Metadata stored beside the vector.
+            embedding (list[float] | None): Precomputed embedding, or ``None``
+                to generate one from ``text``.
+        """
 
     def search(self, query: str, limit: int = 5, where_filter: dict | None = None) -> list[dict]:
-        """Search vector records."""
+        """Search vector records by semantic similarity.
+
+        Args:
+            query (str): Natural-language search query.
+            limit (int): Maximum number of matches to return.
+            where_filter (dict | None): Optional metadata constraints.
+
+        Returns:
+            list[dict]: Ranked vector matches.
+        """
 
 
 def index_log_file(manager: LogVectorManagerProtocol, file_path: Path) -> dict[str, int | str]:
-    """Parse and index all entries inside a standard `.log.md` file."""
+    """Parse and index entries from one canonical legacy log file.
+
+    Args:
+        manager (LogVectorManagerProtocol): Vector manager receiving log records.
+        file_path (Path): Canonical ``.log.md`` file to index.
+
+    Returns:
+        dict[str, int | str]: Source path and created and deleted entry counts.
+    """
     from brain.application.logs.parsing import is_canonical_log_file, parse_entry, parse_log_timestamp
 
     from brain.infrastructure.runtime.paths import get_workspace_root
@@ -100,7 +132,16 @@ def index_log_file(manager: LogVectorManagerProtocol, file_path: Path) -> dict[s
 
 
 def index_log_entries(manager: LogVectorManagerProtocol, entries: list[object]) -> dict[str, int | str]:
-    """Index DB-backed log records into the local logs collection."""
+    """Replace indexed log vectors with canonical database records.
+
+    Args:
+        manager (LogVectorManagerProtocol): Vector manager receiving log records.
+        entries (list[object]): Database-backed log records exposing the log
+            entity attributes used for indexing.
+
+    Returns:
+        dict[str, int | str]: Source label and created and deleted entry counts.
+    """
     deleted_count = manager.delete_by_metadata({"source_kind": "log"})
     created_count = 0
     for entry in entries:
@@ -126,7 +167,15 @@ def index_log_entries(manager: LogVectorManagerProtocol, entries: list[object]) 
 
 
 def log_record_text(entry: object) -> str:
-    """Build searchable text for one DB-backed log record."""
+    """Build searchable text for one database-backed log record.
+
+    Args:
+        entry (object): Log record exposing domain, title, change, and detail
+            attributes.
+
+    Returns:
+        str: Non-empty record fields joined as searchable lines.
+    """
     parts = [
         str(getattr(entry, "domain", "")),
         str(getattr(entry, "title", "")),
@@ -142,14 +191,24 @@ def search_logs(
     manager: LogVectorManagerProtocol,
     query: str,
     domain_filter: str | None = None,
-    limit: int = 5,
+    limit: int | None = 5,
 ) -> list[dict]:
-    """Perform semantic search on logs with optional domain filtering and recency decay."""
+    """Search logs with optional domain filtering and recency decay.
+
+    Args:
+        manager (LogVectorManagerProtocol): Vector manager used for retrieval.
+        query (str): Natural-language search query.
+        domain_filter (str | None): Optional domain prefix constraint.
+        limit (int): Maximum number of formatted matches.
+
+    Returns:
+        list[dict]: Ranked and hydrated log search results.
+    """
     from brain.application.logs.parsing import parse_log_timestamp
     from brain.application.logs.store import get_log_entry_by_id
     from brain.infrastructure.runtime.paths import get_workspace_root
 
-    raw_limit = limit * 4 if domain_filter else limit * 2
+    raw_limit = None if limit is None else (limit * 4 if domain_filter else limit * 2)
     results = manager.search(query, limit=raw_limit)
 
     formatted = []
@@ -196,4 +255,4 @@ def search_logs(
         })
 
     formatted.sort(key=lambda item: item["score"], reverse=True)
-    return formatted[:limit]
+    return formatted if limit is None else formatted[:limit]

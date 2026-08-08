@@ -1,8 +1,8 @@
 /**
  * Converts transport-level log records into sorted, filterable presentation entries.
  *
- * This module owns deterministic parsing and picture-reference discovery so the Logs
- * Web Component remains responsible only for rendering and interaction orchestration.
+ * This module owns deterministic parsing while the Logs Web Component remains
+ * responsible only for rendering and interaction orchestration.
  *
  * @module presentation/logs/formatters/log-entry-parser
  */
@@ -39,11 +39,6 @@ export interface VisibleLogEntriesInput {
      * @type {LogsSortOrder}
      */
     sortOrder: LogsSortOrder;
-    /**
-     * Task identifiers whose log records have an associated backlog image.
-     * @type {readonly string[]}
-     */
-    logsWithImages: readonly string[];
 }
 
 /**
@@ -56,7 +51,7 @@ export function visibleLogEntries(input: VisibleLogEntriesInput): ParsedLogEntry
     const earliestMinute = timeInputMinute(input.hourFrom);
     const latestMinute = timeInputMinute(input.hourTo);
     return input.entries
-        .map((entry, index) => parsedLogEntry(entry, index, input.selectedDomain, input.logsWithImages))
+        .map((entry, index) => parsedLogEntry(entry, index, input.selectedDomain))
         .filter(entry => minuteIsWithinRange(entry.hourValue, earliestMinute, latestMinute))
         .sort((left, right) => {
             const delta = left.timestamp - right.timestamp;
@@ -70,18 +65,15 @@ export function visibleLogEntries(input: VisibleLogEntriesInput): ParsedLogEntry
  * @param {LogEntryPayload} entry Structured server record to normalize.
  * @param {number} index Stable array position used to build a local render identity.
  * @param {string} selectedDomain Domain fallback for records that omit their own domain.
- * @param {readonly string[]} logsWithImages Task ids known to own a backlog reference image.
- * @returns {ParsedLogEntryViewModel} Fully populated presentation entry with derived time and picture metadata.
+ * @returns {ParsedLogEntryViewModel} Fully populated presentation entry with derived time metadata.
  */
 function parsedLogEntry(
     entry: LogEntryPayload,
     index: number,
-    selectedDomain: string,
-    logsWithImages: readonly string[]
+    selectedDomain: string
 ): ParsedLogEntryViewModel {
     const [date = "", ...timeParts] = String(entry.timestamp || "").split(" ");
     const time = timeParts.join(" ");
-    const searchableText = [entry.title, entry.why, entry.description, entry.impact].join("\n");
     return {
         id: `log-${index}`,
         date,
@@ -94,30 +86,8 @@ function parsedLogEntry(
         changeType: entry.change_type || "",
         why: entry.why || "",
         description: entry.description || "",
-        impact: entry.impact || "",
-        pictures: pictureNames(searchableText, logsWithImages)
+        impact: entry.impact || ""
     };
-}
-
-/**
- * Extract unique safe picture filenames referenced by Markdown fields or task ids.
- *
- * @param {string} source Concatenated Markdown content belonging to one log record.
- * @param {readonly string[]} logsWithImages Task identifiers known to have a generated backlog picture.
- * @returns {string[]} Deduplicated filenames without directory traversal segments.
- */
-function pictureNames(source: string, logsWithImages: readonly string[]): string[] {
-    const names = new Set<string>();
-    const matcher = /(?:\$agent[\\/])?pictures[\\/]([A-Za-z0-9][A-Za-z0-9._-]*\.(?:png|jpe?g|gif|webp))/gi;
-    for (const match of String(source || "").matchAll(matcher)) {
-        const name = match[1];
-        if (name) names.add(name);
-    }
-    for (const match of String(source || "").matchAll(/#?(t\d+)\b/gi)) {
-        const taskId = (match[1] ?? "").toLowerCase();
-        if (logsWithImages.includes(taskId)) names.add(`backlog-pic-${taskId}.png`);
-    }
-    return [...names];
 }
 
 /**
