@@ -36,10 +36,10 @@
       "api_key": "$ELEVENLABS_API_KEY",
       "model_id_": "eleven_multilingual_v2",
       "model_id": "eleven_flash_v2_5",
-      "voice_id": "CPiE4HqbQsckFZja5ypa",
+      "voice_id": "<VOICE_ID>",
       "voices": {
-        "es": "CPiE4HqbQsckFZja5ypa",
-        "en": "Pg3evoOztjrREySbai9L"
+        "es": "<VOICE_ID>",
+        "en": "<VOICE_ID>"
       }
     }
   },
