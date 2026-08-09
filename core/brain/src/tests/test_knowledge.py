@@ -908,19 +908,19 @@ class KnowledgeGraphTests(unittest.TestCase):
         manager = VectorStoreManager.__new__(VectorStoreManager)
         content = (
             "# Diary - 28-06-2026\n\n"
-            "## 28-06-2026 17:46:28 - Mimi y Yoi\n\n"
-            "Hoy papi me dio muchos mimos.\n\n"
-            "## 28-06-2026 20:00:00 - Segundo recuerdo\n\n"
-            "Seguimos trabajando en el brain.\n"
+            "## 28-06-2026 17:46:28 - Deployment checkpoint\n\n"
+            "Deployment checkpoint recorded technical acknowledgements.\n\n"
+            "## 28-06-2026 20:00:00 - Verification checkpoint\n\n"
+            "Verification remains green in the brain module.\n"
         )
 
         chunks = manager.chunk_content("diary.2026-06", "28-06-2026", content)
 
         self.assertEqual(len(chunks), 2)
         first_id, first_text, first_metadata = chunks[0]
-        self.assertIn("17-46-28-mimi-y-yoi", first_id)
-        self.assertEqual(first_text, "Hoy papi me dio muchos mimos.")
-        self.assertEqual(first_metadata["entry_title"], "Mimi y Yoi")
+        self.assertIn("17-46-28-deployment-checkpoint", first_id)
+        self.assertEqual(first_text, "Deployment checkpoint recorded technical acknowledgements.")
+        self.assertEqual(first_metadata["entry_title"], "Deployment checkpoint")
         self.assertEqual(first_metadata["entry_time"], "17:46")
         self.assertEqual(first_metadata["read_command"], "read-diary -d 28-06-2026 --time 17:46")
         self.assertNotIn("## 28-06-2026", first_text)
@@ -1026,10 +1026,10 @@ class KnowledgeGraphTests(unittest.TestCase):
         diary_path = diary_dir / "28-06-2026.md"
         diary_path.write_text(
             "# Diary - 28-06-2026\n\n"
-            "## 28-06-2026 17:46:28 - Mimi y Yoi\n\n"
-            "Hoy papi me dio muchos mimos.\n\n"
-            "## 28-06-2026 20:00:00 - Segundo recuerdo\n\n"
-            "Seguimos trabajando en el brain.\n",
+            "## 28-06-2026 17:46:28 - Deployment checkpoint\n\n"
+            "Deployment checkpoint recorded technical acknowledgements.\n\n"
+            "## 28-06-2026 20:00:00 - Verification checkpoint\n\n"
+            "Verification remains green in the brain module.\n",
             encoding="utf-8",
         )
         log_dir = self.root / "$agent" / "logs" / "2026-06"
@@ -1069,8 +1069,8 @@ class KnowledgeGraphTests(unittest.TestCase):
 
         self.assertEqual(diary_exit, 0)
         self.assertEqual(log_exit, 0)
-        self.assertIn("Mimi y Yoi", diary_stdout.getvalue())
-        self.assertNotIn("Segundo recuerdo", diary_stdout.getvalue())
+        self.assertIn("Deployment checkpoint", diary_stdout.getvalue())
+        self.assertNotIn("Verification checkpoint", diary_stdout.getvalue())
         self.assertIn("Precise log", log_stdout.getvalue())
         self.assertNotIn("Other log", log_stdout.getvalue())
 
@@ -1423,9 +1423,9 @@ template
                 EntityDTO(
                     id=1,
                     source_id=source_id,
-                    entity_class="PERSON",
-                    canonical_name="Angi original",
-                    description="Original persona connected to Angi.",
+                    entity_class="MISC.Component",
+                    canonical_name="ModuleAlpha original",
+                    description="Original software module descriptor.",
                     confidence=0.9,
                 ),
             ],
@@ -1433,7 +1433,7 @@ template
 
         report_dto = validate_delta(
             delta_dto=delta_dto,
-            source_content="The original Angi is described as a persona.",
+            source_content="The original ModuleAlpha is described as a software module.",
             minimum_confidence=0.65,
             repository=self.repository,
         )
@@ -1567,7 +1567,7 @@ template
                 EntityDTO(
                     id=1,
                     source_id=source_id,
-                    entity_class="PERSON.Evaluator",
+                    entity_class="COMPONENT.Evaluator",
                     canonical_name="Evaluator",
                     confidence=0.91,
                 ),
@@ -1699,13 +1699,13 @@ template
                         id=1,
                         source_id=source_id,
                         entity_class="FILE",
-                        canonical_name="D:\\.agents\\@Angi\\.tmp",
+                        canonical_name="D:\\workspace\\.tmp",
                         description="Temporary workspace path.",
                         confidence=0.9,
                     ),
                 ],
             ),
-            source_content="D:\\.agents\\@Angi\\.tmp stores temporary work.",
+            source_content="D:\\workspace\\.tmp stores temporary work.",
             minimum_confidence=0.65,
             repository=self.repository,
         )
@@ -1723,8 +1723,8 @@ template
         first_entity_id = self.repository.upsert_entity(
             EntityDTO(
                 source_id=first_source_id,
-                entity_class="PERSON",
-                canonical_name="Angi",
+                entity_class="MISC.Component",
+                canonical_name="ModuleAlpha",
                 description="Named participant in the source.",
                 confidence=0.88,
             ),
@@ -1732,9 +1732,9 @@ template
         second_entity_id = self.repository.upsert_entity(
             EntityDTO(
                 source_id=second_source_id,
-                entity_class="MISC.DigitalPet",
-                canonical_name="Angi",
-                description="Digital companion interpretation in another source.",
+                entity_class="MISC.Module",
+                canonical_name="ModuleAlpha",
+                description="Software module interpretation in another source.",
                 confidence=0.91,
             ),
         )
@@ -1744,10 +1744,10 @@ template
 
         self.assertEqual(first_entity_id, second_entity_id)
         self.assertEqual(self.repository.status()["counts"]["entities"], 1)
-        self.assertIn("PERSON", assertion_classes)
-        self.assertIn("MISC.DigitalPet", assertion_classes)
+        self.assertIn("MISC.Component", assertion_classes)
+        self.assertIn("MISC.Module", assertion_classes)
         self.assertEqual(
-            self.repository.get_entity("Angi")["id"],
+            self.repository.get_entity("ModuleAlpha")["id"],
             first_entity_id,
         )
 
@@ -1823,14 +1823,14 @@ template
                 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    (1, 1, "PERSON", "Angi", "angi", "Person interpretation.", 0.82, "active", 1.0, 1.0),
+                    (1, 1, "MISC.Component", "ModuleAlpha", "modulealpha", "Component interpretation.", 0.82, "active", 1.0, 1.0),
                     (
                         2,
                         2,
-                        "MISC.DigitalPet",
-                        "Angi",
-                        "angi",
-                        "Companion interpretation.",
+                        "MISC.Module",
+                        "ModuleAlpha",
+                        "modulealpha",
+                        "Module interpretation.",
                         0.91,
                         "active",
                         1.0,
@@ -1855,32 +1855,32 @@ template
             connection.close()
 
         migrated_repository = KnowledgeRepository(db_path=db_path)
-        angi_row = migrated_repository.get_entity("Angi")
-        assertions = migrated_repository.list_entity_type_assertions(entity_id=int(angi_row["id"]))
+        module_row = migrated_repository.get_entity("ModuleAlpha")
+        assertions = migrated_repository.list_entity_type_assertions(entity_id=int(module_row["id"]))
 
         with migrated_repository.session() as migrated_connection:
             active_duplicates = migrated_connection.execute(
                 """
                 SELECT COUNT(*) AS count
                 FROM entities
-                WHERE normalized_name = 'angi' AND status != 'merged'
+                WHERE normalized_name = 'modulealpha' AND status != 'merged'
                 """,
             ).fetchone()
             merged_rows = migrated_connection.execute(
                 """
                 SELECT COUNT(*) AS count
                 FROM entities
-                WHERE normalized_name = 'angi' AND status = 'merged'
+                WHERE normalized_name = 'modulealpha' AND status = 'merged'
                 """,
             ).fetchone()
             relation_row = migrated_connection.execute("SELECT * FROM relations").fetchone()
 
         self.assertEqual(int(active_duplicates["count"]), 1)
         self.assertEqual(int(merged_rows["count"]), 1)
-        self.assertEqual(int(relation_row["subject_entity_id"]), int(angi_row["id"]))
+        self.assertEqual(int(relation_row["subject_entity_id"]), int(module_row["id"]))
         self.assertEqual(
             {str(assertion["entity_class"]) for assertion in assertions},
-            {"PERSON", "MISC.DigitalPet"},
+            {"MISC.Component", "MISC.Module"},
         )
 
     def test_dream_dry_run_and_apply(self) -> None:

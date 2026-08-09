@@ -241,11 +241,11 @@ def test_speak_forwards_generic_emotion() -> None:
 
 def test_voice_preserves_original_markdown_for_visual_presentation() -> None:
     service = VoiceService()
-    original = "[Meneo la colita.] **Hola**, papi."
+    original = "[Render status.] **Status ready**, operator."
     with patch("brain.infrastructure.voice.service.voice_service.VoiceDaemonClient.speak") as speak:
         service.speak(original, emotion="happy")
     speak.assert_called_once_with(
-        AvatarSpeakRequest(text="Meneo la colita. Hola, papi.", display_text=original, emotion="happy")
+        AvatarSpeakRequest(text="Render status. Status ready, operator.", display_text=original, emotion="happy")
     )
 
 
@@ -261,7 +261,7 @@ def test_enqueue_message_persistence_skips_embedded_file_requests() -> None:
         "text": "Header content",
         "displayText": "<!-- avatar-file:start -->...",
         "hasEmbeddedFile": True,
-        "consumerPath": "d:/.agents/@Angi",
+        "consumerPath": "d:/agents/@Example",
     }
 
     enqueue_message_persistence(mock_memory, embedded_request)

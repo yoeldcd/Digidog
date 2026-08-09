@@ -14,13 +14,13 @@ const normalizer = new KnowledgeGraphNormalizer({
 });
 
 const graph = normalizer.collect({
-    entities: [{ name: "Yoi", source_path: "memory/relationships/family.md", description: "Father" }],
+    entities: [{ name: "Analyst", source_path: "memory/domains/team.md", description: "Contributor" }],
     classes: [{ id: "cls:person", name: "Person" }],
-    relations: [{ source: "Yoi", target: "Person", predicate: "is_a" }],
+    relations: [{ source: "Analyst", target: "Person", predicate: "is_a" }],
 });
 
 assert.equal(graph.records.length, 2, "All mode must preserve both entities and classes.");
-assert.equal(graph.records[0]?.domain, "relationships.family", "Memory paths must retain their canonical dotted domain.");
+assert.equal(graph.records[0]?.domain, "domains.team", "Memory paths must retain their canonical dotted domain.");
 assert.equal(graph.records[0]?.visualType, "entity", "Entity payloads must retain entity rendering semantics.");
 assert.equal(graph.records[1]?.visualType, "class", "Class payloads must retain class rendering semantics.");
 assert.equal(graph.relations.length, 1, "Explicit relation arrays must remain visible.");

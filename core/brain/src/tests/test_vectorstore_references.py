@@ -157,8 +157,8 @@ class VectorReferenceContractTests(unittest.TestCase):
     def test_picture_sync_persists_only_canonical_picture_reference(self) -> None:
         """Ensure picture vectors contain no path, description, or image bytes."""
         record = SimpleNamespace(
-            id="picture-1", filename="family-dinner.png", domain="family",
-            relative_path="family/dinner.png", description="A shared dinner.",
+            id="picture-1", filename="inventory-dinner.png", domain="inventory",
+            relative_path="inventory/sensor.png", description="A sensor inventory diagram.",
             vector_fingerprint="",
         )
         repository = SimpleNamespace(
@@ -174,7 +174,7 @@ class VectorReferenceContractTests(unittest.TestCase):
         ), patch("brain.infrastructure.vectorstores.pictures.load_pictures_config"):
             stats = sync_picture_vectors(db_path=Path("D:/vectors"))
         _doc_id, text, metadata = CapturingManager.instances[0].records[0]
-        self.assertIn("A shared dinner.", text)
+        self.assertIn("A sensor inventory diagram.", text)
         self.assertEqual(metadata, {"source_kind": "picture", "picture_id": record.id})
         self.assertTrue(stats["reference_only"])
 

@@ -91,7 +91,7 @@ class CodexQuotaClient:
         self._stdout = self._process.stdout
         self._request(
             "initialize",
-            {"clientInfo": {"name": "angi-avatar", "title": "Angi Avatar", "version": "1.0"}},
+            {"clientInfo": {"name": "agent-avatar", "title": "Agent Avatar", "version": "1.0"}},
         )
         self._send({"method": "initialized"})
 
@@ -173,7 +173,7 @@ class CodexQuotaClient:
 
     @staticmethod
     def _runtime_directory() -> Path:
-        """Return a stable private cwd so App Server never inherits a consumer."""
+        """Return a stable managed cwd so App Server never inherits a consumer."""
         agent_home = get_agent_home()
         runtime_directory = agent_home / "$agent" / ".tmp" / "codex-app-server"
         runtime_directory.mkdir(parents=True, exist_ok=True)

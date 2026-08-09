@@ -37,6 +37,7 @@ from brain.infrastructure.explorer.server import (
 from brain.infrastructure.explorer.validation import resolve_registered_workspace_root
 from brain.infrastructure.runtime.paths import get_agent_home, get_core_root
 from brain.infrastructure.messages.models import MessageRecordDTO
+from brain.infrastructure.voice.contracts.avatar_speak_request import AvatarSpeakRequest
 
 
 class BrainExplorerTests(unittest.TestCase):
@@ -217,7 +218,7 @@ class BrainExplorerTests(unittest.TestCase):
             return CliCommandResult(True, ["fake", *arguments], 0, "{}", "", 1, {})
 
         handler._run_cli = fake_run
-        result = handler._global_query({"q": "Angi", "deep": "true", "response": "true"})
+        result = handler._global_query({"q": "Nova", "deep": "true", "response": "true"})
 
         self.assertTrue(result["ok"])
         self.assertIn("--deep", calls[0]["arguments"])
@@ -323,14 +324,16 @@ class BrainExplorerTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertTrue(result["data"]["queued"])
         speak.assert_called_once_with(
-            text="Mensaje historico.",
-            display_text="Mensaje historico.",
-            lang="es",
-            emotion="calm",
-            consumer_path=str(consumer_root),
-            codex_thread_id="chat-1",
-            source_command="historical-message-audio",
-            source_phase="replay",
+            AvatarSpeakRequest(
+                text="Mensaje historico.",
+                display_text="Mensaje historico.",
+                lang="es",
+                emotion="calm",
+                consumer_path=str(consumer_root),
+                codex_thread_id="chat-1",
+                source_command="historical-message-audio",
+                source_phase="replay",
+            ),
         )
 
     def test_cli_facade_parses_json_output(self) -> None:

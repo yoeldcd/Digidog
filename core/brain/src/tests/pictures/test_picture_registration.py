@@ -27,28 +27,28 @@ class PictureRegistrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
             agent_home = workspace / "agent"
-            source = workspace / "cake.png"
+            source = workspace / "sensor.png"
             Image.new("RGB", (18, 12), (244, 122, 170)).save(source)
             repository = PictureRepository(database_path=workspace / "registry.db")
 
             first = register_picture(
                 image_file=source,
                 scope="local",
-                domain="family.breakfast",
-                description="**Subjects:** cake.",
+                domain="inventory.breakfast",
+                description="**Subjects:** sensor calibration diagram.",
                 repository=repository,
                 agent_home=agent_home,
             )
-            target = agent_home / "pictures" / "images" / "family" / "breakfast" / "cake.png"
+            target = agent_home / "pictures" / "images" / "inventory" / "breakfast" / "sensor.png"
             self.assertTrue(target.is_file())
             self.assertEqual(first.scope, "local")
-            self.assertEqual(first.relative_path, "images/family/breakfast/cake.png")
+            self.assertEqual(first.relative_path, "images/inventory/breakfast/sensor.png")
 
             second = register_picture(
                 image_file=source,
                 scope="local",
-                domain="family.breakfast",
-                description="**Subjects:** cake.",
+                domain="inventory.breakfast",
+                description="**Subjects:** sensor calibration diagram.",
                 repository=repository,
                 agent_home=agent_home,
             )
@@ -58,14 +58,14 @@ class PictureRegistrationTests(unittest.TestCase):
     def test_global_registration_can_share_relative_path_with_local_scope(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
-            source = workspace / "same.png"
+            source = workspace / "diagram.png"
             Image.new("RGB", (8, 8), (20, 40, 60)).save(source)
             repository = PictureRepository(database_path=workspace / "registry.db")
 
             local = register_picture(
                 image_file=source,
                 scope="local",
-                domain="shared.domain",
+                domain="shared.diagram",
                 description="local",
                 repository=repository,
                 agent_home=workspace / "agent",
@@ -73,18 +73,18 @@ class PictureRegistrationTests(unittest.TestCase):
             global_record = register_picture(
                 image_file=source,
                 scope="global",
-                domain="shared.domain",
+                domain="shared.diagram",
                 description="global",
                 repository=repository,
                 core_root=workspace / "core",
             )
 
-            self.assertEqual(local.relative_path, "images/shared/domain/same.png")
-            self.assertEqual(global_record.relative_path, "shared/domain/same.png")
+            self.assertEqual(local.relative_path, "images/shared/diagram/diagram.png")
+            self.assertEqual(global_record.relative_path, "shared/diagram/diagram.png")
             self.assertEqual(local.scope, "local")
             self.assertEqual(global_record.scope, "global")
-            self.assertTrue((workspace / "agent/pictures/images/shared/domain/same.png").is_file())
-            self.assertTrue((workspace / "core/pictures/shared/domain/same.png").is_file())
+            self.assertTrue((workspace / "agent/pictures/images/shared/diagram/diagram.png").is_file())
+            self.assertTrue((workspace / "core/pictures/shared/diagram/diagram.png").is_file())
             self.assertEqual(len(repository.list(scope="local")), 1)
             self.assertEqual(len(repository.list(scope="global")), 1)
 
@@ -105,7 +105,7 @@ class PictureRegistrationTests(unittest.TestCase):
                 record = register_picture(
                     image_data=f"data:image/png;base64,{encoded}",
                     scope="global",
-                    domain="captured.screen",
+                    domain="sensor.capture",
                     repository=repository,
                     core_root=workspace / "core",
                 )
@@ -113,7 +113,7 @@ class PictureRegistrationTests(unittest.TestCase):
             self.assertTrue(record.filename.startswith("image-"))
             self.assertEqual(record.extension, ".png")
             self.assertEqual(record.scope, "global")
-            self.assertTrue((workspace / "core/pictures/captured/screen" / record.filename).is_file())
+            self.assertTrue((workspace / "core/pictures/sensor/capture" / record.filename).is_file())
             description_service.assert_called_once()
             self.assertEqual(description_service.call_args.kwargs["pictures_root"], (workspace / "core/pictures").resolve())
 
@@ -152,8 +152,8 @@ class PictureRegistrationTests(unittest.TestCase):
                 register_picture(
                     image_file=source,
                     scope="local",
-                    domain="indexed.example",
-                    description="**Subjects:** sample.",
+                    domain="indexed.sensor",
+                    description="**Subjects:** calibration sample.",
                     repository=repository,
                     agent_home=workspace / "agent",
                     index=True,

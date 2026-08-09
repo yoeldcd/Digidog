@@ -9,32 +9,32 @@ from brain.infrastructure.voice.contracts.avatar_speak_request import AvatarSpea
 from brain.infrastructure.voice.service.voice_service import VoiceService, clean_text_for_speech
 
 
-def test_speech_cleanup_extracts_angi_dialogue_body_before_stripping_roleplay() -> None:
+def test_speech_cleanup_extracts_diagnostic_body_before_stripping_metadata() -> None:
     dialogue = (
-        "@Angi🩷.**friend** (✨) [Qué bien, Yoi. Eso refuerza bastante la hipótesis de que "
-        "Lenovo Vantage estaba reteniendo el registro del usuario durante la transición de sesión.]"
+        "@ServiceMonitor.**diagnostic** (ℹ️) [El registro confirma que Lenovo Vantage "
+        "retenía el perfil durante la transición de sesión.]"
     )
 
     cleaned = clean_text_for_speech(dialogue)
 
-    assert cleaned.startswith("Qué bien, Yoi.")
+    assert cleaned.startswith("El registro confirma")
     assert "Lenovo Vantage" in cleaned
-    assert "@Angi" not in cleaned
-    assert "friend" not in cleaned
+    assert "@ServiceMonitor" not in cleaned
+    assert "diagnostic" not in cleaned
 
 
 def test_speech_cleanup_preserves_a_fully_bracketed_dialogue() -> None:
     dialogue = (
-        "[Levanto despacito una de mis orejitas largas al escuchar tu voz. "
-        "Sí, papi, tengo un poquito de sueñito.]"
+        "[El nodo secundario completó la sincronización. "
+        "El servicio quedó listo para recibir solicitudes.]"
     )
 
     assert clean_text_for_speech(dialogue) == dialogue[1:-1]
 
 
 def test_speech_cleanup_narrates_inline_bracketed_narrative() -> None:
-    assert clean_text_for_speech("Hola, papi. [Meneo la colita.] Estoy aquí.") == (
-        "Hola, papi. Meneo la colita. Estoy aquí."
+    assert clean_text_for_speech("Estado del servicio. [Cache invalidated.] Operación completa.") == (
+        "Estado del servicio. Cache invalidated. Operación completa."
     )
 
 
@@ -65,22 +65,22 @@ def test_speech_cleanup_normalizes_legacy_escaped_line_breaks() -> None:
 
 def test_speech_cleanup_omits_emoji_sequences() -> None:
     """Keep visual emoji, modifiers, flags, and joined sequences out of TTS."""
-    source = "Listo 🩷🐾. Café ☕, familia 👨‍👩‍👧‍👦, bandera 🇪🇸 y tecla 1️⃣."
+    source = "Listo ⚙️✅. Café ☕, servidor 🖥️, bandera 🇪🇸 y tecla 1️⃣."
 
-    assert clean_text_for_speech(source) == "Listo. Café, familia, bandera y tecla."
+    assert clean_text_for_speech(source) == "Listo. Café, servidor, bandera y tecla."
 
 
 def test_voice_preserves_emojis_only_in_display_text() -> None:
     """Retain expressive emoji visually while dispatching emoji-free speech."""
     service = VoiceService()
-    original = "Hola, papi 🩷🐾"
+    original = "Proceso listo ⚙️✅"
 
     with patch("brain.infrastructure.voice.service.voice_service.VoiceDaemonClient.speak") as speak:
         service.speak(original, emotion="happy")
 
     speak.assert_called_once_with(
         AvatarSpeakRequest(
-            text="Hola, papi",
+            text="Proceso listo",
             display_text=original,
             lang="es",
             emotion="happy",
@@ -103,7 +103,7 @@ def test_voice_preserves_emojis_only_in_display_text() -> None:
 def test_speech_cleanup_projects_semantic_markdown_and_omits_visual_only_blocks() -> None:
     message = """# Informe narrable
 
-[Levanto una orejita.]
+[Validación completada.]
 
 - Primer elemento.
 - [x] Segundo elemento con [documentación](https://example.com/docs).
@@ -122,7 +122,7 @@ Texto con `código inline narrable` y **énfasis narrable**.
 """
 
     assert clean_text_for_speech(message) == (
-        "Informe narrable Levanto una orejita. Primer elemento. "
+        "Informe narrable Validación completada. Primer elemento. "
         'Segundo elemento con documentación. print("No narrar") Diagrama secreto Texto con código inline narrable y énfasis narrable.'
     )
 

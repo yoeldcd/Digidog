@@ -14,12 +14,12 @@ import type { KnowledgeGraphEdge, KnowledgeGraphNode, KnowledgeMode, KnowledgeNo
 export abstract class KnowledgeCanvasState extends HTMLElement {
     /**
      * Stores the shared Knowledge canvas api state used by rendering and interaction collaborators.
-     * @type {import("D:/.agents/@Angi/core/brain_explorer/src/infrastructure/shared/http/clients/brain-api-client").BrainApiClient | null}
+     * @type {import("../../../infrastructure/shared/http/clients/brain-api-client").BrainApiClient | null}
      */
     protected api: ComponentContext["api"] | null = null;
     /**
      * Stores the shared Knowledge canvas state state used by rendering and interaction collaborators.
-     * @type {import("D:/.agents/@Angi/core/brain_explorer/src/presentation/shell/state/app-state").AppState | null}
+     * @type {import("../../../presentation/shell/state/app-state").AppState | null}
      */
     protected state: ComponentContext["state"] | null = null;
     /**

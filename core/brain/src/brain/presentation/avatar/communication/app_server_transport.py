@@ -180,8 +180,8 @@ class StdioCodexAppServerTransport:
         self._request_id += 1
         request_id = self._request_id
         client_info = {
-            "name": "angi_avatar",
-            "title": "Angi Avatar",
+            "name": "agent-avatar",
+            "title": "Agent Avatar",
             "version": "0.1.0",
         }
         self._write({"method": "initialize", "id": request_id, "params": {"clientInfo": client_info}})

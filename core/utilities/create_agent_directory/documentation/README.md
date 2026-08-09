@@ -48,47 +48,55 @@ py core/utilities/create_agent_directory/create_agent_directory.py update-agent 
 
 The update-agent command takes its source exclusively from the agent root that
 owns the invoked core. It synchronizes brain, brain_explorer, versioned public
-screens, and the live memory/profiles/developer and memory/profiles/worker
-roots into the target agent. It also refreshes the root README and canonical
-LICENSE. Identical files are not rewritten; stale files are removed only inside
-those explicitly owned roots. Target configs, databases, private assets,
-utilities, core/AGENTS.md, diary, relationships, and every other memory domain
-remain outside the synchronization boundary.
+screens, and the explicit canonical utility-file allowlist into the target
+agent. It also refreshes the root README and canonical LICENSE, then regenerates the
+target core/AGENTS.md from the public utility template by substituting only the
+target agent and user names. It never clones the source core/AGENTS.md.
+Identical files are not rewritten; stale files are removed only inside those
+explicitly owned code roots and the two public profile roots:
+memory/profiles/developer and memory/profiles/worker. Configs, databases, every
+other memory domain, private assets, diary, and relationships remain completely
+outside the read, merge, copy, replacement, and removal boundaries of
+update-agent.
 Transient trees (`node_modules`, Python/tool caches, nested `.git`, and
 generated `documentation/wiki`) are excluded on both sides. They are neither
 copied nor removed. Synchronizing a core onto itself is rejected.
 
-## Created layout
+## Created layout ~ Source
 
 ```text
 @agent-name/
-|-- LICENSE
-|-- README.md
+|-- LICENSE                  # copied RAW from `@origin\core\utilities\create_agent_directory\templates\LICENSE`
+|-- README.md                # copied RAW from `@origin\core\README.md`
+|-- AGENTS.md                # rendered automatically by `@target\$agents\scripts\brain.py init`
 |-- core/
-|   |-- AGENTS.md
-|   |-- requirements.txt
-|   |-- brain/
-|   |-- brain_explorer/
-|   |-- utilities/
-|   |-- configs/
-|   |-- database/
+|   |-- AGENTS.md            # partially rendered from template `@origin\core\utilities\create_agent_directory\templates\AGENTS.md`
+|   |-- requirements.txt     # copied RAW from `@origin\core\requirements.txt`
+|   |-- brain/               # copied RAW from `@origin\core\brain`
+|   |-- brain_explorer/      # copied RAW from `@origin\core\brain_explorer`
+|   |-- utilities/           # copied RAW from `@origin\core\utilities`
+|   |-- configs/             # generated automatically by `@target\core\core_cli.py`
+|   |-- database/            # generated automatically by `@target\core\core_cli.py`
 |   `-- assets/avatar/       # Versioned avatar state images
-|-- $agent/
-|   |-- scripts/brain.py
-|   |-- database/
-|   |-- logs/
-|   |-- data/
-|   `-- .tmp/
+|-- $agent/                  # generated automatically by `@target\core\core_cli.py`
+|   |-- scripts/brain.py     # generated automatically by `@target\core\core_cli.py`
+|   |-- database/            # generated automatically by `@target\core\core_cli.py`
+|   |-- logs/                # generated automatically by `@target\core\core_cli.py`
+|   |-- data/                # generated automatically by `@target\core\core_cli.py`
+|   `-- .tmp/                # generated automatically by `@target\core\core_cli.py`
 |-- memory/
-|   |-- profiles/
-|   `-- diary/
-|-- snippets/
-|-- skills/
-|-- workflows/
-|-- pictures/
-|-- $workspaces/
-|-- $user/
-`-- .tmp/
+|   |-- profiles             # rendered automatically by `@target\$agents\scripts\brain.py init`
+|       |-- developer        # copied from `@origin\memory\profiles\developer`
+|       |-- worker           # copied from `@origin\memory\profiles\developer`
+|   `-- diary/               # rendered automatically by `@target\$agents\scripts\brain.py init`
+|-- snippets/                # rendered automatically by `@target\$agents\scripts\brain.py init`
+|-- skills/                  # rendered automatically by `@target\$agents\scripts\brain.py init`
+|-- workflows/               # rendered automatically by `@target\$agents\scripts\brain.py init`
+|-- pictures/                # rendered automatically by `@target\$agents\scripts\brain.py init`
+|-- $workspaces/             # rendered automatically by `@target\$agents\scripts\brain.py init`
+|-- $user/                   # rendered automatically by `@target\$agents\scripts\brain.py init`
+`-- .tmp/                    # rendered automatically by `@target\$agents\scripts\brain.py init`
+
 ```
 
 The initial `$agent/scripts/brain.py` points relatively to the new sibling
@@ -162,10 +170,11 @@ preserves the canonical environment initialization, response workflows, task
 planning methodology, execution guidelines, backlog/memory contracts,
 exception handling, and completion report structure.
 
-The source core's `AGENTS.md` is explicitly excluded from clone copying. The
-factory renders the generic template with the new identity directly into
-`<new-agent>/core/AGENTS.md`; it does not create a root instruction mirror.
-The cloned propagator owns subsequent localization into consumer roots and
+The source core's `AGENTS.md` & `core/AGENTS.md` template is explicitly
+excluded from clone copying. The factory renders the generic template with
+the new identity directly into `<new-agent>/core/AGENTS.md`; it does not
+create a root instruction mirror. The cloned propagator owns subsequent
+localization into consumer roots and
 generic mirrors.
 
 ## Consumer lifecycle

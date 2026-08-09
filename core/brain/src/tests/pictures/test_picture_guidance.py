@@ -35,29 +35,29 @@ def test_picture_guidance_dto_accepts_tags_and_characters() -> None:
         {
             "pictures": {
                 "guidance": {
-                    "tags": {"love": "Visible affectionate contact."},
-                    "characters": {"Angi": "Small pink canine with purple eyes."},
+                    "tags": {"calibration": "Measured alignment markers are visible."},
+                    "characters": {"DeviceAlpha": "Compact diagnostic instrument with a matte alloy enclosure."},
                 },
             },
         },
     )
 
-    assert config.pictures.guidance.tags == {"love": "Visible affectionate contact."}
-    assert config.pictures.guidance.characters["Angi"].startswith("Small pink")
+    assert config.pictures.guidance.tags == {"calibration": "Measured alignment markers are visible."}
+    assert config.pictures.guidance.characters["DeviceAlpha"].startswith("Compact diagnostic")
 
 
 def test_guidance_prompt_names_known_characters_and_rejects_forced_matches() -> None:
     """Inject specific recognition criteria with explicit uncertainty safeguards."""
     guidance = PictureGuidanceConfigDTO(
-        tags={"familiarity": "Relaxed coordinated interaction."},
-        characters={"Angi": "Small pink canine with long floppy ears."},
+        tags={"maintenance": "Relaxed coordinated interaction."},
+        characters={"DeviceAlpha": "Compact diagnostic instrument with a vented housing."},
     )
 
     prompt = build_guided_description_prompt(prompt="Describe the image.", guidance=guidance)
 
     assert "Known characters:" in prompt
-    assert "- Angi: Small pink canine with long floppy ears." in prompt
-    assert "- familiarity: Relaxed coordinated interaction." in prompt
+    assert "- DeviceAlpha: Compact diagnostic instrument with a vented housing." in prompt
+    assert "- maintenance: Relaxed coordinated interaction." in prompt
     assert "instead of a generic subject label" in prompt
     assert "Never force a configured identity or tag" in prompt
 
@@ -66,8 +66,8 @@ def test_img2text_request_includes_configured_guidance() -> None:
     """Ensure the effective model request carries guidance, not only helper output."""
     pictures_config = PicturesConfigDTO(
         guidance=PictureGuidanceConfigDTO(
-            tags={"love": "Visible caring contact."},
-            characters={"Angi": "Small pink canine."},
+            tags={"calibration": "Reference marks align with the sensor face."},
+            characters={"DeviceAlpha": "Compact diagnostic instrument."},
         ),
         image_model=StageModelConfigDTO(model="vision-model", api_key="$TEST_KEY", enabled=True),
     )
@@ -76,7 +76,7 @@ def test_img2text_request_includes_configured_guidance() -> None:
         (),
         {
             "raise_for_status": lambda self: None,
-            "json": lambda self: {"choices": [{"message": {"content": "Angi is visible."}}]},
+            "json": lambda self: {"choices": [{"message": {"content": "DeviceAlpha is visible."}}]},
         },
     )()
     with tempfile.TemporaryDirectory() as directory:
@@ -90,9 +90,9 @@ def test_img2text_request_includes_configured_guidance() -> None:
             result = _generate_description(image_path, "image/png", "Describe this image.")
 
     effective_prompt = post.call_args.kwargs["json"]["messages"][0]["content"][0]["text"]
-    assert result == "Angi is visible."
-    assert "- Angi: Small pink canine." in effective_prompt
-    assert "- love: Visible caring contact." in effective_prompt
+    assert result == "DeviceAlpha is visible."
+    assert "- DeviceAlpha: Compact diagnostic instrument." in effective_prompt
+    assert "- calibration: Reference marks align with the sensor face." in effective_prompt
 
 
 def test_guidance_crud_persists_validated_unified_config() -> None:
@@ -101,14 +101,14 @@ def test_guidance_crud_persists_validated_unified_config() -> None:
         config_path = Path(directory) / "brain_configs.json"
         config_path.write_text(f"{BrainConfigsDTO().model_dump_json(indent=2)}\n", encoding="utf-8")
         with patch("brain.application.pictures.guidance.get_brain_configs_path", return_value=config_path):
-            entry = set_picture_guidance_entry("characters", "Angi", "Pink canine.")
+            entry = set_picture_guidance_entry("characters", "DeviceAlpha", "Compact diagnostic instrument.")
             listed = list_picture_guidance("characters")
-            deleted = delete_picture_guidance_entry("characters", "Angi")
+            deleted = delete_picture_guidance_entry("characters", "DeviceAlpha")
 
         persisted = json.loads(config_path.read_text(encoding="utf-8"))
-        assert entry["name"] == "Angi"
-        assert listed == {"characters": {"Angi": "Pink canine."}}
-        assert deleted["description"] == "Pink canine."
+        assert entry["name"] == "DeviceAlpha"
+        assert listed == {"characters": {"DeviceAlpha": "Compact diagnostic instrument."}}
+        assert deleted["description"] == "Compact diagnostic instrument."
         assert persisted["pictures"]["guidance"]["characters"] == {}
 
 
@@ -117,17 +117,17 @@ def test_character_guidance_projects_description_to_same_name_noun() -> None:
     with tempfile.TemporaryDirectory() as directory:
         repository = KnowledgeRepository(db_path=Path(directory) / "knowledge.db")
         result = project_character_guidance(
-            name="Angi",
-            description="Small pink canine with purple eyes.",
+            name="DeviceAlpha",
+            description="Compact diagnostic instrument with a matte alloy enclosure.",
             repository=repository,
         )
         repeated = project_character_guidance(
-            name="Angi",
-            description="Small pink canine with purple eyes.",
+            name="DeviceAlpha",
+            description="Compact diagnostic instrument with a matte alloy enclosure.",
             repository=repository,
         )
-        noun = repository.get_entity("Angi")
-        description = repository.get_entity("Small pink canine with purple eyes.")
+        noun = repository.get_entity("DeviceAlpha")
+        description = repository.get_entity("Compact diagnostic instrument with a matte alloy enclosure.")
         relations = repository.list_relations()
         classes = repository.list_entity_classes()
 
@@ -148,20 +148,20 @@ def test_character_guidance_adds_noun_type_to_an_existing_identity() -> None:
     with tempfile.TemporaryDirectory() as directory:
         repository = KnowledgeRepository(db_path=Path(directory) / "knowledge.db")
         source_id = repository.upsert_source(
-            SourceDTO(source_type="memory", path="memory/people", title="People"),
+            SourceDTO(source_type="memory", path="memory/equipment", title="Equipment"),
         )
         existing_id = repository.upsert_entity(
             EntityDTO(
                 source_id=source_id,
-                entity_class="PERSON",
-                canonical_name="Yoi",
-                description="Known person.",
+                entity_class="DEVICE",
+                canonical_name="OperatorGamma",
+                description="Control operator console identity.",
             ),
         )
 
         result = project_character_guidance(
-            name="Yoi",
-            description="Adult man with rectangular glasses.",
+            name="OperatorGamma",
+            description="Control operator profile with a rectangular headset display.",
             repository=repository,
         )
         assertions = repository.list_entity_type_assertions(entity_id=existing_id)
@@ -175,14 +175,14 @@ def test_set_character_command_returns_graph_projection() -> None:
     args = Namespace(
         command="set-picture-guidance",
         section="characters",
-        name="Mia",
-        description="Blue canine.",
+        name="ModuleBeta",
+        description="Signal conditioning module with a blue status panel.",
         json=False,
     )
     with (
         patch(
             "brain.presentation.actions.pictures.command_picture_guidance.set_picture_guidance_entry",
-            return_value={"section": "characters", "name": "Mia", "description": "Blue canine."},
+            return_value={"section": "characters", "name": "ModuleBeta", "description": "Signal conditioning module with a blue status panel."},
         ),
         patch(
             "brain.presentation.actions.pictures.command_picture_guidance.project_character_guidance",
@@ -193,46 +193,46 @@ def test_set_character_command_returns_graph_projection() -> None:
 
     assert result == 0
     assert args.json_payload["graph"]["noun_entity_id"] == 4
-    projector.assert_called_once_with(name="Mia", description="Blue canine.")
+    projector.assert_called_once_with(name="ModuleBeta", description="Signal conditioning module with a blue status panel.")
 
 
 def test_picture_description_projects_named_characters_tags_and_current_relations() -> None:
     """Retain img2text subjects and explicit semantic tags as source-owned graph relations."""
     guidance = PictureGuidanceConfigDTO(
-        characters={"Angi": "Pink canine.", "Mia": "Blue canine.", "Yoi": "Adult man."},
-        tags={"familiarity": "Relaxed interaction.", "love": "Visible caring contact."},
+        characters={"DeviceAlpha": "Compact diagnostic instrument.", "ModuleBeta": "Signal conditioning module with a blue status panel.", "OperatorGamma": "Control operator console."},
+        tags={"maintenance": "Scheduled servicing indicators are visible.", "calibration": "Reference marks align with the sensor face."},
     )
     record = SimpleNamespace(
         id="picture-1",
         active=True,
         filename="team.png",
         relative_path="code_team/team.png",
-        description="**Subjects:** Yoi and Angi.\n**Semantic Tags:** familiarity, love.",
+        description="**Subjects:** OperatorGamma and DeviceAlpha.\n**Semantic Tags:** maintenance, calibration.",
     )
     with tempfile.TemporaryDirectory() as directory:
         repository = KnowledgeRepository(db_path=Path(directory) / "knowledge.db")
         first = project_picture_description(record=record, guidance=guidance, repository=repository)
-        record.description = "**Subjects:** Angi.\n**Semantic Tags:** familiarity."
+        record.description = "**Subjects:** DeviceAlpha.\n**Semantic Tags:** maintenance."
         second = project_picture_description(record=record, guidance=guidance, repository=repository)
         relations = repository.list_relations()
         source = repository.get_source_by_path("pictures/code_team/team.png")
-        angi = repository.get_entity("Angi")
-        yoi = repository.get_entity("Yoi")
+        device = repository.get_entity("DeviceAlpha")
+        operator_console = repository.get_entity("OperatorGamma")
         picture = repository.get_entity("code_team/team.png")
 
-    assert first["characters"] == ["Angi", "Yoi"]
-    assert first["tags"] == ["familiarity", "love"]
-    assert second["characters"] == ["Angi"]
-    assert second["tags"] == ["familiarity"]
+    assert first["characters"] == ["DeviceAlpha", "OperatorGamma"]
+    assert first["tags"] == ["calibration", "maintenance"]
+    assert second["characters"] == ["DeviceAlpha"]
+    assert second["tags"] == ["maintenance"]
     assert source is not None and source["source_type"] == "picture"
-    assert angi is not None and yoi is not None and picture is not None
+    assert device is not None and operator_console is not None and picture is not None
     assert any(
         relation["predicate"] == "depicts"
         and relation["subject_entity_id"] == picture["id"]
-        and relation["object_entity_id"] == angi["id"]
+        and relation["object_entity_id"] == device["id"]
         for relation in relations
     )
     assert not any(
-        relation["predicate"] == "depicts" and relation["object_entity_id"] == yoi["id"]
+        relation["predicate"] == "depicts" and relation["object_entity_id"] == operator_console["id"]
         for relation in relations
     )

@@ -5,7 +5,7 @@ from brain.presentation.commands.models import ArgumentSchema, CommandSchema
 SCHEMA = CommandSchema(
     name="set-memory-entry",
     domain="memory",
-    help="Write content to a key inside a memory domain. (e.g. set-memory-entry profile.friend yoi 'presence info')",
+    help="Write content to a key inside a memory domain. (e.g. set-memory-entry profile.friend value 'presence info')",
     arguments=[
         ArgumentSchema(flags=["domain"], help="The memory domain or dot-separated subdomain (e.g. domain or domain.subdomain)."),
         ArgumentSchema(flags=["key"], default=None, nargs="?", help="The name of the key to create/update (optional if domain.key notation is used)."),

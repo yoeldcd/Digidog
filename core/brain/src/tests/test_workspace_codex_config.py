@@ -23,8 +23,8 @@ class WorkspaceCodexConfigTests(unittest.TestCase):
 
             created = ensure_workspace_codex_config(
                 workspace=workspace,
-                agent_name="@Angi",
-                agent_dir=Path("D:/agents/@Angi"),
+                agent_name="@Example",
+                agent_dir=Path("D:/agents/@Example"),
             )
 
             config_file = workspace / ".codex" / "config.toml"
@@ -32,11 +32,11 @@ class WorkspaceCodexConfigTests(unittest.TestCase):
             self.assertTrue(created)
             self.assertEqual(config["approval_policy"], "on-request")
             self.assertEqual(config["approvals_reviewer"], "auto_review")
-            self.assertEqual(config["default_permissions"], "angi_workspace_guard")
+            self.assertEqual(config["default_permissions"], "example_workspace_guard")
             self.assertFalse(config["allow_login_shell"])
-            guard = config["permissions"]["angi_workspace_guard"]
+            guard = config["permissions"]["example_workspace_guard"]
             self.assertEqual(guard["extends"], ":read-only")
-            self.assertEqual(guard["filesystem"]["D:/agents/@Angi"], "write")
+            self.assertEqual(guard["filesystem"]["D:/agents/@Example"], "write")
             self.assertEqual(guard["filesystem"][":workspace_roots"]["."], "write")
             self.assertEqual(guard["filesystem"][":workspace_roots"]["**/.env"], "deny")
             self.assertNotIn("sandbox_mode", config)
@@ -81,8 +81,8 @@ class WorkspaceCodexConfigTests(unittest.TestCase):
 
             created = ensure_workspace_codex_config(
                 workspace=workspace,
-                agent_name="@Angi",
-                agent_dir=Path("D:/agents/@Angi"),
+                agent_name="@Example",
+                agent_dir=Path("D:/agents/@Example"),
             )
 
             self.assertFalse(created)

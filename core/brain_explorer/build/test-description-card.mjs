@@ -7,11 +7,11 @@ import {
     renderDescriptionCard
 } from "../src/presentation/shared/components/description-card.ts";
 
-const source = "**Subjects:** Yoi and Angi. **Setting:** A desk with a laptop.\n**Visible Objects:** - Laptop. - Cup.";
+const source = "**Subjects:** Analyst and Assistant. **Setting:** A desk with a laptop.\n**Visible Objects:** - Laptop. - Cup.";
 const sections = parseDescriptionSections(source);
 
 assert.deepEqual(sections.map(section => section.title), ["Subjects", "Setting", "Visible Objects"]);
-assert.equal(sections[0].body, "Yoi and Angi.");
+assert.equal(sections[0].body, "Analyst and Assistant.");
 assert.equal(sections[1].body, "A desk with a laptop.");
 assert.match(sections[2].body, /Laptop/);
 
@@ -21,15 +21,15 @@ assert.match(rendered, /<details class="description-card-section" open>/);
 assert.match(rendered, /3 sections/);
 assert.match(rendered, /<span>Subjects<\/span>/);
 assert.match(rendered, /class="description-entity-badge"/);
-assert.match(rendered, /data-entity-label="Yoi"/);
-assert.match(rendered, /data-entity-label="Angi"/);
+assert.match(rendered, /data-entity-label="Analyst"/);
+assert.match(rendered, /data-entity-label="Assistant"/);
 assert.doesNotMatch(rendered, /<script/i);
 
-assert.deepEqual(descriptionEntityValues(sections[0]), ["Yoi", "Angi"]);
-const mainSubjects = parseDescriptionSections("**Main Subjects:** Yoi, Angi.")[0];
-assert.deepEqual(descriptionEntityValues(mainSubjects), ["Yoi", "Angi"]);
-assert.match(renderDescriptionCard("**Main Subjects:** Yoi, Angi."), /data-entity-label="Yoi"[\s\S]*data-entity-label="Angi"/);
-assert.deepEqual(descriptionEntityValues({ id: "tags-1", title: "Semantic Tags", body: "familiarity, love." }), ["familiarity", "love"]);
+assert.deepEqual(descriptionEntityValues(sections[0]), ["Analyst", "Assistant"]);
+const mainSubjects = parseDescriptionSections("**Main Subjects:** Analyst, Assistant.")[0];
+assert.deepEqual(descriptionEntityValues(mainSubjects), ["Analyst", "Assistant"]);
+assert.match(renderDescriptionCard("**Main Subjects:** Analyst, Assistant."), /data-entity-label="Analyst"[\s\S]*data-entity-label="Assistant"/);
+assert.deepEqual(descriptionEntityValues({ id: "tags-1", title: "Semantic Tags", body: "familiarity, collaboration." }), ["familiarity", "collaboration"]);
 const listSection = parseDescriptionSections("**Visible Objects:** - Laptop. - Cup.")[0];
 assert.equal(listSection.body, "- Laptop.\n- Cup.");
 assert.match(renderDescriptionCard("**Visible Objects:** - Laptop. - Cup."), /<ul><li>Laptop\.<\/li><li>Cup\.<\/li><\/ul>/);

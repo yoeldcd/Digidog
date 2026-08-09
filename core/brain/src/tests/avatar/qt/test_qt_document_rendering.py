@@ -39,13 +39,13 @@ from brain.presentation.avatar.qt.runtime import (
 from brain.presentation.avatar.tk.avatar.window import AvatarWindow
 
 
-def test_avatar_markdown_preserves_narrative_and_dialogue_semantics() -> None:
+def test_avatar_markdown_preserves_status_and_dialogue_semantics() -> None:
     source = avatar_markdown_source(
-        "[Meneo la colita con cuidado.] **Hola**, papi.\n\n- Uno\n- Dos",
+        "[Render status carefully.] **Ready**, operator.\n\n- Uno\n- Dos",
         "🩷",
     )
-    assert source.startswith("> *🩷 Meneo la colita con cuidado.*")
-    assert "**Hola**" in source
+    assert source.startswith("> *🩷 Render status carefully.*")
+    assert "**Ready**" in source
     assert "- Uno" in source
 
 def test_avatar_markdown_adds_visual_section_rules_after_subheadings() -> None:

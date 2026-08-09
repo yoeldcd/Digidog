@@ -345,7 +345,7 @@ class CliCleanArchitectureTest(unittest.TestCase):
 
 
     def test_apply_patch_accepts_utf8_anchors_and_replacements_from_stdin(self) -> None:
-        """Validate ancla UTF-8: corazón 🩷 through the real stdin applicator."""
+        """Validate ancla UTF-8: engranaje ⚙️ through the real stdin applicator."""
         from brain.presentation.actions.utilities.command_apply_patch import handle
 
         specification = json.dumps(
@@ -355,7 +355,7 @@ class CliCleanArchitectureTest(unittest.TestCase):
                         "path": "tests/test_cli_clean_architecture.py",
                         "replacements": [
                             {
-                                "old": "ancla UTF-8: corazón " + "\N{PINK HEART}",
+                                "old": "ancla UTF-8: engranaje " + "\N{GEAR}",
                                 "new": "reemplazo válido: acción " + "\N{PAW PRINTS}",
                                 "expectedOccurrences": 1,
                             }

@@ -1,7 +1,7 @@
 # Pictures tree and image-border design QA
 
 - Source visual truth: `C:/Users/user/AppData/Local/Temp/codex-clipboard-00f0cf31-dd75-4e1d-aeac-243c19f2be50.png` and `C:/Users/user/AppData/Local/Temp/codex-clipboard-52ce6795-524c-454b-8cd1-52f3b51d4344.png`
-- Implementation screenshot: `D:/.agents/@Angi/$agent/.tmp/t425-focus-implementation.png`
+- Implementation screenshot: `./$agent/.tmp/focus-implementation.png`
 - Viewport: 1280 × 720
 - State: Pictures route; local tree filter `roo`; `root` domain loaded; carousel image focused so its border is visible.
 
@@ -51,7 +51,7 @@ final result: passed
 - Source visual truth: `C:/Users/user/AppData/Local/Temp/codex-clipboard-a55c8260-c957-451f-9f25-034ec392647c.png`
 - Runtime route: `http://127.0.0.1:8127/#/pictures`
 - Viewport: 1280 × 720
-- State: `family` domain loaded with `angi-yoi-mia-chocolate-cake.png` selected.
+- State: `samples` domain loaded with `workspace-reference.png` selected.
 
 ## Comparison evidence
 

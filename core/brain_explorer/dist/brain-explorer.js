@@ -3157,13 +3157,13 @@ class BacklogView extends HTMLElement {
     /**
      * Holds a reference to the component's API context for accessing shared services or state, defaulting to null.
      *
-     * @type {import("D:/.agents/@Angi/core/brain_explorer/src/infrastructure/shared/http/clients/brain-api-client").BrainApiClient | null}
+     * @type {import("../../../infrastructure/shared/http/clients/brain-api-client").BrainApiClient | null}
      */
     #api = null;
     /**
      * Holds the internal state of the backlog view component, initialized as null until the component context is established.
      *
-     * @type {import("D:/.agents/@Angi/core/brain_explorer/src/presentation/shell/state/app-state").AppState | null}
+     * @type {import("../../../presentation/shell/state/app-state").AppState | null}
      */
     #state = null;
     /**
@@ -11201,12 +11201,12 @@ const __brainExplorerModule36=(()=>{let cache;return()=>{if(cache)return cache;
 class KnowledgeCanvasState extends HTMLElement {
     /**
      * Stores the shared Knowledge canvas api state used by rendering and interaction collaborators.
-     * @type {import("D:/.agents/@Angi/core/brain_explorer/src/infrastructure/shared/http/clients/brain-api-client").BrainApiClient | null}
+     * @type {import("../../../infrastructure/shared/http/clients/brain-api-client").BrainApiClient | null}
      */
     api = null;
     /**
      * Stores the shared Knowledge canvas state state used by rendering and interaction collaborators.
-     * @type {import("D:/.agents/@Angi/core/brain_explorer/src/presentation/shell/state/app-state").AppState | null}
+     * @type {import("../../../presentation/shell/state/app-state").AppState | null}
      */
     state = null;
     /**
@@ -11573,13 +11573,13 @@ class LogsView extends HTMLElement {
     /**
      * Holds a reference to the component's API context for accessing shared services and state, defaulting to null.
      *
-     * @type {import("D:/.agents/@Angi/core/brain_explorer/src/infrastructure/shared/http/clients/brain-api-client").BrainApiClient | null}
+     * @type {import("../../../infrastructure/shared/http/clients/brain-api-client").BrainApiClient | null}
      */
     #api = null;
     /**
      * Holds the internal state of the component context or remains null if the context is not yet initialized.
      *
-     * @type {import("D:/.agents/@Angi/core/brain_explorer/src/presentation/shell/state/app-state").AppState | null}
+     * @type {import("../../../presentation/shell/state/app-state").AppState | null}
      */
     #state = null;
     /**
@@ -15485,7 +15485,7 @@ class PicturesView extends HTMLElement {
     }
     /**
      * Project dot-separated picture domains into the shared Explorer tree contract.
-     * @returns {import("D:/.agents/@Angi/core/brain_explorer/src/presentation/shared/view_models/structure-tree-view-model").StructureTreeNode[]} The result of the projection process from the PictureDomainTreeProjector.
+     * @returns {import("../../../presentation/shared/view_models/structure-tree-view-model").StructureTreeNode[]} The result of the projection process from the PictureDomainTreeProjector.
      */
     #domainTreeNodes() {
         return new PictureDomainTreeProjector(this.#domains, this.#picturesByDomain).project();

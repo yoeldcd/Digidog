@@ -44,13 +44,13 @@ export class LogsView extends HTMLElement implements TargetFocusableLayout {
     /**
      * Holds a reference to the component's API context for accessing shared services and state, defaulting to null.
      *
-     * @type {import("D:/.agents/@Angi/core/brain_explorer/src/infrastructure/shared/http/clients/brain-api-client").BrainApiClient | null}
+     * @type {import("../../../infrastructure/shared/http/clients/brain-api-client").BrainApiClient | null}
      */
     #api: ComponentContext["api"] | null = null;
     /**
      * Holds the internal state of the component context or remains null if the context is not yet initialized.
      *
-     * @type {import("D:/.agents/@Angi/core/brain_explorer/src/presentation/shell/state/app-state").AppState | null}
+     * @type {import("../../../presentation/shell/state/app-state").AppState | null}
      */
     #state: ComponentContext["state"] | null = null;
     /**

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-# Yoi's workspace policy forbids tests from writing any artifact to disk, even
+# The workspace policy forbids tests from writing any artifact to disk, even
 # when a test intends to clean it afterward. These modules create files,
 # directories, SQLite databases, images, archives, or stdlib temporary roots.
 collect_ignore = [

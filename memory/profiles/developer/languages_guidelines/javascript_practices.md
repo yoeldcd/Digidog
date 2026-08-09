@@ -426,7 +426,7 @@ Modals must not pollute the global layout. A central coordinator (`AppDialogRegi
 
 ```javascript
 /**
- * @author:  Angi Ichiva
+ * @author:  Development Team
  * @version: 1.0.0
  * 
  * AppDialogRegisterService: Orchestrates dialog lifecycle and DOM injection.
@@ -488,7 +488,7 @@ export class AppDialogRegisterService extends AppService {
 import { ChatDialogRegister } from "../../services/services.js";
 
 /**
- * @author:  Angi Ichiva
+ * @author:  Development Team
  * @version: 1.0.0
  * 
  * BaseDialog: Standard implementation template for all app modals.
@@ -866,7 +866,7 @@ Services call Connector operations rather than executing fetch logic directly, m
 
 ```javascript
 /** 
- * @author:  Angi Ichiva
+ * @author:  Development Team
  * @version: 1.0.0
  * 
  * Coordinates domain state and connector invocation.

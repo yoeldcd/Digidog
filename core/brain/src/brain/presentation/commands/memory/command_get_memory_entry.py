@@ -5,7 +5,7 @@ from brain.presentation.commands.models import ArgumentSchema, CommandSchema
 SCHEMA = CommandSchema(
     name="get-memory-entry",
     domain="memory",
-    help="Read Markdown content from a memory domain key. (e.g. get-memory-entry profile.friend yoi)",
+    help="Read Markdown content from a memory domain key. (e.g. get-memory-entry profile.friend value)",
     arguments=[
         ArgumentSchema(flags=["domain"], help="The memory domain or dot-separated subdomain (e.g. domain or domain.subdomain)."),
         ArgumentSchema(flags=["key"], default=None, nargs="?", help="The name of the key to read (optional if domain.key notation is used)."),

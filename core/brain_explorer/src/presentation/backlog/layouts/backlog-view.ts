@@ -72,13 +72,13 @@ export class BacklogView extends HTMLElement implements TargetFocusableLayout {
     /**
      * Holds a reference to the component's API context for accessing shared services or state, defaulting to null.
      *
-     * @type {import("D:/.agents/@Angi/core/brain_explorer/src/infrastructure/shared/http/clients/brain-api-client").BrainApiClient | null}
+     * @type {import("../../../infrastructure/shared/http/clients/brain-api-client").BrainApiClient | null}
      */
     #api: ComponentContext["api"] | null = null;
     /**
      * Holds the internal state of the backlog view component, initialized as null until the component context is established.
      *
-     * @type {import("D:/.agents/@Angi/core/brain_explorer/src/presentation/shell/state/app-state").AppState | null}
+     * @type {import("../../../presentation/shell/state/app-state").AppState | null}
      */
     #state: ComponentContext["state"] | null = null;
     /**

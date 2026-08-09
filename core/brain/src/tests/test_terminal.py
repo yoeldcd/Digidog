@@ -62,20 +62,20 @@ class JsonRendererTests(unittest.TestCase):
 
     def test_standard_json_is_compact_and_parseable(self) -> None:
         """Machine JSON must not contain indentation or separator whitespace."""
-        rendered = render_json({"text": "Angi", "count": 2, "ready": True, "missing": None})
+        rendered = render_json({"text": "module-01", "count": 2, "ready": True, "missing": None})
 
-        self.assertEqual(rendered, '{"text":"Angi","count":2,"ready":true,"missing":null}')
+        self.assertEqual(rendered, '{"text":"module-01","count":2,"ready":true,"missing":null}')
 
     def test_colored_json_is_indented_and_uses_semantic_schema(self) -> None:
         """Colored JSON assigns stable ANSI colors to every primitive token class."""
         rendered = render_json(
-            {"text": "Angi", "count": 2, "ready": True, "missing": None},
+            {"text": "module-01", "count": 2, "ready": True, "missing": None},
             color_enabled=True,
         )
 
         self.assertIn("\n  ", rendered)
         self.assertIn(f'{ANSI_BOLD}{ANSI_CYAN}"text"', rendered)
-        self.assertIn(f'{ANSI_GREEN}"Angi"', rendered)
+        self.assertIn(f'{ANSI_GREEN}"module-01"', rendered)
         self.assertIn(f"{ANSI_YELLOW}2", rendered)
         self.assertIn(f"{ANSI_MAGENTA}true", rendered)
         self.assertIn(f"{ANSI_DIM}null", rendered)

@@ -639,7 +639,7 @@ export class PicturesView extends HTMLElement implements TargetFocusableLayout {
 
     /**
      * Project dot-separated picture domains into the shared Explorer tree contract.
-     * @returns {import("D:/.agents/@Angi/core/brain_explorer/src/presentation/shared/view_models/structure-tree-view-model").StructureTreeNode[]} The result of the projection process from the PictureDomainTreeProjector.
+     * @returns {import("../../../presentation/shared/view_models/structure-tree-view-model").StructureTreeNode[]} The result of the projection process from the PictureDomainTreeProjector.
      */
     #domainTreeNodes() {
         return new PictureDomainTreeProjector(this.#domains, this.#picturesByDomain).project();

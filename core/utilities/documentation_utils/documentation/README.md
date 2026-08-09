@@ -1,3 +1,5 @@
+<!-- Author: Yoel David <yoeldcd@gmail.com> | X: https://x.com/SAY6267 -->
+
 # Documentation Utils
 
 Documentation Utils is an opt-in toolkit for checking, generating, and serving

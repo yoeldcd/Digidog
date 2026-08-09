@@ -41,10 +41,10 @@ def test_bubble_height_reserves_text_padding_and_bounded_tail() -> None:
     assert required >= text_height + 18 + 24 + 6
 
 
-def test_dialogue_markdown_blocks_separates_narrative_from_dialogue() -> None:
-    assert dialogue_markdown_blocks("😴 [Meneo la colita lentamente.] Buenas noches, papi.") == [
-        ("meta", "😴 Meneo la colita lentamente."),
-        ("dialogue", "Buenas noches, papi."),
+def test_dialogue_markdown_blocks_separates_metadata_from_dialogue() -> None:
+    assert dialogue_markdown_blocks("ℹ️ [Render status slowly.] Processing complete, operator.") == [
+        ("meta", "ℹ️ Render status slowly."),
+        ("dialogue", "Processing complete, operator."),
     ]
     assert dialogue_markdown_blocks("Una respuesta directa") == [("dialogue", "Una respuesta directa")]
 

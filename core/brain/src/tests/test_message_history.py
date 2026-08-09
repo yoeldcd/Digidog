@@ -36,7 +36,7 @@ class MessageRepositoryTests(unittest.TestCase):
         message = MessageWriteDTO(
             id="speak-001",
             created_at="2026-07-16T23:45:10+03:00",
-            text="Hola, papi.",
+            text="Status ready.",
             emotion="happy",
             chat_id="chat-1",
         )
@@ -46,7 +46,7 @@ class MessageRepositoryTests(unittest.TestCase):
         self.assertEqual(mapping["date"], "2026-07-16")
         self.assertEqual(mapping["time"], "23:45:10+03:00")
         self.assertEqual(self.repository.count(), 1)
-        self.assertEqual(self.repository.get_message("speak-001").text, "Hola, papi.")
+        self.assertEqual(self.repository.get_message("speak-001").text, "Status ready.")
         self.assertIsNone(self.repository.get_message("missing"))
 
     def test_filters_and_markdown_projection(self) -> None:

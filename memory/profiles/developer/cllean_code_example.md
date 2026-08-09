@@ -7,7 +7,7 @@ Description: Generic typed structure showing cohesive identities, grouped code,
 
 File: application/management/dispatch/dispatcher.py
 
-Author: @Yoi
+Author: Project Maintainer
 Version: 1.0.5
 """
 

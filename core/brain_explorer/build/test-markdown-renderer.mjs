@@ -50,8 +50,8 @@ Object.defineProperty(globalThis, "localStorage", {
     }
 });
 try {
-    const agentImage = renderMarkdown("![Agent](./$agent/pictures/task.png)");
-    assert.match(agentImage, /<img src="\/api\/workspace\/image\?path=\.%2F%24agent%2Fpictures%2Ftask\.png&amp;workspaceRoot=D%3A%2Fworkspace" alt="Agent" loading="lazy">/);
+    const workspaceImage = renderMarkdown("![Diagnostic](./$agent/pictures/diagnostic.png)");
+    assert.match(workspaceImage, /<img src="\/api\/workspace\/image\?path=\.%2F%24agent%2Fpictures%2Fdiagnostic\.png&amp;workspaceRoot=D%3A%2Fworkspace" alt="Diagnostic" loading="lazy">/);
 
     const fileImage = renderMarkdown("![File](file:///D:/workspace/pictures/task.png)");
     assert.match(fileImage, /<img src="\/api\/workspace\/image\?path=file%3A%2F%2F%2FD%3A%2Fworkspace%2Fpictures%2Ftask\.png&amp;workspaceRoot=D%3A%2Fworkspace" alt="File" loading="lazy">/);
@@ -59,12 +59,12 @@ try {
     const windowsImage = renderMarkdown("![Windows](D:\\workspace\\pictures\\task.png)");
     assert.match(windowsImage, /<img src="\/api\/workspace\/image\?path=D%3A%5Cworkspace%5Cpictures%5Ctask\.png&amp;workspaceRoot=D%3A%2Fworkspace" alt="Windows" loading="lazy">/);
 
-    const enclosedWindowsImage = renderMarkdown("![Picture](<D:/workspace/pictures/Angi design.png>)");
-    assert.match(enclosedWindowsImage, /<img src="\/api\/workspace\/image\?path=D%3A%2Fworkspace%2Fpictures%2FAngi%20design\.png&amp;workspaceRoot=D%3A%2Fworkspace" alt="Picture" loading="lazy">/);
+    const enclosedWindowsImage = renderMarkdown("![Picture](<D:/workspace/pictures/Fixture design.png>)");
+    assert.match(enclosedWindowsImage, /<img src="\/api\/workspace\/image\?path=D%3A%2Fworkspace%2Fpictures%2FFixture%20design\.png&amp;workspaceRoot=D%3A%2Fworkspace" alt="Picture" loading="lazy">/);
     assert.doesNotMatch(enclosedWindowsImage, /narrative-square|narrative-round/, "Parsed image tags must not fall through to narrative closures.");
 
-    const escapedAttributes = renderMarkdown('![Task <visual>]($agent/pictures/task.png "Reference & proof")');
-    assert.match(escapedAttributes, /alt="Task &lt;visual&gt;" title="Reference &amp; proof"/);
+    const escapedAttributes = renderMarkdown('![Build <visual>]($agent/pictures/diagnostic.png "Reference & proof")');
+    assert.match(escapedAttributes, /alt="Build &lt;visual&gt;" title="Reference &amp; proof"/);
 
     const remoteImage = renderMarkdown('![Remote](https://cdn.example.test/image.png "Remote & title")');
     assert.match(remoteImage, /<img src="https:\/\/cdn\.example\.test\/image\.png" alt="Remote" title="Remote &amp; title" loading="lazy">/);
@@ -75,11 +75,11 @@ try {
     const blobImage = renderMarkdown("![Blob](blob:https://example.test/opaque-id)");
     assert.match(blobImage, /<img src="blob:https:\/\/example\.test\/opaque-id" alt="Blob" loading="lazy">/);
 
-    assert.doesNotMatch(agentImage + remoteImage, /crossorigin=/, "Image markup must not force anonymous CORS.");
+    assert.doesNotMatch(workspaceImage + remoteImage, /crossorigin=/, "Image markup must not force anonymous CORS.");
     const unsafeImage = renderMarkdown("![Unsafe](javascript:alert(1))");
     assert.doesNotMatch(unsafeImage, /<img /, "Unsafe image schemes must be rejected.");
 
-    const localLinks = renderMarkdown("[File](file:///D:/workspace/pictures/task.png) [Windows](D:\\workspace\\pictures\\task.png) [Agent](./$agent/pictures/task.png)");
+    const localLinks = renderMarkdown("[File](file:///D:/workspace/pictures/task.png) [Windows](D:\\workspace\\pictures\\task.png) [Diagnostic](./$agent/pictures/diagnostic.png)");
     assert.doesNotMatch(localLinks, /<a href=/, "Local paths are accepted only by image Markdown.");
 } finally {
     if (previousLocalStorage) {

@@ -11,7 +11,7 @@ from brain.infrastructure.runtime.paths import get_agent_home
 
 
 AGENT_HOME = get_agent_home()
-"""Shared Angi home directory resolved for memory operations."""
+"""Shared application home directory resolved for memory operations."""
 
 MEMORY_ROOT = AGENT_HOME / MEMORY_DIR_NAME
 """Root directory for Markdown memory domains."""

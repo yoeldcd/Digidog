@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * @author Angi Ichiva
+ * @author Yoel David <yoeldcd@gmail.com>
+ * @see https://x.com/SAY6267
  * @version 2.0.0
  *
  * CLI entrypoint for documentation utilities.

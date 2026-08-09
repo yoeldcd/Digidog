@@ -28,9 +28,9 @@ class PictureRegistryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "pictures"
             database = Path(temp_dir) / "picture_storage" / "pictures.db"
-            nested = root / "family" / "dinner"
+            nested = root / "inventory" / "sensor"
             nested.mkdir(parents=True)
-            original = nested / "cake.png"
+            original = nested / "sensor.png"
             Image.new("RGB", (32, 24), (244, 122, 170)).save(original)
             repository = PictureRepository(database_path=database)
             events: list[tuple[str, str]] = []
@@ -40,24 +40,24 @@ class PictureRegistryTests(unittest.TestCase):
 
             first = scan_pictures(repository=repository, pictures_root=root, on_event=collect_event)
             self.assertEqual(first["added"], 1)
-            self.assertEqual(events, [("added", "family/dinner/cake.png")])
+            self.assertEqual(events, [("added", "inventory/sensor/sensor.png")])
             record = repository.list()[0]
-            self.assertEqual(record.domain, "family.dinner")
+            self.assertEqual(record.domain, "inventory.sensor")
             self.assertEqual((record.width, record.height), (32, 24))
-            repository.update_description(record.id, "Chocolate cake with family.", "manual", "2026-07-17T21:00:00+03:00")
+            repository.update_description(record.id, "Calibrated sensor module.", "manual", "2026-07-17T21:00:00+03:00")
 
             second = scan_pictures(repository=repository, pictures_root=root)
             self.assertEqual(second["unchanged"], 1)
-            moved_path = root / "family" / "cake.png"
+            moved_path = root / "inventory" / "sensor.png"
             original.rename(moved_path)
             moved = scan_pictures(repository=repository, pictures_root=root)
             self.assertEqual(moved["moved"], 1)
             moved_record = repository.list()[0]
             self.assertEqual(moved_record.id, record.id)
-            self.assertEqual(moved_record.domain, "family")
-            self.assertEqual(moved_record.description, "Chocolate cake with family.")
+            self.assertEqual(moved_record.domain, "inventory")
+            self.assertEqual(moved_record.description, "Calibrated sensor module.")
 
-            matches = repository.search("chocolate family")
+            matches = repository.search("calibrated sensor")
             self.assertEqual([item.id for item in matches], [record.id])
             moved_path.unlink()
             deleted = scan_pictures(repository=repository, pictures_root=root)
@@ -69,8 +69,8 @@ class PictureRegistryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "pictures"
             database = Path(temp_dir) / "picture_storage" / "pictures.db"
-            (root / "family").mkdir(parents=True)
-            Image.new("RGB", (20, 20), (244, 122, 170)).save(root / "family" / "cake.png")
+            (root / "inventory").mkdir(parents=True)
+            Image.new("RGB", (20, 20), (244, 122, 170)).save(root / "inventory" / "sensor.png")
             repository = PictureRepository(database_path=database)
             scan_pictures(repository=repository, pictures_root=root)
 
@@ -81,13 +81,13 @@ class PictureRegistryTests(unittest.TestCase):
                 patch("brain.infrastructure.explorer.routes.picture_routes.get_pictures_dir", return_value=root),
             ):
                 structure = routes._pictures({"structure_only": "true"})["data"]
-                family = routes._pictures({"domain": "family"})["data"]
+                inventory = routes._pictures({"domain": "inventory"})["data"]
 
             self.assertEqual(structure["pictures"], [])
-            self.assertEqual(structure["domains"], {"family": 1})
-            self.assertEqual([record["filename"] for record in family["pictures"]], ["cake.png"])
-            self.assertEqual(family["pictures"][0]["absolute_path"], str((root / "family" / "cake.png").resolve()))
-            self.assertEqual(family["domains"], {})
+            self.assertEqual(structure["domains"], {"inventory": 1})
+            self.assertEqual([record["filename"] for record in inventory["pictures"]], ["sensor.png"])
+            self.assertEqual(inventory["pictures"][0]["absolute_path"], str((root / "inventory" / "sensor.png").resolve()))
+            self.assertEqual(inventory["domains"], {})
             scanner.assert_called_once_with()
 
     def test_describe_registered_pictures_skips_existing_descriptions(self) -> None:
@@ -95,11 +95,11 @@ class PictureRegistryTests(unittest.TestCase):
             root = Path(temp_dir) / "pictures"
             database = Path(temp_dir) / "picture_storage" / "pictures.db"
             root.mkdir(parents=True)
-            Image.new("RGB", (20, 20), (244, 122, 170)).save(root / "described.png")
-            Image.new("RGB", (20, 20), (122, 170, 244)).save(root / "pending.png")
+            Image.new("RGB", (20, 20), (244, 122, 170)).save(root / "calibration.png")
+            Image.new("RGB", (20, 20), (122, 170, 244)).save(root / "pending-sensor.png")
             repository = PictureRepository(database_path=database)
             scan_pictures(repository=repository, pictures_root=root)
-            described = repository.get(relative_path="described.png")
+            described = repository.get(relative_path="calibration.png")
             self.assertIsNotNone(described)
             repository.update_description(
                 described.id,
@@ -122,8 +122,8 @@ class PictureRegistryTests(unittest.TestCase):
             self.assertEqual(summary["requested"], 1)
             self.assertEqual(summary["described"], 1)
             self.assertEqual(summary["skipped"], 1)
-            self.assertEqual(repository.get(relative_path="described.png").description, "Manual description.")
-            self.assertEqual(repository.get(relative_path="pending.png").description, "Generated description.")
+            self.assertEqual(repository.get(relative_path="calibration.png").description, "Manual description.")
+            self.assertEqual(repository.get(relative_path="pending-sensor.png").description, "Generated description.")
             generator.assert_called_once()
 
 

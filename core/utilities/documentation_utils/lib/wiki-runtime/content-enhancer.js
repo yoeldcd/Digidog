@@ -1,5 +1,6 @@
 /**
- * @author Angi Ichiva
+ * @author Yoel David <yoeldcd@gmail.com>
+ * @see https://x.com/SAY6267
  * @version 2.0.0
  *
  * Enhances rendered markdown with links, Mermaid, Prism, TOC, and search.
@@ -11,7 +12,8 @@ import {
     normalizePosixPath,
     normalizeReferenceTerm,
     posixDirname,
-    referenceTermVariants
+    referenceTermVariants,
+    sourceToHref
 } from './wiki-utils.js';
 
 const PANNED_MERMAID_SVGS = new WeakSet();
@@ -60,6 +62,7 @@ export function renderMarkdown(markdown) {
  */
 export function enhanceRenderedMarkdown({ root, manifest, page, anchor }) {
     rewriteLocalMarkdownLinks({ root, manifest, page });
+    rewriteLocalMarkdownImages({ root, page });
     enhanceReferenceLinks({ root, manifest, page });
     enhanceHeadingTextLinks({ root, manifest, page });
     enhanceMermaid();
@@ -128,6 +131,31 @@ function rewriteLocalMarkdownLinks({ root, manifest, page }) {
 
         const anchor = mdMatch[2]?.startsWith('#') ? mdMatch[2].slice(1) : null;
         anchorElement.setAttribute('href', buildPageHash(targetPage.id, anchor));
+    });
+}
+
+/**
+ * Rewrite relative Markdown image sources against the active Markdown file.
+ *
+ * The live reader itself sits under `wiki/`, while Markdown assets belong to
+ * the documentation root. Rewriting prevents the browser from requesting a
+ * nonexistent `wiki/<relative-image>` path.
+ *
+ * @param {object} params - Rendered content and current page.
+ * @param {HTMLElement} params.root - Rendered markdown root.
+ * @param {object|null} params.page - Active manifest page.
+ * @returns {void}
+ */
+function rewriteLocalMarkdownImages({ root, page }) {
+    if (!page) return;
+    const activeDir = posixDirname(page.source);
+
+    root.querySelectorAll('img[src]').forEach(imageElement => {
+        const rawSource = imageElement.getAttribute('src');
+        if (!rawSource || /^(?:[a-z][a-z0-9+.-]*:|\/|#|data:)/i.test(rawSource)) return;
+        const sourcePath = normalizePosixPath(activeDir, rawSource);
+        if (!sourcePath) return;
+        imageElement.setAttribute('src', sourceToHref(sourcePath));
     });
 }
 

@@ -490,7 +490,7 @@ class GlobalQueryTests(unittest.TestCase):
                 "# Diary",
                 "",
                 "## 28-06-2026 17:46:00 - Exact entry",
-                "Body with searchable Mimi detail.",
+                "Body with searchable checksum detail.",
                 "",
                 "## 28-06-2026 18:00:00 - Other entry",
                 "Other body.",
@@ -502,9 +502,9 @@ class GlobalQueryTests(unittest.TestCase):
             markdown_path=diary_path,
             memory_root=memory_root,
             content=content,
-            line="Body with searchable Mimi detail.",
+            line="Body with searchable checksum detail.",
             line_number=4,
-            matches=[("Mimi", 21, 25)],
+            matches=[("checksum", 21, 29)],
             rank=0.1,
         )
 

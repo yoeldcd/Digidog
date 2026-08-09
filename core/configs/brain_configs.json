@@ -2,7 +2,7 @@
   "version": 1,
   "agent_dir": "D:\\.agents\\@Mia",
   "agent_name": "Mia",
-  "user_name": "Yoi",
+  "user_name": "User",
   "knowledge": {
     "version": 1,
     "minimum_confidence": 0.5,

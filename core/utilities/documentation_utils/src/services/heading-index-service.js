@@ -1,5 +1,6 @@
 /**
- * @author Angi Ichiva
+ * @author Yoel David <yoeldcd@gmail.com>
+ * @see https://x.com/SAY6267
  * @version 2.0.0
  *
  * Builds the cross-page heading index consumed by the live markdown reader.

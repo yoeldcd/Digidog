@@ -1,5 +1,6 @@
 /**
- * @author Angi Ichiva
+ * @author Yoel David <yoeldcd@gmail.com>
+ * @see https://x.com/SAY6267
  * @version 2.0.0
  *
  * Generates the live markdown wiki shell and manifest.

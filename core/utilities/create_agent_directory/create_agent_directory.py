@@ -44,7 +44,7 @@ COPY_EXCLUDED_NAMES = {
 CORE_SEED_EXCLUDED_ROOT_NAMES = {"AGENTS.md"}
 """Canonical identity templates that must be rendered for each clone."""
 SYNC_ROOT_NAMES = ("brain", "brain_explorer", "assets/screens")
-PROFILE_SYNC_ROOT_NAMES = ("developer", "worker")
+PUBLIC_PROFILE_ROOT_NAMES = ("memory/profiles/developer", "memory/profiles/worker")
 UTILITY_SYNC_FILES = (
     "utilities/create_agent_directory/create_agent_directory.py",
     "utilities/create_agent_directory/documentation/README.md",
@@ -54,12 +54,8 @@ UTILITY_SYNC_FILES = (
     "utilities/propagate_agent_prompt/documentation/README.md",
     "utilities/apply_text_patch/apply_text_patch.ps1",
     "utilities/apply_text_patch/documentation/README.md",
+    "utilities/create_agent_directory/tests/test_create_agent_directory.py",
 )
-CONFIG_FILE_NAMES = ("brain_configs.json", "brain_avatar_config.json", "brain_mirrors.json")
-DYNAMIC_CONFIG_MAP_PATHS = {
-    ("pictures", "guidance", "characters"),
-    ("pictures", "guidance", "tags"),
-}
 REQUIRED_EXISTING_ROOT_NAMES = ("brain", "brain_explorer")
 SYNC_AGENT_FILE_NAMES = ("LICENSE", "README.md", "core/AGENTS.md")
 AVATAR_STATE_PATTERN = re.compile(r"^avatar_[A-Za-z0-9_-]+\.gif$", re.IGNORECASE)
@@ -481,7 +477,10 @@ def create_agent_directory(
             source_core=canonical_core,
         )
         _create_agent_authored_structure(temporary_agent_root)
-        _sync_public_profiles(agent_root=temporary_agent_root, source_core=canonical_core)
+        _sync_public_profiles(
+            source_agent_root=canonical_core.parent,
+            target_agent_root=temporary_agent_root,
+        )
         _sync_agent_prompt(
             template=template,
             destination=temporary_agent_root / "core" / "AGENTS.md",
@@ -531,8 +530,9 @@ def update_agent(
 
     The source is always the core containing this utility unless explicitly
     injected by a test. Root README.md and LICENSE are overwriteable;
-    configuration, databases, private avatar assets, identity, utilities, and
-    all agent-authored domains remain outside the synchronization boundary.
+    Configs, databases, private avatar assets, identity, and all agent-authored
+    memory domains remain outside the synchronization boundary. Only the
+    explicit public utility-file allowlist is synchronized.
     Versioned Explorer screenshots are synchronized with their README.
 
     Args:
@@ -563,13 +563,28 @@ def update_agent(
         total.created_directories += current.created_directories
         total.removed_directories += current.removed_directories
 
+    profiles = _sync_public_profiles(
+        source_agent_root=canonical_core.parent,
+        target_agent_root=agent_root,
+    )
+    total.copied_files += profiles.copied_files
+    total.unchanged_files += profiles.unchanged_files
+
+    documentation_utils = canonical_core / "utilities/documentation_utils"
+    if documentation_utils.is_dir():
+        current = _sync_code_tree(
+            source=documentation_utils,
+            destination=target_core / "utilities/documentation_utils",
+        )
+        total.copied_files += current.copied_files
+        total.unchanged_files += current.unchanged_files
+        total.removed_files += current.removed_files
+        total.created_directories += current.created_directories
+        total.removed_directories += current.removed_directories
+
     utilities = _sync_allowlisted_utilities(source_core=canonical_core, target_core=target_core)
     total.copied_files += utilities.copied_files
     total.unchanged_files += utilities.unchanged_files
-
-    configs = _reconcile_configs(source_core=canonical_core, target_core=target_core)
-    total.copied_files += configs.copied_files
-    total.unchanged_files += configs.unchanged_files
 
     publication = _sync_publication_files(
         agent_root=agent_root,
@@ -577,12 +592,6 @@ def update_agent(
     )
     total.copied_files += publication.copied_files
     total.unchanged_files += publication.unchanged_files
-    profiles = _sync_public_profiles(agent_root=agent_root, source_core=canonical_core)
-    total.copied_files += profiles.copied_files
-    total.unchanged_files += profiles.unchanged_files
-    total.removed_files += profiles.removed_files
-    total.created_directories += profiles.created_directories
-    total.removed_directories += profiles.removed_directories
     agent_name, user_name = _read_agent_identity(agent_root)
     prompt = _sync_agent_prompt(
         template=canonical_core / "utilities" / "create_agent_directory" / "templates" / "AGENTS.md",
@@ -592,13 +601,13 @@ def update_agent(
     )
     total.copied_files += prompt.copied_files
     total.unchanged_files += prompt.unchanged_files
-    _initialize_agent_consumer(agent_root=agent_root)
+    _initialize_agent_consumer(agent_root)
 
     return UpdateAgentResult(
         agent_root=agent_root.as_posix(),
         source_core=canonical_core.as_posix(),
         target_core=target_core.as_posix(),
-        updated_roots=[*SYNC_ROOT_NAMES, "utilities", "configs", *(f"memory/profiles/{name}" for name in PROFILE_SYNC_ROOT_NAMES)],
+        updated_roots=[*SYNC_ROOT_NAMES, "utilities/documentation_utils", *PUBLIC_PROFILE_ROOT_NAMES, "utilities"],
         updated_files=[*SYNC_AGENT_FILE_NAMES, *UTILITY_SYNC_FILES],
         copied_files=total.copied_files,
         unchanged_files=total.unchanged_files,
@@ -606,27 +615,6 @@ def update_agent(
         created_directories=total.created_directories,
         removed_directories=total.removed_directories,
     )
-
-
-def _sync_public_profiles(agent_root: Path, source_core: Path) -> _SyncStats:
-    """Mirror developer and worker profiles from the source agent live memory."""
-    source_root = source_core.parent / "memory" / "profiles"
-    destination_root = agent_root / "memory" / "profiles"
-    if not source_root.is_dir():
-        raise FileNotFoundError(f"live profile root not found: {source_root}")
-    total = _SyncStats()
-    for root_name in PROFILE_SYNC_ROOT_NAMES:
-        source = source_root / root_name
-        destination = destination_root / root_name
-        if not source.is_dir():
-            raise FileNotFoundError(f"live profile root not found: {source}")
-        current = _sync_code_tree(source=source, destination=destination)
-        total.copied_files += current.copied_files
-        total.unchanged_files += current.unchanged_files
-        total.removed_files += current.removed_files
-        total.created_directories += current.created_directories
-        total.removed_directories += current.removed_directories
-    return total
 
 
 def _sync_file_by_content(source: Path, destination: Path) -> _SyncStats:
@@ -650,8 +638,24 @@ def _sync_file_by_content(source: Path, destination: Path) -> _SyncStats:
     return stats
 
 
+def _sync_public_profiles(source_agent_root: Path, target_agent_root: Path) -> _SyncStats:
+    """Synchronize only the public developer and worker profile trees."""
+    total = _SyncStats()
+    for relative_name in PUBLIC_PROFILE_ROOT_NAMES:
+        source = source_agent_root / relative_name
+        if not source.is_dir():
+            continue
+        current = _sync_code_tree(source=source, destination=target_agent_root / relative_name)
+        total.copied_files += current.copied_files
+        total.unchanged_files += current.unchanged_files
+        total.removed_files += current.removed_files
+        total.created_directories += current.created_directories
+        total.removed_directories += current.removed_directories
+    return total
+
+
 def _sync_allowlisted_utilities(source_core: Path, target_core: Path) -> _SyncStats:
-    """Synchronize canonical utility files without copying test directories."""
+    """Synchronize the explicit canonical utility-file allowlist."""
     total = _SyncStats()
     for relative_name in UTILITY_SYNC_FILES:
         source = source_core / relative_name
@@ -661,60 +665,6 @@ def _sync_allowlisted_utilities(source_core: Path, target_core: Path) -> _SyncSt
         total.copied_files += current.copied_files
         total.unchanged_files += current.unchanged_files
     return total
-
-
-def _merge_missing_config_fields(
-    source: dict[str, object],
-    target: dict[str, object],
-    path: tuple[str, ...] = (),
-) -> bool:
-    """Add absent canonical object fields while preserving target-owned values."""
-    changed = False
-    for key, source_value in source.items():
-        field_path = (*path, key)
-        if key not in target:
-            target[key] = {} if field_path in DYNAMIC_CONFIG_MAP_PATHS else source_value
-            changed = True
-            continue
-        target_value = target[key]
-        if (
-            field_path not in DYNAMIC_CONFIG_MAP_PATHS
-            and isinstance(source_value, dict)
-            and isinstance(target_value, dict)
-        ):
-            changed = _merge_missing_config_fields(source_value, target_value, field_path) or changed
-    return changed
-
-
-def _reconcile_configs(source_core: Path, target_core: Path) -> _SyncStats:
-    """Add missing config fields without overwriting target values or lists."""
-    stats = _SyncStats()
-    for file_name in CONFIG_FILE_NAMES:
-        source = source_core / "configs" / file_name
-        destination = target_core / "configs" / file_name
-        if not source.is_file() or not destination.is_file():
-            missing = source if not source.is_file() else destination
-            raise FileNotFoundError(f"canonical config file not found: {missing}")
-
-        source_payload = json.loads(source.read_text(encoding="utf-8"))
-        target_payload = json.loads(destination.read_text(encoding="utf-8"))
-        if not isinstance(source_payload, dict) or not isinstance(target_payload, dict):
-            stats.unchanged_files += 1
-            continue
-        if not _merge_missing_config_fields(source_payload, target_payload):
-            stats.unchanged_files += 1
-            continue
-
-        encoded = (json.dumps(target_payload, indent=2, ensure_ascii=False) + chr(10)).encode("utf-8")
-        temporary = destination.with_name(f".{destination.name}.updating-{uuid.uuid4().hex}")
-        try:
-            temporary.write_bytes(encoded)
-            os.replace(temporary, destination)
-        finally:
-            if temporary.exists():
-                temporary.unlink()
-        stats.copied_files += 1
-    return stats
 
 
 def _resolve_existing_agent(agent_path: Path) -> tuple[Path, Path]:
@@ -732,15 +682,12 @@ def _validate_update_sources(source_core: Path, target_core: Path) -> None:
     """Validate source roots while allowing update to introduce new destination roots."""
     required_directories = (
         *((source_core / root_name) for root_name in SYNC_ROOT_NAMES),
-        *((source_core.parent / "memory" / "profiles" / root_name) for root_name in PROFILE_SYNC_ROOT_NAMES),
         *((target_core / root_name) for root_name in REQUIRED_EXISTING_ROOT_NAMES),
     )
     missing = [path.as_posix() for path in required_directories if not path.is_dir()]
     required_files = (
         source_core / "README.md",
         *(source_core / relative_name for relative_name in UTILITY_SYNC_FILES),
-        *(source_core / "configs" / file_name for file_name in CONFIG_FILE_NAMES),
-        *(target_core / "configs" / file_name for file_name in CONFIG_FILE_NAMES),
     )
     missing.extend(path.as_posix() for path in required_files if not path.is_file())
     if missing:
@@ -870,7 +817,6 @@ def _validate_seed_sources(
         canonical_core / "assets" / "avatar" / "avatar_awaiting.gif",
         canonical_core / "README.md",
         *(canonical_core / "assets" / "screens" / name for name in PUBLIC_SCREEN_NAMES),
-        *(canonical_core.parent / "memory" / "profiles" / name for name in PROFILE_SYNC_ROOT_NAMES),
         instruction_template,
         license_template,
     )
@@ -1140,7 +1086,7 @@ def _initialize_agent_consumer(agent_root: Path) -> None:
     """
     launcher = agent_root / "$agent" / "scripts" / "brain.py"
     if not launcher.is_file():
-        raise FileNotFoundError(f"agent consumer launcher does not exist: {launcher}")
+        return
     command = [sys.executable, str(launcher), "init", "--json"]
     _run_brain_lifecycle(command=command, cwd=agent_root, operation="init")
 
