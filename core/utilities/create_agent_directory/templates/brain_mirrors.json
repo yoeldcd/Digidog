@@ -1,0 +1,6 @@
+[
+    {
+        "name": "{{MIRROR_NAME}}",
+        "path": "{{MIRROR_PATH}}"
+    }
+]

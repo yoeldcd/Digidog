@@ -3,8 +3,7 @@
 Use this index as the orchestrator's authoritative routing catalogue.
 
 1. Select the profile more aligned to the task based on it desription, without read it contract.
-2. Asignt to spawned subagent the profile filling instruct template above. More subagents in different task can use the same profile.
-
+2. Asignt to spawned subagent the profile filling instruct template above. More subagents in different task can use the same profile. Do not share general task information to workers, **ONLY TELL IT SPECTED CONTRIBUTION**.
 
 ## Python
 
@@ -15,7 +14,7 @@ Use this index as the orchestrator's authoritative routing catalogue.
 
 ### PyQt
 
-- For tasks like editing PyQt widgets, signals and slots, layouts, window behavior, or Qt-specific presentation adapters) instruct to worker run `py {LOCAL_BRAIN_SCRIPT} get-memory-entry profiles.worker.python.pyqt.python_pyqt_editor`. Profile Scope: explicitly authorized PyQt presentation files; operation: Brain `apply-patch` edits plus focused Qt validation.
+- For tasks like (editing PyQt widgets, signals and slots, layouts, window behavior, or Qt-specific presentation adapters) instruct to worker run `py {LOCAL_BRAIN_SCRIPT} get-memory-entry profiles.worker.python.pyqt.python_pyqt_editor`. Profile Scope: explicitly authorized PyQt presentation files; operation: Brain `apply-patch` edits plus focused Qt validation.
 
 ## JavaScript
 
@@ -33,13 +32,16 @@ Use this index as the orchestrator's authoritative routing catalogue.
 
 ## Worker orientation prompt template
 
+**IMPORTANT**: DONT VIOLATE THIS TEMPLATE FORMAT!!!
+
 Redact worker instructions following next template:
+Do not share general task information to workers, **ONLY TELL IT SPECTED CONTRIBUTION**.
 
 ```markdown
-Act as a worker specialized in <SPECIALIZATION_ROLE>.
-Before executing any task actions, read: `py {LOCAL_BRAIN_SCRIPT} get-memory-entry profiles.worker.<ENTRY_PATH> --json` with elevated permission.
+# Work Assignment: <ASSIGNMENT_NAME>
 
-# Task Assignment: <ASSIGNMENT_NAME>
+Act as a worker specialized in <SPECIALIZATION_ROLE>.
+Before executing any task actions, read: `py {LOCAL_BRAIN_SCRIPT} get-memory-entry profiles.worker.<ENTRY_PATH> --json` with elevated shell permissions request.
 
 ## 1. Domain & Authorized Profile Scope
 - Target domain path: `<TARGET_DOMAIN_PATH_OR_MODULES>`
@@ -78,7 +80,7 @@ When the task on your hand require a Profile Scoped worker profile that is not c
 
 1. Read `py {LOCAL_BRAIN_SCRIPT} get-memory-entry profiles.worker.worker_design.worker_design_template`.
 2. Append the worker profile `py  {LOCAL_BRAIN_SCRIPT} add-memory-entry profiles.workers.{langName}.[{domain}].{worker_name}`
-3. Registre the new worker here on specific head level, following item template `- For tasks like {Uses Cases separated by conma}, instruct to worker run `+`py {LOCAL_BRAIN_SCRIPT} get-memory-entry profiles.worker.javascript.javascript_reviewer/`+`Scope: {A summary of profile boundaries}`
+3. Registre the new worker here on specific head level, following item template `- For tasks like {Uses Cases separated by conma}, instruct to worker run:`+`py {LOCAL_BRAIN_SCRIPT} get-memory-entry profiles.worker.javascript.javascript_reviewer/`+`Scope: {A summary of profile boundaries}`
 
 The workers naming policies declares template `{lang_name}_{specialization}.md` for semantic-fast finding.
 The created profiles need to be reusable out of your workspace, never include absolutes.

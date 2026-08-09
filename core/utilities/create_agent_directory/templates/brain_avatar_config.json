@@ -1,0 +1,39 @@
+{
+  "service": {
+    "host": "{{VOICE_HOST}}",
+    "port": "{{VOICE_PORT}}"
+  },
+  "active_voice_engine": "edge",
+  "voice_engines": {
+    "edge": {
+      "rate": "+0%",
+      "volume": "+0%",
+      "pitch": "+0Hz",
+      "sanitization_regex": "",
+      "voices": {}
+    },
+    "pyttsx3": {
+      "rate": 150,
+      "volume": 1.0,
+      "voices": {}
+    },
+    "openai": {
+      "api_key": "{{API_KEY_REF}}",
+      "model": "{{TTS_MODEL}}",
+      "voice": "{{TTS_VOICE}}",
+      "voices": {}
+    },
+    "elevenlabs": {
+      "api_key": "{{API_KEY_REF}}",
+      "model_id_": "{{ELEVEN_MODEL}}",
+      "model_id": "{{ELEVEN_MODEL}}",
+      "voice_id": "{{VOICE_ID}}",
+      "voices": {}
+    }
+  },
+  "ignore_quota_state": false,
+  "tts_chunks_size": 2000,
+  "reactions": [],
+  "silent_commands": [],
+  "commands_show_customization": {}
+}

@@ -1,94 +1,92 @@
 {
-  "version": 1,
   "agent_dir": "D:\\.agents\\@Mia",
   "agent_name": "Mia",
-  "user_name": "User",
   "knowledge": {
-    "version": 1,
     "minimum_confidence": 0.5,
     "stages": {
-      "entity_detection": {
-        "model": "google/gemma-4-31b-it",
-        "base_url": "https://openrouter.ai/api/v1",
+      "consolidation": {
         "api_key": "$OPENROUTER_API_KEY",
-        "temperature": 0.1,
-        "max_tokens": 16000,
-        "enabled": true
-      },
-      "relation_extraction": {
-        "model": "google/gemma-4-31b-it",
         "base_url": "https://openrouter.ai/api/v1",
-        "api_key": "$OPENROUTER_API_KEY",
-        "temperature": 0.1,
+        "enabled": true,
         "max_tokens": 16000,
-        "enabled": true
-      },
-      "schema_evolution": {
         "model": "google/gemma-4-31b-it",
-        "base_url": "https://openrouter.ai/api/v1",
-        "api_key": "$OPENROUTER_API_KEY",
-        "temperature": 0.1,
-        "max_tokens": 16000,
-        "enabled": true
+        "temperature": 0.1
       },
       "deduplication": {
-        "model": "google/gemma-4-31b-it",
-        "base_url": "https://openrouter.ai/api/v1",
         "api_key": "$OPENROUTER_API_KEY",
-        "temperature": 0.1,
+        "base_url": "https://openrouter.ai/api/v1",
+        "enabled": true,
         "max_tokens": 16000,
-        "enabled": true
+        "model": "google/gemma-4-31b-it",
+        "temperature": 0.1
       },
-      "consolidation": {
-        "model": "google/gemma-4-31b-it",
-        "base_url": "https://openrouter.ai/api/v1",
+      "entity_detection": {
         "api_key": "$OPENROUTER_API_KEY",
-        "temperature": 0.1,
+        "base_url": "https://openrouter.ai/api/v1",
+        "enabled": true,
         "max_tokens": 16000,
-        "enabled": true
+        "model": "google/gemma-4-31b-it",
+        "temperature": 0.1
       },
       "profile_synthesis": {
-        "model": "google/gemma-4-31b-it",
-        "base_url": "https://openrouter.ai/api/v1",
         "api_key": "$OPENROUTER_API_KEY",
-        "temperature": 0.1,
+        "base_url": "https://openrouter.ai/api/v1",
+        "enabled": true,
         "max_tokens": 2000,
-        "enabled": true
+        "model": "google/gemma-4-31b-it",
+        "temperature": 0.1
+      },
+      "relation_extraction": {
+        "api_key": "$OPENROUTER_API_KEY",
+        "base_url": "https://openrouter.ai/api/v1",
+        "enabled": true,
+        "max_tokens": 16000,
+        "model": "google/gemma-4-31b-it",
+        "temperature": 0.1
+      },
+      "schema_evolution": {
+        "api_key": "$OPENROUTER_API_KEY",
+        "base_url": "https://openrouter.ai/api/v1",
+        "enabled": true,
+        "max_tokens": 16000,
+        "model": "google/gemma-4-31b-it",
+        "temperature": 0.1
       }
-    }
+    },
+    "version": 1
   },
   "memory": {
     "embedding_model": {
-      "model": "perplexity/pplx-embed-v1-4b",
-      "base_url": "https://openrouter.ai/api/v1",
       "api_key": "$OPENROUTER_API_KEY",
-      "temperature": 0.1,
+      "base_url": "https://openrouter.ai/api/v1",
+      "enabled": true,
       "max_tokens": 6000,
-      "enabled": true
+      "model": "perplexity/pplx-embed-v1-4b",
+      "temperature": 0.1
     },
     "text_model": {
-      "model": "google/gemma-4-31b-it",
-      "base_url": "https://openrouter.ai/api/v1",
       "api_key": "$OPENROUTER_API_KEY",
-      "temperature": 0.1,
+      "base_url": "https://openrouter.ai/api/v1",
+      "enabled": true,
       "max_tokens": 6000,
-      "enabled": true
+      "model": "google/gemma-4-31b-it",
+      "temperature": 0.1
     }
   },
   "pictures": {
     "guidance": {
-      "tags": {},
       "characters": {
         "Mia": "Small pink anthropomorphic canine maquianita with fluffy pink fur, long floppy ears, bright pink hair, large blue eyes, a small dark brown nose, short limbs, and a pale pink muzzle and chest."
-      }
+      },
+      "tags": {}
     },
     "image_model": {
-      "model": "google/gemini-2.5-flash",
-      "base_url": "https://openrouter.ai/api/v1",
       "api_key": "$OPENROUTER_API_KEY",
-      "temperature": 0.1,
+      "base_url": "https://openrouter.ai/api/v1",
+      "enabled": false,
       "max_tokens": 1200,
-      "enabled": false
+      "model": "google/gemini-2.5-flash",
+      "temperature": 0.1
     },
     "supported_extensions": [
       ".png",
@@ -99,5 +97,19 @@
       ".bmp"
     ]
   },
-  "transient_dir": ""
+  "symbols": {
+    "default_language": "{{DEFAULT_LANGUAGE}}",
+    "enabled": false,
+    "model": {
+      "api_key": "{{API_KEY_REF}}",
+      "base_url": "{{BASE_URL}}",
+      "enabled": false,
+      "max_tokens": 2000,
+      "model": "{{MODEL}}",
+      "temperature": 0.1
+    }
+  },
+  "transient_dir": "",
+  "user_name": "User",
+  "version": 1
 }

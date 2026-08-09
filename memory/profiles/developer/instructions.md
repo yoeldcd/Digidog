@@ -79,4 +79,3 @@ RULE #3: **ORGANIZE THE CODEBASE DIRECTORY FOLLOWING ARCHITECTURAL PATTERN `<sou
   - USE ONLY `py {LOCAL_BRAIN_SCRIPT} speak "{message_text}"` as COMMUNICATION CHANNEL with the user.
   - Write on the chat **only task planning & task resolution** reports.
   **ANY OTHER WAY IS A HARD VIOLATION OF COMMUNICATION PROTOCOL**
-

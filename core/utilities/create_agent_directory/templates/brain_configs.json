@@ -1,0 +1,113 @@
+{
+  "version": 1,
+  "agent_name": "{{AGENT_NAME}}",
+  "user_name": "{{USER_NAME}}",
+  "agent_dir": "{{AGENT_DIR}}",
+  "transient_dir": "{{TRANSIENT_DIR}}",
+  "knowledge": {
+    "version": 1,
+    "minimum_confidence": 0.65,
+    "stages": {
+      "entity_detection": {
+        "model": "{{MODEL}}",
+        "base_url": "{{BASE_URL}}",
+        "api_key": "{{API_KEY_REF}}",
+        "temperature": 0.1,
+        "max_tokens": 6000,
+        "enabled": false
+      },
+      "relation_extraction": {
+        "model": "{{MODEL}}",
+        "base_url": "{{BASE_URL}}",
+        "api_key": "{{API_KEY_REF}}",
+        "temperature": 0.1,
+        "max_tokens": 6000,
+        "enabled": false
+      },
+      "schema_evolution": {
+        "model": "{{MODEL}}",
+        "base_url": "{{BASE_URL}}",
+        "api_key": "{{API_KEY_REF}}",
+        "temperature": 0.1,
+        "max_tokens": 6000,
+        "enabled": false
+      },
+      "deduplication": {
+        "model": "{{MODEL}}",
+        "base_url": "{{BASE_URL}}",
+        "api_key": "{{API_KEY_REF}}",
+        "temperature": 0.1,
+        "max_tokens": 6000,
+        "enabled": false
+      },
+      "consolidation": {
+        "model": "{{MODEL}}",
+        "base_url": "{{BASE_URL}}",
+        "api_key": "{{API_KEY_REF}}",
+        "temperature": 0.1,
+        "max_tokens": 6000,
+        "enabled": false
+      },
+      "profile_synthesis": {
+        "model": "{{MODEL}}",
+        "base_url": "{{BASE_URL}}",
+        "api_key": "{{API_KEY_REF}}",
+        "temperature": 0.1,
+        "max_tokens": 6000,
+        "enabled": false
+      }
+    }
+  },
+  "memory": {
+    "embedding_model": {
+      "model": "{{EMBEDDING_MODEL}}",
+      "base_url": "{{BASE_URL}}",
+      "api_key": "{{API_KEY_REF}}",
+      "temperature": 0.1,
+      "max_tokens": 6000,
+      "enabled": false
+    },
+    "text_model": {
+      "model": "{{MODEL}}",
+      "base_url": "{{BASE_URL}}",
+      "api_key": "{{API_KEY_REF}}",
+      "temperature": 0.1,
+      "max_tokens": 6000,
+      "enabled": false
+    }
+  },
+  "pictures": {
+    "guidance": {
+      "tags": {},
+      "characters": {}
+    },
+    "image_model": {
+      "model": "{{VISION_MODEL}}",
+      "base_url": "{{BASE_URL}}",
+      "api_key": "{{API_KEY_REF}}",
+      "temperature": 0.1,
+      "max_tokens": 1200,
+      "enabled": false
+    },
+    "supported_extensions": [
+      ".png",
+      ".jpg",
+      ".jpeg",
+      ".webp",
+      ".gif",
+      ".bmp"
+    ]
+  },
+  "symbols": {
+    "enabled": false,
+    "default_language": "{{DEFAULT_LANGUAGE}}",
+    "model": {
+      "model": "{{MODEL}}",
+      "base_url": "{{BASE_URL}}",
+      "api_key": "{{API_KEY_REF}}",
+      "temperature": 0.1,
+      "max_tokens": 2000,
+      "enabled": false
+    }
+  }
+}

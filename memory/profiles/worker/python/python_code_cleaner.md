@@ -366,5 +366,3 @@ def build_execution_state(
         note=COMPLETE_NOTE,
     )
 ```
-
----

@@ -1,0 +1,7 @@
+{
+  "missing_command": "missing command",
+  "invalid_arguments": "invalid arguments",
+  "create_required": "create arguments required",
+  "update_required": "update target required",
+  "legacy_required": "legacy arguments required"
+}

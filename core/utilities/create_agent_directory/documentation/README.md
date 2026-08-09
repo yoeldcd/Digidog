@@ -2,8 +2,7 @@
 
 # Create Agent Directory
 
-`create_agent_directory.py` is a standalone factory for a new agent ownership
-boundary. It creates `@<agent-name>/`, clones the versioned Brain core, writes
+`create_agent_directory.py` is the minimal root launcher. All implementation code lives under `src/`; the launcher only delegates into the modular application. It creates `@<agent-name>/`, clones the versioned Brain core, writes
 generic configuration, creates empty stores, renders a generic `core/AGENTS.md`, and
 adds an initial co-located consumer. Every seed also receives a rendered root
 Digidog `README.md` and the canonical GNU AGPL v3 `LICENSE`.
@@ -47,17 +46,12 @@ py core/utilities/create_agent_directory/create_agent_directory.py update-agent 
 ```
 
 The update-agent command takes its source exclusively from the agent root that
-owns the invoked core. It synchronizes brain, brain_explorer, versioned public
-screens, and the explicit canonical utility-file allowlist into the target
-agent. It also refreshes the root README and canonical LICENSE, then regenerates the
+owns the invoked core. It synchronizes the injected ordered `tuple[ChangeOperationDTO, ...]` into the target agent. Operations use `COPY`, `REPLACE`, `MERGE`, `RENDER`, and `EXCLUDE`; each contiguous `EXCLUDE` block must be an immediate child of its preceding directory `COPY`. It also refreshes the root README and canonical LICENSE, then regenerates the
 target core/AGENTS.md from the public utility template by substituting only the
 target agent and user names. It never clones the source core/AGENTS.md.
 Identical files are not rewritten; stale files are removed only inside those
 explicitly owned code roots and the two public profile roots:
-memory/profiles/developer and memory/profiles/worker. Configs, databases, every
-other memory domain, private assets, diary, and relationships remain completely
-outside the read, merge, copy, replacement, and removal boundaries of
-update-agent.
+memory/profiles/developer and memory/profiles/worker. Configuration templates are merged on a missing-key-only basis: the target value wins, and live source configuration files are never read. Databases and unrelated memory remain outside synchronization.
 Transient trees (`node_modules`, Python/tool caches, nested `.git`, and
 generated `documentation/wiki`) are excluded on both sides. They are neither
 copied nor removed. Synchronizing a core onto itself is rejected.
@@ -66,7 +60,7 @@ copied nor removed. Synchronizing a core onto itself is rejected.
 
 ```text
 @agent-name/
-|-- LICENSE                  # copied RAW from `@origin\core\utilities\create_agent_directory\templates\LICENSE`
+|-- LICENSE                  # copied RAW from `@origin\core\utilities\create_agent_directory\files\LICENSE`
 |-- README.md                # copied RAW from `@origin\core\README.md`
 |-- AGENTS.md                # rendered automatically by `@target\$agents\scripts\brain.py init`
 |-- core/
@@ -86,8 +80,8 @@ copied nor removed. Synchronizing a core onto itself is rejected.
 |   `-- .tmp/                # generated automatically by `@target\core\core_cli.py`
 |-- memory/
 |   |-- profiles             # rendered automatically by `@target\$agents\scripts\brain.py init`
-|       |-- developer        # copied from `@origin\memory\profiles\developer`
-|       |-- worker           # copied from `@origin\memory\profiles\developer`
+|   |   |-- developer        # copied from `@origin\memory\profiles\developer`
+|   |   |-- worker           # copied from `@origin\memory\profiles\developer`
 |   `-- diary/               # rendered automatically by `@target\$agents\scripts\brain.py init`
 |-- snippets/                # rendered automatically by `@target\$agents\scripts\brain.py init`
 |-- skills/                  # rendered automatically by `@target\$agents\scripts\brain.py init`
@@ -103,9 +97,7 @@ The initial `$agent/scripts/brain.py` points relatively to the new sibling
 `core/` and makes the agent root immediately usable as its first WoSP.
 
 The root `README.md` is copied verbatim from `core/README.md`, the project's
-only README source. The root `LICENSE` contains
-the unmodified GNU Affero General Public License v3 text, identified as
-`AGPL-3.0-only`. This strong copyleft license includes the remote-network source
+only README source. The root `LICENSE` is copied from `core/utilities/create_agent_directory/files/LICENSE` and contains the complete GNU Affero General Public License v3 text, identified as `AGPL-3.0-only`. This strong copyleft license includes the remote-network source
 offer condition appropriate to Brain Explorer and avatar services. Their paths
 are returned as `readme_path` and `license_path` in creation JSON output. Both
 files are canonical and overwriteable: a later `update-agent` atomically

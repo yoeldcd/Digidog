@@ -1,26 +1,52 @@
 {
+  "active_voice_engine": "edge",
+  "commands_show_customization": {
+    "query_log": {
+      "animation": "<default>",
+      "hiden_on_muted": true,
+      "level": "informative",
+      "pre_processor": "<default>",
+      "show_message": true,
+      "speak_message": true
+    }
+  },
+  "ignore_quota_state": true,
+  "reactions": [
+    {
+      "animation": "reacting",
+      "message": "Si si ya te vi."
+    }
+  ],
   "service": {
     "host": "127.0.0.1",
     "port": 20772
   },
-  "active_voice_engine": "edge",
+  "silent_commands": [
+    "query",
+    "query-log",
+    "list-profiles",
+    "set-task-status"
+  ],
+  "tts_chunks_size": 2000,
   "voice_engines": {
     "edge": {
-      "rate": "+0%",
-      "volume": "+0%",
       "pitch": "+0Hz",
+      "rate": "+0%",
       "sanitization_regex": "_+",
       "voices": {
-        "es": "es-ES-ElviraNeural",
-        "en": "en-US-AriaNeural"
-      }
+        "en": "en-US-AriaNeural",
+        "es": "es-ES-ElviraNeural"
+      },
+      "volume": "+0%"
     },
-    "pyttsx3": {
-      "rate": 150,
-      "volume": 1.0,
+    "elevenlabs": {
+      "api_key": "$ELEVENLABS_API_KEY",
+      "model_id": "eleven_flash_v2_5",
+      "model_id_": "eleven_multilingual_v2",
+      "voice_id": "<VOICE_ID>",
       "voices": {
-        "es": "spanish",
-        "en": "english"
+        "en": "<VOICE_ID>",
+        "es": "<VOICE_ID>"
       }
     },
     "openai": {
@@ -28,43 +54,17 @@
       "model": "tts-1",
       "voice": "shimmer",
       "voices": {
-        "es": "shimmer",
-        "en": "shimmer"
+        "en": "shimmer",
+        "es": "shimmer"
       }
     },
-    "elevenlabs": {
-      "api_key": "$ELEVENLABS_API_KEY",
-      "model_id_": "eleven_multilingual_v2",
-      "model_id": "eleven_flash_v2_5",
-      "voice_id": "<VOICE_ID>",
+    "pyttsx3": {
+      "rate": 150,
       "voices": {
-        "es": "<VOICE_ID>",
-        "en": "<VOICE_ID>"
-      }
-    }
-  },
-  "ignore_quota_state": true,
-  "tts_chunks_size": 2000,
-  "reactions": [
-    {
-      "message": "Si si ya te vi.",
-      "animation": "reacting"
-    }
-  ],
-  "silent_commands": [
-    "query",
-    "query-log",
-    "list-profiles",
-    "set-task-status"
-  ],
-  "commands_show_customization": {
-    "query_log": {
-      "show_message": true,
-      "speak_message": true,
-      "hiden_on_muted": true,
-      "level": "informative",
-      "pre_processor": "<default>",
-      "animation": "<default>"
+        "en": "english",
+        "es": "spanish"
+      },
+      "volume": 1.0
     }
   }
 }
