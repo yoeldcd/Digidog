@@ -7,25 +7,23 @@ __pycache__/
 .ruff_cache/
 node_modules/
 
-# Agent-authored private state
-/memory/*
-!/memory/profiles/
-/memory/profiles/*
-!/memory/profiles/developer/
-!/memory/profiles/developer/**
-!/memory/profiles/worker/
-!/memory/profiles/worker/**
-/pictures/
-/$workspaces/
-
-# Agent-local temporary artifacts
-/.tmp/*
-!/.tmp/.gitkeep
-
-# Workspace-local runtime state
-/$agent/.tmp/
+# Internal Agent Workspace Data
+/$agent/data/vectorstore
+/$agent/data/knowledge
 /$agent/database/
-/$agent/logs/
+/$agent/pictures/
+/$agent/planning/**.md
+/$agent/data/records.json
 
-# Generated documentation exports
-/core/**/documentation/wiki/
+# Protect local Memories
+#/memory/important
+#/memory/diary
+#/memory/character
+#/memory/user
+/memory/.tmp.**
+/.tmp
+
+
+# Protect local pictures
+/pictures/**
+core/brain/src/$agent/database/.gitignore
