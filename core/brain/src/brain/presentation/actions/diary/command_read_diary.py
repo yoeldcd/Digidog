@@ -8,9 +8,10 @@ from __future__ import annotations
 import argparse
 import datetime
 import re
-from brain.application.memory.paths import resolve_file_path
-from brain.presentation.terminal import render_placeholders, render_markdown, log_step
 
+from brain.application.memory.paths import resolve_file_path
+from brain.application.profiles.service import render_profile_template_variables
+from brain.presentation.terminal import log_step, render_markdown, render_placeholders
 
 
 def handle(args: argparse.Namespace) -> int:
@@ -24,7 +25,7 @@ def handle(args: argparse.Namespace) -> int:
         int: Zero when the requested diary content is rendered; otherwise one
             after reporting an input or storage error.
     """
-    log_step(args, 'Reading diary entries...')
+    log_step(args, "Reading diary entries...")
     color_enabled = getattr(args, "color", False)
     try:
         dt_str = args.datetime if args.datetime is not None else args.date
@@ -41,7 +42,7 @@ def handle(args: argparse.Namespace) -> int:
             print(render_placeholders(msg, color_enabled))
             return 1
 
-        year_month = dt.strftime("%Y-%m") # YYYY-MM
+        year_month = dt.strftime("%Y-%m")  # YYYY-MM
 
         category = f"diary.{year_month}"
         key = dt.strftime("%d-%m-%Y")
@@ -62,6 +63,7 @@ def handle(args: argparse.Namespace) -> int:
             return 0
 
         content = file_path.read_text(encoding="utf-8")
+        content = render_profile_template_variables(content)
         time_filter = getattr(args, "time", None)
         if time_filter:
             content = _filter_entry_by_time(
@@ -87,7 +89,10 @@ def handle(args: argparse.Namespace) -> int:
             text_lines = content.splitlines()
             if len(text_lines) > limit:
                 rest = len(text_lines) - limit
-                content = "\n".join(text_lines[:limit]) + f"\n\n__DIM__... {rest} more lines__RESET__"
+                content = (
+                    "\n".join(text_lines[:limit])
+                    + f"\n\n__DIM__... {rest} more lines__RESET__"
+                )
 
         print(render_markdown(content, color_enabled), end="")
         args.json_payload = {
@@ -121,11 +126,18 @@ def _filter_entry_by_time(content: str, date_text: str, time_text: str) -> str:
     entry_blocks: list[str] = re.split(r"(?=^##\s+)", content, flags=re.MULTILINE)
     for block in entry_blocks:
         first_line: str = block.splitlines()[0].strip() if block.splitlines() else ""
-        match = re.match(rf"^##\s+{re.escape(date_text)}\s+(\d{{1,2}}:\d{{2}})(?::\d{{2}})?\s+-", first_line)
+        match = re.match(
+            rf"^##\s+{re.escape(date_text)}\s+(\d{{1,2}}:\d{{2}})(?::\d{{2}})?\s+-",
+            first_line,
+        )
         if match is None:
             continue
         if _normalize_time_filter(match.group(1)) == normalized_time:
-            title_line = content.splitlines()[0] if content.startswith("# ") else f"# Diary - {date_text}"
+            title_line = (
+                content.splitlines()[0]
+                if content.startswith("# ")
+                else f"# Diary - {date_text}"
+            )
             return f"{title_line.rstrip()}\n\n{block.strip()}\n"
     return ""
 
@@ -138,14 +150,18 @@ def _parse_diary_entries(content: str) -> list[dict[str, str]]:
         lines = block.strip().splitlines()
         if not lines or not lines[0].startswith("## "):
             continue
-        match = re.match(r"^##\s+(\d{2}-\d{2}-\d{4}\s+\d{2}:\d{2}:\d{2})(?:\s+-\s+(.*))?$", lines[0])
+        match = re.match(
+            r"^##\s+(\d{2}-\d{2}-\d{4}\s+\d{2}:\d{2}:\d{2})(?:\s+-\s+(.*))?$", lines[0]
+        )
         if match is None:
             continue
-        entries.append({
-            "timestamp": match.group(1),
-            "title": (match.group(2) or "").strip(),
-            "text": "\n".join(lines[1:]).strip(),
-        })
+        entries.append(
+            {
+                "timestamp": match.group(1),
+                "title": (match.group(2) or "").strip(),
+                "text": "\n".join(lines[1:]).strip(),
+            }
+        )
     return entries
 
 

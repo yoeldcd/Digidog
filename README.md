@@ -426,7 +426,7 @@ Common command groups include:
 | Profiles | `list-profiles`, `read-profile` |
 | Avatar | `start-avatar-service`, `stop-avatar-service`, `avatar-service-status` |
 | Explorer | `serve-explorer` |
-| Utilities | `wiki`, `propagate-agent-prompt`, `create-brain`, `register-project` |
+| Utilities | `wiki`, `propagate-agent-prompt`, `code-quality`, `create-brain`, `register-project` |
 
 Use built-in help for exact contracts:
 
@@ -493,7 +493,7 @@ memory domains, license, README, and an initial consumer.
 
 ```powershell
 py core/utilities/create_agent_directory/create_agent_directory.py create-agent `
-  'D:\.agents' `
+  '<agents-root>' `
   --agent-name Nova `
   --user-name Alex `
   --json
@@ -506,7 +506,7 @@ memory, skills, snippets, workflows, or pictures.
 
 ```powershell
 py core/utilities/create_agent_directory/create_agent_directory.py update-agent `
-  'D:\.agents\@Nova' `
+  '<agent-root>' `
   --json
 ```
 

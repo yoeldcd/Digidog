@@ -12,12 +12,18 @@ from dataclasses import asdict
 from pathlib import Path
 
 # Application Modules Imports
-from brain.application.logs.export_service import export_logs_files, export_logs_markdown, export_logs_zip, normalize_export_filters
+from brain.application.logs.export_service import (
+    export_logs_files,
+    export_logs_markdown,
+    export_logs_zip,
+    normalize_export_filters,
+)
 from brain.application.logs.store import list_log_entries
+from brain.infrastructure.runtime.paths import get_workspace_root
 from brain.presentation.terminal import log_step, render_placeholders
 
 
-WORKSPACE_ROOT = Path(os.environ.get("WORKSPACE_ROOT", "."))
+WORKSPACE_ROOT: Path | None = None
 
 
 def handle(args: argparse.Namespace) -> int:
@@ -33,7 +39,7 @@ def handle(args: argparse.Namespace) -> int:
     """
     color_enabled = getattr(args, "color", False)
     try:
-        workspace_root = Path(WORKSPACE_ROOT).resolve()
+        workspace_root = get_workspace_root(workspace_root=WORKSPACE_ROOT)
         zip_path = getattr(args, "zip", None)
         files_mode = bool(getattr(args, "files", False))
         stdout_mode = bool(getattr(args, "stdout", False))
@@ -59,7 +65,11 @@ def handle(args: argparse.Namespace) -> int:
             return 1
 
         if zip_path:
-            print(render_placeholders("__YELLOW__Warning: persistent exports are migration artifacts only; never use them as an internal content source.__RESET__", color_enabled))
+            warning = (
+                "__YELLOW__Warning: persistent exports are migration artifacts only; "
+                "never use them as an internal content source.__RESET__"
+            )
+            print(render_placeholders(warning, color_enabled))
             log_step(args, "Exporting DB-backed logs to zip...")
             result = export_logs_zip(
                 workspace_root=workspace_root,
@@ -79,9 +89,20 @@ def handle(args: argparse.Namespace) -> int:
             return 0
 
         if files_mode:
-            print(render_placeholders("__YELLOW__Warning: persistent exports are migration artifacts only; never use them as an internal content source.__RESET__", color_enabled))
+            warning = (
+                "__YELLOW__Warning: persistent exports are migration artifacts only; "
+                "never use them as an internal content source.__RESET__"
+            )
+            print(render_placeholders(warning, color_enabled))
             log_step(args, "Exporting DB-backed logs to files...")
-            output_dir = _resolve_workspace_path(workspace_root=workspace_root, raw_path=str(output_path)) if output_path else None
+            output_dir = (
+                _resolve_workspace_path(
+                    workspace_root=workspace_root,
+                    raw_path=str(output_path),
+                )
+                if output_path
+                else None
+            )
             result = export_logs_files(workspace_root=workspace_root, output_dir=output_dir, **filter_kwargs)
             msg = f"__GREEN__Exported {result.files_written} log files to {result.output_path}.__RESET__"
             print(render_placeholders(msg, color_enabled))

@@ -1,0 +1,12 @@
+{
+  "name": "@angi/code-quality-evaluator",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Pinned formatter dependency for in-memory code-quality evaluation.",
+  "devDependencies": {
+    "prettier": "3.9.6"
+  },
+  "dependencies": {
+    "@typescript-eslint/typescript-estree": "8.66.0"
+  }
+}

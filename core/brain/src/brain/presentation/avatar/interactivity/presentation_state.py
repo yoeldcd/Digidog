@@ -32,7 +32,6 @@ class AvatarRuntimeState(StrEnum):
 
 
 _ACTIVE_PRESENTATION_STATES = frozenset({
-    AvatarRuntimeState.PREPARING,
     AvatarRuntimeState.SPEAKING,
     AvatarRuntimeState.MUTED,
     AvatarRuntimeState.MUTED_REPLAY,
@@ -89,11 +88,16 @@ class ProjectedMessageState:
         Returns:
             bool: True when a visible or playing message is active.
         """
-        return bool(self.active_speak_id) and (
-            self.playback_active
-            or self.progressive_playback_active
-            or self.runtime_state in _ACTIVE_PRESENTATION_STATES
+        audible = (
+            self.runtime_state is AvatarRuntimeState.SPEAKING
+            and self.playback_active
         )
+        visible_muted = self.runtime_state in {
+            AvatarRuntimeState.MUTED,
+            AvatarRuntimeState.MUTED_REPLAY,
+        }
+
+        return bool(self.active_speak_id) and (audible or visible_muted)
 
     @property
     def speaking_animation_active(self) -> bool:

@@ -104,7 +104,7 @@ def handle(args: argparse.Namespace) -> int:
         if limit is not None and limit < 0:
             raise ValueError("--limit must be zero or greater.")
         uptime_order = getattr(args, "uptime_order", False)
-        tree_data = load_index()
+        tree_data = load_index(include_indexes=True)
 
         if args.json:
             paths = _collect_index_paths(tree_data, uptime_order, limit)

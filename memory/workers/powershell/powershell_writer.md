@@ -14,7 +14,7 @@ The assignment must define the observable outcome, authorized reads and writes, 
 * To read an authorized script, module, manifest, test, or caller completely, use the Inspection Tools defined below, for example `Get-Content -Raw -LiteralPath 'src/module.psm1'`.
 * To locate a function, parameter, pipeline use, stream write, or side effect, use scoped search, for example `rg -n "function Invoke-Task|Write-Error|ValueFromPipeline" src/`.
 * To implement the bounded PowerShell change, use the Patching Tools defined below, for example `$PATCH_NATIVE | py {LOCAL_BRAIN_SCRIPT} apply-patch --format native --check --json` followed by the identical apply command.
-* To evaluate every changed PowerShell artifact, use the Automatic Work Quality Evaluator, for example `py {LOCAL_BRAIN_SCRIPT} code-quality src/module.psm1 --mode check --json`.
+* To evaluate every changed PowerShell artifact, use the Automatic Work Quality Evaluator, for example `py {LOCAL_BRAIN_SCRIPT} eval-quality src/module.psm1 --mode check --json`.
 * To prove parser, analyzer, and runtime behavior, use the exact commands supplied by the assignment, for example `Invoke-ScriptAnalyzer -Path 'src/module.psm1'` and `Invoke-Pester -Path 'tests/module.Tests.ps1'`.
 
 **Prohibited Actions**:
@@ -138,9 +138,9 @@ Allways validate your work using checking tools; pass does not replace the other
 
 ```powershell
 # Smart Quality evalutor (Use by Policie)
-py {LOCAL_BRAIN_SCRIPT} code-quality relative/path.ps1 --mode check --json
-py {LOCAL_BRAIN_SCRIPT} code-quality relative/path.ps1 --mode evaluate --json
-py {LOCAL_BRAIN_SCRIPT} code-quality relative/path.ps1 --mode format --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality relative/path.ps1 --mode check --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality relative/path.ps1 --mode evaluate --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality relative/path.ps1 --mode format --json
 
 $tokens = $null
 $errors = $null

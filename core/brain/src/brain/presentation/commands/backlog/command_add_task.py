@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from brain.presentation.commands.models import ArgumentSchema, CommandSchema
 
-
 SCHEMA = CommandSchema(
     name="add-task",
     domain="task backlog",
@@ -47,4 +46,11 @@ SCHEMA = CommandSchema(
             default="LOW",
         ),
     ],
+    description="Add a task record to the workspace backlog.",
+    stdin=(),
+    examples=('py {LOCAL_BRAIN_SCRIPT} add-task dev.db "Update schema" -p HIGH',),
+    output=("Created task details are returned.",),
+    exit_codes=("0: task created", "1: invalid task arguments"),
+    safeguards=("Task domain and title are validated before persistence.",),
+    notes=("Priority defaults to LOW when omitted.",),
 )

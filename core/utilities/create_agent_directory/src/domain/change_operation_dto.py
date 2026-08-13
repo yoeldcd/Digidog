@@ -62,7 +62,7 @@ class ChangeOperationDTO:
             ValueError: If paths are absolute/traversal-based or strategy inputs
                 violate the source/template contract.
         """
-        
+
         if self.target.is_absolute() or self.target.anchor or ".." in self.target.parts or not self.target.parts:
             raise ValueError("target must be a safe relative path")
 

@@ -33,7 +33,6 @@ def handle(args: argparse.Namespace) -> int:
     payload = {
         "ok": True,
         "command": "list-messages",
-        "database": repository.database_path.as_posix(),
         "count": len(messages),
         "total": repository.count(),
         "messages": [message.as_mapping() for message in messages],
@@ -46,3 +45,4 @@ def handle(args: argparse.Namespace) -> int:
         operation = f" {message.source_command}:{message.source_phase}" if message.source_command else ""
         print(f"- {message.created_at} [{message.emotion or 'neutral'}]{operation} {message.text}")
     return 0
+

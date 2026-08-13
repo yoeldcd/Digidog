@@ -14,13 +14,20 @@ from dataclasses import asdict
 from pathlib import Path
 
 # Application Modules Imports
-from brain.application.logs.index_service import migrate_legacy_log_files_to_database, migrate_log_files_to_database
+from brain.application.logs.index_service import (
+    migrate_legacy_log_files_to_database,
+    migrate_log_files_to_database,
+)
 from brain.application.logs.records import LogEntryRecord, render_log_file
 from brain.application.logs.store import list_log_entries
+from brain.application.profiles.service import (
+    render_profile_template_value,
+    render_profile_template_variables,
+)
+from brain.infrastructure.runtime.paths import get_workspace_root
 from brain.presentation.terminal import log_step, render_markdown, render_placeholders
 
-
-WORKSPACE_ROOT = Path(os.environ.get("WORKSPACE_ROOT", "."))
+WORKSPACE_ROOT: Path | None = None
 
 
 def handle(args: argparse.Namespace) -> int:
@@ -36,13 +43,15 @@ def handle(args: argparse.Namespace) -> int:
     log_step(args, "Reading log entries...")
     color_enabled = getattr(args, "color", False)
     try:
-        workspace_root = Path(WORKSPACE_ROOT).resolve()
+        workspace_root = get_workspace_root(workspace_root=WORKSPACE_ROOT)
         dt_str = args.datetime if args.datetime is not None else args.date
         if not dt_str:
             dt_str = datetime.datetime.now().strftime("%d-%m-%Y")
         day_str = _normalize_date_text(dt_str=dt_str.strip())
         time_filter = getattr(args, "time", None)
-        normalized_time = _normalize_time_filter(str(time_filter)) if time_filter else None
+        normalized_time = (
+            _normalize_time_filter(str(time_filter)) if time_filter else None
+        )
 
         entries: list[LogEntryRecord] = list_log_entries(
             workspace_root=workspace_root,
@@ -50,8 +59,12 @@ def handle(args: argparse.Namespace) -> int:
             time_text=normalized_time,
         )
         if not entries:
-            migrate_legacy_log_files_to_database(workspace_root=workspace_root, archive_sources=False)
-            migrate_log_files_to_database(workspace_root=workspace_root, archive_sources=False)
+            migrate_legacy_log_files_to_database(
+                workspace_root=workspace_root, archive_sources=False
+            )
+            migrate_log_files_to_database(
+                workspace_root=workspace_root, archive_sources=False
+            )
             entries = list_log_entries(
                 workspace_root=workspace_root,
                 date_text=day_str,
@@ -72,13 +85,18 @@ def handle(args: argparse.Namespace) -> int:
             }
             return 0
 
-        content = render_log_file(date_text=day_str, entries=entries)
+        content = render_profile_template_variables(
+            render_log_file(date_text=day_str, entries=entries), workspace_root
+        )
         limit = getattr(args, "limit", None)
         if limit is not None:
             text_lines = content.splitlines()
             if len(text_lines) > limit:
                 rest = len(text_lines) - limit
-                content = "\n".join(text_lines[:limit]) + f"\n\n__DIM__... {rest} more lines__RESET__"
+                content = (
+                    "\n".join(text_lines[:limit])
+                    + f"\n\n__DIM__... {rest} more lines__RESET__"
+                )
 
         print(render_markdown(content, color_enabled), end="")
         args.json_payload = {
@@ -87,7 +105,10 @@ def handle(args: argparse.Namespace) -> int:
             "date": day_str,
             "time": normalized_time,
             "count": len(entries),
-            "entries": [asdict(entry) for entry in entries],
+            "entries": render_profile_template_value(
+                [{k: v for k, v in asdict(entry).items() if k not in ("source_path", "source_mtime", "source_size")} for entry in entries],
+                workspace_root,
+            ),
         }
         return 0
     except Exception as exc:
@@ -124,7 +145,9 @@ def _normalize_time_filter(time_text: str) -> str:
     Returns:
         str: HH:MM.
     """
-    match = re.match(r"^(\d{1,2}):(\d{2})(?:\s*([ap]m))?$", time_text.strip(), flags=re.IGNORECASE)
+    match = re.match(
+        r"^(\d{1,2}):(\d{2})(?:\s*([ap]m))?$", time_text.strip(), flags=re.IGNORECASE
+    )
     if match is None:
         raise ValueError("Time must follow format HH:MM.")
     hour = int(match.group(1))
@@ -135,3 +158,4 @@ def _normalize_time_filter(time_text: str) -> str:
     elif ampm == "am" and hour == 12:
         hour = 0
     return f"{hour:02d}:{minute:02d}"
+

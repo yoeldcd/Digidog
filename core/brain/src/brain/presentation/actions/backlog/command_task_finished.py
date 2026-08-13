@@ -12,6 +12,7 @@ from pathlib import Path
 
 from brain.presentation.terminal import render_placeholders, log_step
 from brain.application.backlog.service import BacklogTaskNotFoundError, set_backlog_task_status
+from brain.infrastructure.runtime.paths import get_workspace_root
 
 
 
@@ -26,7 +27,7 @@ def handle(args: argparse.Namespace) -> int:
         int: Zero when the task status changes to ``DONE``; otherwise one after
             reporting an error.
     """
-    workspace_root = Path(os.environ.get("WORKSPACE_ROOT", ".")).resolve()
+    workspace_root = get_workspace_root()
     color_enabled = getattr(args, "color", False)
 
     log_step(args, f"Finishing task '{args.task_id}'...")

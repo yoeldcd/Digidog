@@ -10,7 +10,7 @@ import shutil
 import os
 from pathlib import Path
 from brain.presentation.terminal import render_placeholders, log_step
-from brain.infrastructure.runtime.paths import get_agent_home
+from brain.infrastructure.runtime.paths import get_agent_home, get_workspace_root
 
 
 
@@ -28,7 +28,7 @@ def handle(args: argparse.Namespace) -> int:
     color_enabled = getattr(args, "color", False)
     try:
         snippet_name = args.name.strip()
-        workspace_root = Path(os.environ.get("WORKSPACE_ROOT", ".")).resolve()
+        workspace_root = get_workspace_root()
         log_step(args, f"[1/2] Locating snippet '{snippet_name}'...")
 
         # Source path
@@ -67,7 +67,11 @@ def handle(args: argparse.Namespace) -> int:
         except ValueError:
             dest_display = str(dest_path)
 
-        msg = f"__GREEN__Successfully cloned snippet__RESET__ '__CYAN__{snippet_name}__RESET__' to '__CYAN__{dest_display}__RESET__'."
+        msg = (
+            f"__GREEN__Successfully cloned snippet__RESET__ "
+            f"'__CYAN__{snippet_name}__RESET__' to "
+            f"'__CYAN__{dest_display}__RESET__'."
+        )
         print(render_placeholders(msg, color_enabled))
         args.json_payload = {
             "ok": True,

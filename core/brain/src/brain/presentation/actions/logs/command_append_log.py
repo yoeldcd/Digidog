@@ -9,6 +9,7 @@ from pathlib import Path
 
 # Application Modules Imports
 from brain.application.logs.append_service import AppendLogError, AppendLogRequest, append_log_entry
+from brain.infrastructure.runtime.paths import get_workspace_root
 from brain.presentation.terminal import log_step, render_placeholders
 
 
@@ -34,7 +35,7 @@ def handle(args: argparse.Namespace) -> int:
     color_enabled = getattr(args, "color", False)
     log_step(args, "[1/3] Parsing and validating inputs...")
     try:
-        workspace_root = Path(os.environ.get("WORKSPACE_ROOT", ".")).resolve()
+        workspace_root = get_workspace_root()
         log_domain = _first_present(args.log_domain, args.domain)
         title = _first_present(args.title, args.compact_title)
         change_type_raw = _first_present(args.type, args.compact_type)
@@ -83,7 +84,6 @@ def handle(args: argparse.Namespace) -> int:
                 "description": request.description,
                 "impact": request.impact,
                 "readCommand": result.read_command,
-                "path": result.log_file.as_posix(),
             },
         }
         return 0
@@ -91,3 +91,4 @@ def handle(args: argparse.Namespace) -> int:
         msg = f"__RED__Error: {exc}__RESET__"
         print(render_placeholders(msg, color_enabled))
         return 1
+

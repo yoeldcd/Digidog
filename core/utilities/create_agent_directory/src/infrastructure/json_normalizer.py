@@ -13,13 +13,13 @@ def normalize_missing_keys(source: Mapping[str, Any], target: Mapping[str, Any])
     """
 
     result: dict[str, Any] = {}
-    
+
     for key, value in source.items():
         if key not in target:
             result[key] = _clone(value)
         elif isinstance(value, Mapping) and isinstance(target[key], Mapping):
             result[key] = normalize_missing_keys(value, target[key])
-    
+
     for key, value in target.items():
         if key not in source or not (isinstance(source[key], Mapping) and isinstance(value, Mapping)):
             result[key] = _clone(value)

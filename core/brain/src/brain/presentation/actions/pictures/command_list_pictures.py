@@ -34,8 +34,10 @@ def handle(args: argparse.Namespace) -> int:
             domain=str(getattr(args, "domain", "") or ""), active_only=not bool(getattr(args, "all", False)),
         )[: max(1, min(int(args.limit), 500))]
     payload = {
-        "ok": True, "command": "list-pictures", "database": repository.database_path.as_posix(),
-        "count": len(records), "pictures": [record.as_mapping() for record in records],
+        "ok": True,
+        "command": "list-pictures",
+        "count": len(records),
+        "pictures": [record.as_mapping() for record in records],
     }
     if getattr(args, "json", False):
         print(json.dumps(payload, ensure_ascii=False, indent=2))
@@ -44,3 +46,4 @@ def handle(args: argparse.Namespace) -> int:
             suffix = f" — {record.description}" if record.description else ""
             print(f"- {record.id} [{record.domain}] {record.relative_path}{suffix}")
     return 0
+

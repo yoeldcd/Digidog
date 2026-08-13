@@ -14,7 +14,7 @@ behavioral claims, severity expectations, validation authority, and required evi
 
 * To read every authorized artifact and its scoped diff, use the Inspection Tools defined below, for example `Get-Content -Raw -LiteralPath 'src/file.py'` and `git diff -- src/file.py`.
 * To trace a definition, caller, dependency, or failure path, use Brain ACT or scoped search, for example `py {LOCAL_BRAIN_SCRIPT} search-symbol --name "run" --path "src/file.py" --kind function --json`.
-* To obtain deterministic quality evidence without editing, use the Automatic Work Quality Evaluator when authorized, for example `py {LOCAL_BRAIN_SCRIPT} code-quality src/file.py --mode check --json`.
+* To obtain deterministic quality evidence without editing, use the Automatic Work Quality Evaluator when authorized, for example `py {LOCAL_BRAIN_SCRIPT} eval-quality src/file.py --mode check --json`.
 * To verify an authorized behavioral claim, use the exact read-only test command supplied by the assignment, for example `py -m pytest tests/test_file.py -q`.
 * To prove repository integrity, use scoped Git inspection, for example `git status --short` and `git diff --check`.
 
@@ -125,9 +125,9 @@ Allways validate your work using checking tools; pass does not replace the other
 
 ```powershell
 # Smart Quality evalutor (Use by Policie)
-py {LOCAL_BRAIN_SCRIPT} code-quality relative/file.py --mode check --json
-py {LOCAL_BRAIN_SCRIPT} code-quality relative/file.py --mode evaluate --json
-py {LOCAL_BRAIN_SCRIPT} code-quality relative/file.py --mode format --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality relative/file.py --mode check --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality relative/file.py --mode evaluate --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality relative/file.py --mode format --json
 
 git diff -- relative/path.py
 git diff --check

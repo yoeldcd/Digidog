@@ -36,6 +36,7 @@ from brain.presentation.avatar.qt.runtime import (
     quota_reset_label,
     reply_composer_geometry,
 )
+from brain.presentation.avatar.qt.avatar.geometry import avoid_avatar_overlap
 from brain.presentation.avatar.tk.avatar.window import AvatarWindow
 
 
@@ -51,6 +52,36 @@ def test_directional_bubble_tail_touches_avatar_boundary() -> None:
     below = bubble_position(screen, top_avatar, size)
     assert below.y() + 5 == top_avatar.bottom()
 
+
+def test_avatar_window_initializes_minimum_size_at_bottom_right_in_dark_theme() -> None:
+    """Initialize avatar minimum geometry at bottom right with dark surfaces."""
+    app = QApplication.instance() or QApplication([])
+    window = QtAvatarWindow(start_polling=False)
+    screen = app.primaryScreen()
+    assert screen is not None
+    available = screen.availableGeometry()
+
+    assert window.size() == window.minimumSize()
+    assert window.geometry().right() == available.right()
+    assert window.geometry().bottom() == available.bottom()
+    assert window._theme_mode == "dark"
+    assert window.bubble._theme_mode == "dark"
+    assert window.reply_window._theme_mode == "dark"
+    window.close()
+
+
+def test_overlap_projection_selects_nearest_free_avatar_edge() -> None:
+    """Project a dragged bubble outside the avatar while preserving intent."""
+    viewport = QRect(0, 0, 1200, 800)
+    avatar = QRect(900, 550, 200, 240)
+    candidate = QRect(820, 500, 300, 220)
+
+    projected = avoid_avatar_overlap(viewport, avatar, candidate)
+    result = QRect(projected, candidate.size())
+
+    assert viewport.contains(result)
+    assert not result.intersects(avatar)
+
 def test_bubble_zoom_controls_and_footer_actions_follow_avatar_alignment() -> None:
     """Keep zoom bounded and group actions on the avatar-facing footer side."""
     app = QApplication.instance() or QApplication([])
@@ -61,6 +92,8 @@ def test_bubble_zoom_controls_and_footer_actions_follow_avatar_alignment() -> No
 
     QTest.mouseClick(bubble.zoom_in_button, Qt.MouseButton.LeftButton)
     assert bubble._zoom_step == 1
+    assert bubble.reply_button.text() == "💭"
+    assert bubble.reply_button.accessibleName() == "Responder en Codex"
     assert bubble.footer_layout.indexOf(bubble.reply_button) < bubble.footer_layout.indexOf(bubble.backward_button)
     navigation_center = (bubble.backward_button.x() + bubble.forward_button.geometry().right()) / 2
     assert abs(navigation_center - bubble.footer.width() / 2) <= 4
@@ -120,6 +153,7 @@ def test_frame_fit_preserves_original_canvas_across_different_alpha_bounds() -> 
 def test_avatar_drag_and_both_resize_affordances_are_reachable() -> None:
     app = QApplication.instance() or QApplication([])
     window = QtAvatarWindow(start_polling=False)
+    window.move(window.x(), 0)
     window.show()
     app.processEvents()
     start = window.pos()
@@ -130,12 +164,13 @@ def test_avatar_drag_and_both_resize_affordances_are_reachable() -> None:
     window.controls.sync_pointer(window.controls.mapToGlobal(QPoint(window.width() - 4, window.height() - 4)))
     assert window.controls._hover_corner == "se"
     bubble = window.bubble
-    assert bubble._resize_corner(QPointF(22, 22)) == "nw"
+    assert bubble._resize_corner(bubble._bubble_body_rect().topLeft()) == "nw"
     window.close()
 
 def test_message_below_avatar_grows_downward_from_fixed_top() -> None:
     app = QApplication.instance() or QApplication([])
     window = QtAvatarWindow(start_polling=False)
+    window.move(window.x(), 0)
     window.show()
     window.bubble.set_vertical_placement(False)
     window.bubble.set_message("Breve")

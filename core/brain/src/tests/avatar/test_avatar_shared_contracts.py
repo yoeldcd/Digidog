@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from brain.presentation.avatar.communication.daemon_projection import DaemonStatusProjection
+from brain.presentation.avatar.communication.projection.daemon_status import DaemonStatusProjection
 from brain.presentation.avatar.interactivity.history_controller import HistoryController
 from brain.presentation.avatar.interactivity.interaction_controller import (
     AvatarControlIntent,
@@ -68,11 +68,11 @@ def test_daemon_status_keeps_rendering_separate_from_audible_playback() -> None:
         "playbackActive": False,
     }).presentation()
 
-    assert rendering.owns_active_presentation is True
+    assert rendering.owns_active_presentation is False
     assert rendering.processing_indicator_active is True
     assert rendering.speaking_animation_active is False
     assert rendering.processing_emotion == "focused"
-    assert prepared.owns_active_presentation is True
+    assert prepared.owns_active_presentation is False
     assert prepared.processing_indicator_active is False
 
 
@@ -89,14 +89,18 @@ def test_status_projection_bounds_counters_and_recovers_unknown_enums() -> None:
 
     assert status.runtime_state is AvatarRuntimeState.AWAITING
     assert status.mute_mode == "off"
-    assert status.theme_mode == "light"
+    assert status.theme_mode == "dark"
     assert (status.queue_depth, status.history_count, status.visual_remaining_seconds) == (0, 0, 0.0)
 
 
 def test_primary_click_selects_terminal_stop_for_audible_or_muted_owner() -> None:
     """One click is STOP whenever a logical presentation owns the avatar."""
     for state in (AvatarRuntimeState.SPEAKING, AvatarRuntimeState.MUTED):
-        presentation = ProjectedMessageState(runtime_state=state, active_speak_id="active")
+        presentation = ProjectedMessageState(
+            runtime_state=state,
+            active_speak_id="active",
+            playback_active=state is AvatarRuntimeState.SPEAKING,
+        )
         command = InteractionController.primary_click(
             presentation,
             ReplayTarget(speak_id="projected-history"),
@@ -104,6 +108,25 @@ def test_primary_click_selects_terminal_stop_for_audible_or_muted_owner() -> Non
         assert command.intent is AvatarControlIntent.STOP
         assert command.endpoint == "/stop-current-message"
         assert dict(command.payload) == {}
+
+
+def test_processing_phase_keeps_primary_control_in_play_mode() -> None:
+    """Preparing audio uses its dedicated cancel control, not primary STOP."""
+    presentation = ProjectedMessageState(
+        runtime_state=AvatarRuntimeState.PREPARING,
+        active_speak_id="preparing-one",
+        playback_active=True,
+        progressive_playback_active=True,
+        processing=True,
+    )
+    command = InteractionController.primary_click(
+        presentation,
+        ReplayTarget(speak_id="preparing-one"),
+    )
+
+    assert presentation.owns_active_presentation is False
+    assert command.intent is AvatarControlIntent.REPLAY
+    assert command.endpoint == "/replay"
 
 
 def test_primary_click_replays_exact_projected_identity_while_idle() -> None:
@@ -220,13 +243,13 @@ def test_quota_view_model_owns_bounds_animation_and_threshold_warnings() -> None
 
 def test_shared_contract_modules_have_no_toolkit_import_direction() -> None:
     """Shared policy cannot depend on either concrete GUI backend."""
-    avatar_root = Path(__file__).parents[1] / "brain" / "presentation" / "avatar"
+    avatar_root = Path(__file__).parents[2] / "brain" / "presentation" / "avatar"
     paths = [
         avatar_root / "interactivity" / "presentation_state.py",
         avatar_root / "interactivity" / "interaction_controller.py",
         avatar_root / "interactivity" / "history_controller.py",
         avatar_root / "interactivity" / "quota_view_model.py",
-        avatar_root / "communication" / "daemon_projection.py",
+        avatar_root / "communication" / "projection" / "daemon_status.py",
     ]
     combined = "\n".join(path.read_text(encoding="utf-8") for path in paths)
 

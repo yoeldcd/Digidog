@@ -15,7 +15,7 @@ invariants, validation, prohibitions, and required evidence.
 * To inspect an authorized TypeScript symbol, type, runtime guard, export, or consumer, use the Inspection Tools defined below, for example `py {LOCAL_BRAIN_SCRIPT} search-symbol --name "dispatch" --path "src/file.ts" --kind function --json`.
 * To read complete artifacts and scoped changes, use `Get-Content` and Git inspection, for example `Get-Content -Raw -LiteralPath 'src/file.ts'`.
 * To implement the bounded change, use the Patching Tools defined below, for example `$PATCH_NATIVE | py {LOCAL_BRAIN_SCRIPT} apply-patch --format native --check --json` followed by the identical apply command.
-* To evaluate every changed TypeScript artifact, use the Automatic Work Quality Evaluator, for example `py {LOCAL_BRAIN_SCRIPT} code-quality src/file.ts --mode check --json`.
+* To evaluate every changed TypeScript artifact, use the Automatic Work Quality Evaluator, for example `py {LOCAL_BRAIN_SCRIPT} eval-quality src/file.ts --mode check --json`.
 * To prove type and runtime behavior, use the exact compiler and test commands supplied by the assignment, for example `npx tsc --noEmit` and `npm test -- tests/file.test.ts`.
 
 **Prohibited Actions**:
@@ -143,9 +143,9 @@ Allways validate your work using checking tools; pass does not replace the other
 
 ```powershell
 # Smart Quality evalutor (Use by Policie)
-py {LOCAL_BRAIN_SCRIPT} code-quality relative/file.js --mode check --json
-py {LOCAL_BRAIN_SCRIPT} code-quality relative/file.js --mode evaluate --json
-py {LOCAL_BRAIN_SCRIPT} code-quality relative/file.js --mode format --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality relative/file.js --mode check --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality relative/file.js --mode evaluate --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality relative/file.js --mode format --json
 
 # Type check
 npx tsc --noEmit

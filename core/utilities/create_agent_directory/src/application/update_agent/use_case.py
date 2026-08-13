@@ -1,4 +1,9 @@
-"""Coordinate synchronization of a target agent directory from canonical sources."""
+"""Coordinate synchronization of a target agent directory from canonical sources.
+
+Analyzes discrepancies between source templates and existing target directories.
+Generates immutable change operations and executes directory updates to maintain
+structural alignment.
+"""
 
 from __future__ import annotations
 
@@ -102,23 +107,52 @@ class UpdateAgentUseCase:
     def build_operations(self) -> tuple[ChangeOperationDTO, ...]:
         """Build the ordered operation list for an agent update.
 
+        Constructs directory change operations for core infrastructure, registered
+        public utilities, memory structures, and workspace configuration files.
+        Specifies the remove_stale policy for each directory: set to True for core
+        components where obsolete target files are cleaned up, and set to False for
+        registered public utilities to preserve local target additions.
+
+        Args:
+            None.
+
         Returns:
             tuple[ChangeOperationDTO, ...]: Ordered synchronization operations.
         """
+
+        # Directory specifications pairing target roots with the remove_stale policy.
+        # Core infrastructure and memory structures set remove_stale=True to remove obsolete files.
+        # Registered public utilities set remove_stale=False to preserve local target modifications.
         directory_specs = (
+            # Direct cloned brain core infrastructure (remove_stale=True cleans target)
             ("core/brain", True),
             ("core/brain_explorer", True),
-            ("core/assets/screens", True),
+            # Direct cloned public utilities (remove_stale=False preserves local additions)
+            ("core/utilities/apply_text_patch", False),
+            ("core/utilities/code_quality_evaluator", False),
             ("core/utilities/create_agent_directory/src", False),
             ("core/utilities/create_agent_directory/files", False),
             ("core/utilities/create_agent_directory/templates", False),
             ("core/utilities/create_agent_directory/documentation", False),
+            ("core/utilities/documentation_utils", False),
             ("core/utilities/propagate_agent_prompt", False),
-            ("core/utilities/apply_text_patch", False),
-            ("memory/profiles/developer", True),
-            ("memory/profiles/worker", True),
+            # Direct cloned memory structures (remove_stale=True cleans target)
+            ("memory/cli", True),
+            ("memory/engineering", True),
+            ("memory/planning", True),
+            ("memory/workers", True),
+            ("memory/profiles/software_engineer", True),
+            # Direct cloned assets (remove_stale=True cleans target)
+            ("core/assets/screens", True),
+            ("core/assets/avatar", True),
         )
-        exclusions = ("__pycache__", ".pytest_cache", "node_modules", "tests", "documentation/wiki")
+        exclusions = (
+            "__pycache__",
+            ".pytest_cache",
+            "node_modules",
+            "tests",
+            "documentation/wiki",
+        )
         operations: list[ChangeOperationDTO] = []
 
         for root, remove_stale in directory_specs:
@@ -144,15 +178,23 @@ class UpdateAgentUseCase:
 
         operations.extend(
             (
-                ChangeOperationDTO(Path("core/README.md"), Path("README.md"), ChangeOperationStrategy.REPLACE),
+                ChangeOperationDTO(
+                    Path("core/README.md"),
+                    Path("README.md"),
+                    ChangeOperationStrategy.REPLACE,
+                ),
                 ChangeOperationDTO(
                     Path("core/utilities/create_agent_directory/files/LICENSE"),
                     Path("LICENSE"),
                     ChangeOperationStrategy.REPLACE,
                 ),
                 ChangeOperationDTO(
-                    Path("core/utilities/create_agent_directory/create_agent_directory.py"),
-                    Path("core/utilities/create_agent_directory/create_agent_directory.py"),
+                    Path(
+                        "core/utilities/create_agent_directory/create_agent_directory.py"
+                    ),
+                    Path(
+                        "core/utilities/create_agent_directory/create_agent_directory.py"
+                    ),
                     ChangeOperationStrategy.COPY,
                 ),
                 ChangeOperationDTO(
@@ -162,17 +204,23 @@ class UpdateAgentUseCase:
                     template="core/utilities/create_agent_directory/templates/AGENTS.md",
                 ),
                 ChangeOperationDTO(
-                    Path("core/utilities/create_agent_directory/templates/brain_configs.json"),
+                    Path(
+                        "core/utilities/create_agent_directory/templates/brain_configs.json"
+                    ),
                     Path("core/configs/brain_configs.json"),
                     ChangeOperationStrategy.MERGE,
                 ),
                 ChangeOperationDTO(
-                    Path("core/utilities/create_agent_directory/templates/brain_avatar_config.json"),
+                    Path(
+                        "core/utilities/create_agent_directory/templates/brain_avatar_config.json"
+                    ),
                     Path("core/configs/brain_avatar_config.json"),
                     ChangeOperationStrategy.MERGE,
                 ),
                 ChangeOperationDTO(
-                    Path("core/utilities/create_agent_directory/templates/brain_mirrors.json"),
+                    Path(
+                        "core/utilities/create_agent_directory/templates/brain_mirrors.json"
+                    ),
                     Path("core/configs/brain_mirrors.json"),
                     ChangeOperationStrategy.MERGE,
                 ),
@@ -195,7 +243,9 @@ class UpdateAgentUseCase:
             FileNotFoundError: If the target or required brain script is missing.
         """
 
-        requested_target = self._target_root if request is None else Path(request.target_root)
+        requested_target = (
+            self._target_root if request is None else Path(request.target_root)
+        )
         source = self._source_root.resolve()
         target = requested_target.resolve()
 
@@ -220,6 +270,7 @@ class UpdateAgentUseCase:
         executor = self._executor_factory(source, target, values)
         execution = executor.execute(operations)
         self._lifecycle_runner(target)
+
         updated_paths = tuple(
             operation.target
             for operation in operations

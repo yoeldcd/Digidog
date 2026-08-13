@@ -10,7 +10,7 @@ from typing import Any
 from urllib.request import Request, urlopen
 
 from brain.infrastructure.voice.daemon.daemon_client import VOICE_DAEMON_URL
-from brain.presentation.avatar.communication.daemon_projection import DaemonStatusProjection
+from brain.presentation.avatar.communication.projection.daemon_status import DaemonStatusProjection
 from brain.presentation.avatar.interactivity.presentation_state import (
     AvatarRuntimeState,
     ProjectedMessageState,
@@ -45,8 +45,12 @@ class QtBackendAdapterMixin:
             method="POST",
             headers={"Content-Type": "application/json"},
         )
+
+        # Exception safety: execute operation within protected error boundary
         try:
             urlopen(request, timeout=.5).close()
+
+        # System error handling: handle operating system or IO failure
         except OSError:
             pass
 
@@ -75,16 +79,22 @@ class QtBackendAdapterMixin:
         Returns:
             ProjectedMessageState: Current projected message state snapshot.
         """
+
+        # State guard: verify component lifecycle state preconditions
         if self.presentation_state.owns_active_presentation or not self.active_presentation_owned:
             return self.presentation_state
+
+        # Exception safety: execute operation within protected error boundary
         try:
             runtime_state = AvatarRuntimeState(self.state)
+
+        # Validation handling: handle invalid input domain error
         except ValueError:
             runtime_state = AvatarRuntimeState.AWAITING
         return ProjectedMessageState(
             runtime_state=runtime_state,
             active_speak_id=self.active_speak_id or self.current_message_id,
-            playback_active=self.playback_active,
+            playback_active=self.playback_active or self.active_presentation_owned,
             progressive_playback_active=self.progressive_playback_active,
             has_embedded_file=self.current_has_embedded_file,
             manual_speech=self.current_manual_speech,
@@ -120,16 +130,30 @@ class QtBackendAdapterMixin:
         Returns:
             None
         """
+
+        # Conditional check: evaluate domain preconditions and invariants
         if command.payload:
             self._post(command.endpoint, dict(command.payload))
         else:
             self._post(command.endpoint)
+
+        # Conditional check: evaluate domain preconditions and invariants
         if command.intent is AvatarControlIntent.STOP:
             self._release_active_presentation()
             self._dismiss_bubble()
 
     def _replay_projected_message(self) -> None:
-        """PLAY or REPLAY the exact currently projected message."""
+        """PLAY or REPLAY the exact currently projected message.
+
+        Executes the primary click interaction for the active message state,
+        replaying audio or displaying the active message.
+
+        Args:
+            None.
+
+        Returns:
+            None: Primary interaction command is dispatched to the backend.
+        """
         command = InteractionController.primary_click(
             self._interaction_state(),
             self._replay_target(),
@@ -137,7 +161,17 @@ class QtBackendAdapterMixin:
         self._execute_avatar_command(command)
 
     def _activate_message_control(self) -> None:
-        """Map one central-control click through shared interaction policy."""
+        """Map one central-control click through shared interaction policy.
+
+        Dispatches primary click commands according to the current projected
+        message state and target conversation identity.
+
+        Args:
+            None.
+
+        Returns:
+            None: Interaction command is posted to the daemon adapter.
+        """
         command = InteractionController.primary_click(
             self._interaction_state(),
             self._replay_target(),
@@ -145,9 +179,23 @@ class QtBackendAdapterMixin:
         self._execute_avatar_command(command)
 
     def _avatar_click(self) -> None:
-        """Disambiguate one-click control from idle-only double-click reaction."""
+        """Disambiguate one-click control from idle-only double-click reaction.
+
+        Handles single and double clicks on the avatar widget, triggering reactions
+        when idle or controlling message playback when active.
+
+        Args:
+            None.
+
+        Returns:
+            None: Click timer or interaction command is triggered.
+        """
+
+        # Conditional check: evaluate domain preconditions and invariants
         if self.avatar_click_timer.isActive():
             self.avatar_click_timer.stop()
+
+            # Conditional check: evaluate domain preconditions and invariants
             if self._playback_is_active():
                 reaction = self.reaction_bag.draw_reaction()
                 command = InteractionController.double_click(
@@ -161,11 +209,30 @@ class QtBackendAdapterMixin:
         self.avatar_click_timer.start()
 
     def _commit_avatar_click(self) -> None:
-        """Apply the same one-click contract as the central control."""
+        """Apply the same one-click contract as the central control.
+
+        Executes single-click message control when the avatar click timer elapses.
+
+        Args:
+            None.
+
+        Returns:
+            None: Primary message control action is activated.
+        """
         self._activate_message_control()
 
     def _speak_reaction(self) -> None:
-        """Compatibility entrypoint for one idle shared reaction command."""
+        """Compatibility entrypoint for one idle shared reaction command.
+
+        Draws a random reaction phrase and animation, sending a double-click command
+        to the avatar backend.
+
+        Args:
+            None.
+
+        Returns:
+            None: Reaction speech command is executed.
+        """
         reaction = self.reaction_bag.draw_reaction()
         command = InteractionController.double_click(
             self._interaction_state(),
@@ -174,23 +241,45 @@ class QtBackendAdapterMixin:
         self._execute_avatar_command(command)
 
     def _poll(self) -> None:
-        """Project one typed daemon snapshot into Qt views."""
+        """Project one typed daemon snapshot into Qt views.
+
+        Queries the daemon HTTP /status route, normalizes the response payload,
+        and updates avatar animations, speech bubble text, theme, and control meters.
+
+        Args:
+            None.
+
+        Returns:
+            None: Qt avatar window presentation is synchronized with daemon state.
+        """
+
+        # Exception safety: execute operation within protected error boundary
         try:
+            # Context management: acquire managed resource scope
             with urlopen(f"{VOICE_DAEMON_URL}/status", timeout=.2) as response:
                 payload = json.loads(response.read())
+
+        # Failure recovery: handle execution or transport exception
         except Exception:
+            # Conditional check: evaluate domain preconditions and invariants
             if time.monotonic() - self.last_seen >= DAEMON_LOSS_GRACE_SECONDS:
                 self.close()
             return
         status = DaemonStatusProjection.from_mapping(payload)
+
+        # Identity validation: check canonical message or instance identifier
         if self.daemon_instance_id and status.instance_id != self.daemon_instance_id:
             self.close()
             return
         self.last_seen = time.monotonic()
+
+        # State guard: verify component lifecycle state preconditions
         if status.theme_mode != self._theme_mode:
             self._theme_mode = status.theme_mode
             self.bubble.set_theme(status.theme_mode)
             self.reply_window.set_theme(status.theme_mode)
+
+            # Guard clause: verify required active entity presence
             if self.backlog_window is not None:
                 self.backlog_window.set_theme(status.theme_mode)
         presentation = status.presentation()
@@ -209,6 +298,8 @@ class QtBackendAdapterMixin:
             processing_emotion=presentation.processing_emotion,
             speaking_active=presentation.speaking_animation_active,
         )
+
+        # State guard: verify component lifecycle state preconditions
         if presentation.runtime_state.value in {"thinking", "preparing"}:
             return
         self._set_text(

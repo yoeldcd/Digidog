@@ -5,10 +5,14 @@ from __future__ import annotations
 import argparse
 import json
 
+from brain.application.memory import paths as memory_paths
 from brain.application.memory.paths import resolve_category_dir
 from brain.application.memory.service import read_instance
 from brain.application.profiles.service import render_profile_template_variables
 from brain.presentation.terminal import log_step, render_markdown, render_placeholders
+
+
+_RAW_DOCUMENT_PREAMBLE = "<RAW DOCUMENT>"
 
 
 def _render_profile_content(domain: str, content: str) -> str:
@@ -23,6 +27,48 @@ def _render_profile_content(domain: str, content: str) -> str:
     """
     return render_profile_template_variables(content)
 
+
+def _render_entry_result(
+    args: argparse.Namespace,
+    domain: str,
+    key: str,
+    content: str,
+    color_enabled: bool,
+) -> int:
+    """Render one resolved memory entry using the requested output format.
+
+    Args:
+        args (argparse.Namespace): Parsed output and line-limit options.
+        domain (str): Logical domain reported to the caller.
+        key (str): Resolved memory entry key.
+        content (str): Localized Markdown content to render.
+        color_enabled (bool): Whether terminal color placeholders are enabled.
+
+    Returns:
+        int: Zero after rendering the entry.
+    """
+    limit = getattr(args, "limit", None)
+    if limit is not None:
+        text_lines = content.splitlines()
+        if len(text_lines) > limit:
+            rest = len(text_lines) - limit
+            content = "\n".join(text_lines[:limit]) + f"\n\n__DIM__... {rest} more lines__RESET__"
+
+    if args.json and not getattr(args, "json_envelope", False):
+        args.raw_document_output = True
+        trailing = "" if content.endswith("\n") else "\n"
+        print(f"{_RAW_DOCUMENT_PREAMBLE}\n{content}", end=trailing)
+    elif args.json:
+        result = {
+            "ok": True,
+            "domain": domain,
+            "key": key,
+            "content": content,
+        }
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(render_markdown(content, color_enabled), end="")
+    return 0
 
 
 def handle(args: argparse.Namespace) -> int:
@@ -41,6 +87,22 @@ def handle(args: argparse.Namespace) -> int:
     try:
         domain = args.domain
         key = args.key
+
+        if domain == "index" and key is None:
+            index_path = memory_paths.MEMORY_ROOT / "index.md"
+            if not index_path.is_file():
+                raise memory_paths.BrainStoreError("Global memory index does not exist.")
+
+            raw_content = index_path.read_text(encoding="utf-8")
+            content = _render_profile_content(domain="global", content=raw_content)
+            return _render_entry_result(
+                args=args,
+                domain="global",
+                key="index",
+                content=content,
+                color_enabled=color_enabled,
+            )
+
         # Check if the requested target is a domain/directory rather than a file
         is_dir_query = False
         try:
@@ -179,24 +241,13 @@ def handle(args: argparse.Namespace) -> int:
                     return 1
 
             content = _render_profile_content(domain=domain, content=read_instance(domain, key))
-            limit = getattr(args, "limit", None)
-            if limit is not None:
-                text_lines = content.splitlines()
-                if len(text_lines) > limit:
-                    rest = len(text_lines) - limit
-                    content = "\n".join(text_lines[:limit]) + f"\n\n__DIM__... {rest} more lines__RESET__"
-
-            if args.json:
-                result = {
-                    "ok": True,
-                    "domain": domain,
-                    "key": key,
-                    "content": content
-                }
-                print(json.dumps(result, ensure_ascii=False, indent=2))
-            else:
-                print(render_markdown(content, color_enabled), end="")
-            return 0
+            return _render_entry_result(
+                args=args,
+                domain=domain,
+                key=key,
+                content=content,
+                color_enabled=color_enabled,
+            )
     except Exception as exc:
         if args.json:
             print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))

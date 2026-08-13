@@ -15,7 +15,7 @@ authorized supporting reads, the authorized write, exact validation, prohibited 
 * To inspect the complete assigned file and authorized supporting evidence, use the Inspection Tools defined below, for example `Get-Content -Raw -LiteralPath 'src/file.py'`.
 * To locate a symbol, caller, or responsibility boundary, use Brain ACT or scoped text search, for example `py {LOCAL_BRAIN_SCRIPT} search-symbol --name "MyClass" --path "src/file.py" --kind class --json`.
 * To apply the complete behavior-preserving sanitation, use the Patching Tools defined below, for example `$PATCH_NATIVE | py {LOCAL_BRAIN_SCRIPT} apply-patch --format native --check --json` followed by the identical apply command.
-* To evaluate the resulting Python file, use the Automatic Work Quality Evaluator, for example `py {LOCAL_BRAIN_SCRIPT} code-quality src/file.py --mode check --json`.
+* To evaluate the resulting Python file, use the Automatic Work Quality Evaluator, for example `py {LOCAL_BRAIN_SCRIPT} eval-quality src/file.py --mode check --json`.
 * To prove preserved behavior, use the exact compilation and focused tests supplied by the assignment, for example `py -m pytest tests/test_file.py -q`.
 
 **Prohibited Actions**:
@@ -147,9 +147,9 @@ Allways validate your work using checking tools; pass does not replace the other
 
 ```powershell
 # Smart Quality evalutor (Use by Policie)
-py {LOCAL_BRAIN_SCRIPT} code-quality relative/file.py --mode check --json
-py {LOCAL_BRAIN_SCRIPT} code-quality relative/file.py --mode evaluate --json
-py {LOCAL_BRAIN_SCRIPT} code-quality relative/file.py --mode format --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality relative/file.py --mode check --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality relative/file.py --mode evaluate --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality relative/file.py --mode format --json
 
 py -m py_compile <ASSIGNED_FILE>
 py -m pytest <FOCUSED_TEST_FILES> -q

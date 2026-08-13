@@ -6,7 +6,6 @@ before the router selects its single record action.
 
 from brain.presentation.commands.models import ArgumentSchema, CommandSchema
 
-
 SCHEMA = CommandSchema(
     name="delete-record",
     aliases=["deprecate-policie"],
@@ -30,5 +29,16 @@ SCHEMA = CommandSchema(
             help="Output the deletion result as JSON.",
         ),
     ],
+    description="Delete one local record selected by its rec## identifier.",
+    stdin=(),
+    examples=("py {LOCAL_BRAIN_SCRIPT} delete-record rec12",),
+    output=(
+        "Deletion confirmation and affected record identifier; --json emits an object.",
+    ),
+    exit_codes=("0: record deleted.", "1: identifier invalid or record not found."),
+    safeguards=(
+        "Requires an explicit record identifier; no bulk deletion is performed.",
+    ),
+    notes=("Deletion removes the selected local record from active listings.",),
 )
 # Parser schema for ``delete-record`` and ``deprecate-policie``.

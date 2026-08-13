@@ -4,7 +4,7 @@
 """Thin public facade for the detached Qt Markdown bubble."""
 from __future__ import annotations
 
-from PySide6.QtCore import QPoint, QPointF, Qt, QTimer, Signal
+from PySide6.QtCore import QPoint, QPointF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QPalette
 from PySide6.QtWidgets import (
     QApplication, QHBoxLayout, QLabel, QSizePolicy, QTextBrowser, QToolButton,
@@ -51,7 +51,8 @@ class QtMarkdownBubble(
         screen_height = screen.availableGeometry().height() if screen else 720
         self._standard_maximum_height = max(220, min(420, round(screen_height * .58)))
         self.setMaximumHeight(self._standard_maximum_height)
-        self.resize(620, 180)
+        self._default_size = QSize(620, 180)
+        self.resize(self._default_size)
         self._drag_origin: tuple[QPoint, QPoint] | None = None
         self._resize_origin: tuple[str, QPoint, object] | None = None
         self._tail_target = QPointF(self.width() - 40, self.height() + 40)
@@ -164,6 +165,9 @@ class QtMarkdownBubble(
             consumer_path (str): Source consumer path for provenance.
             history_index (int): Zero-based visible-message history index.
             history_total (int): Total visible-message history count.
+
+        Returns:
+            None: The bubble layout and rendered Markdown document are updated.
         """
         self._set_header(emotion_prefix, consumer_path, history_index, history_total)
         rendered = render_avatar_markdown(self, text, consumer_path)

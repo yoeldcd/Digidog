@@ -187,10 +187,14 @@ is a normal consumer facade whose relative bootstrap happens to point to
 ## Snippets
 
 Agent-authored reusable utilities that are not part of the Brain runtime are
-cloned from the configured agent directory into the local workspace.
+listed from the configured agent `snippets` directory and the consumer
+workspace `$agent/scripts` directory. Shared snippets can be cloned into the
+local workspace.
 
 ```powershell
 python .\$agent\scripts\brain.py list-snippets
+python .\$agent\scripts\brain.py list-utilities --scope local
+python .\$agent\scripts\brain.py list-utilities --scope global
 python .\$agent\scripts\brain.py clone-snippet render_workspace_tree
 ```
 

@@ -32,7 +32,7 @@ The contract must contain all role knowledge required to act correctly: speciali
 The live assignment must specify: operation, one observable objective, exact authorized reads, exact authorized writes, behavioral and integrity invariants, exact functional validation, exact quality validation, prohibited actions, required report evidence, and concrete values for every contract variable used during execution.
 
 When a worker assignment changes or evaluates supported source artifacts, the Core
-code-quality evaluator is the authoritative policy-driven contract. The worker must run
+eval-quality evaluator is the authoritative policy-driven contract. The worker must run
 the configured Brain facade command for every authorized artifact and report its structured
 gates and status. Workers must not substitute ad-hoc Ruff, formatter, parser, or manual
 checks for the configured evaluator unless the assignment explicitly requires that
@@ -213,7 +213,7 @@ Preserve CRLF or LF endings as they exist. If Brain reports an anchor, occurrenc
 
 </INCLUDED_SECTION>
 
-<INCLUDED_SECTION description="Declare the Core code-quality evaluator" required="When the worker changes or reviews supported source, test, JSON, or Markdown files">
+<INCLUDED_SECTION description="Declare the Core eval-quality evaluator" required="When the worker changes or reviews supported source, test, JSON, or Markdown files">
 
 ### Automatic Work Quality Evaluator
 
@@ -226,8 +226,8 @@ Use only the Brain facade. The tool accepts workspace-relative file arguments, k
 **Syntax**:
 
 ```powershell
-py {LOCAL_BRAIN_SCRIPT} code-quality PATH [PATH ...] --mode check|format|evaluate --json
-py {LOCAL_BRAIN_SCRIPT} code-quality --mode schema --schema request|result|config|model --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality PATH [PATH ...] --mode check|format|evaluate --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality --mode schema --schema request|result|config|model --json
 ```
 
 **Modes**:
@@ -241,9 +241,9 @@ py {LOCAL_BRAIN_SCRIPT} code-quality --mode schema --schema request|result|confi
 </COPY_ADAPTING note="addapt ext and select only accurate operation from profile">
 
 ```powershell
-py {LOCAL_BRAIN_SCRIPT} code-quality src/module.ext --mode check --json
-py {LOCAL_BRAIN_SCRIPT} code-quality src/module.ext --mode format --json
-py {LOCAL_BRAIN_SCRIPT} code-quality src/module.ext --mode evaluate --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality src/module.ext --mode check --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality src/module.ext --mode format --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality src/module.ext --mode evaluate --json
 ```
 
 </COPY_ADAPTING>

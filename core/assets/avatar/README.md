@@ -1,3 +1,5 @@
+<!-- Author: Yoel David <yoeldcd@gmail.com> | X: https://x.com/SAY6267 -->
+
 # Avatar state GIF assets
 
 This directory owns the versioned presentation images used by this agent's
@@ -53,6 +55,7 @@ synthetic chroma key is `#00ff01` so dark artwork is not accidentally removed.
 
 `create_agent_directory create-agent` copies this `README.md` and every
 versioned `avatar_<state>.gif` into a new core. It excludes arbitrary portraits
-and runtime avatar storage. `update-agent` deliberately remains limited to
-`brain/` and `brain_explorer/`, so avatar identity assets in an existing agent
-are never overwritten by a code update.
+and runtime avatar storage. `update-agent` synchronizes `brain/`,
+`brain_explorer/`, and the agent root's canonical `README.md` and `LICENSE`;
+avatar identity assets remain outside that boundary and are never overwritten
+by a code update.

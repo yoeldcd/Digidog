@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from brain.presentation.commands.models import ArgumentSchema, CommandSchema
 
-
 SCHEMA = CommandSchema(
     name="show-backlog",
     aliases=["task-list"],
@@ -26,4 +25,11 @@ SCHEMA = CommandSchema(
             help="Show all tasks (including completed ones).",
         ),
     ],
+    description="Display backlog tasks as a filtered tree.",
+    stdin=(),
+    examples=("py {LOCAL_BRAIN_SCRIPT} show-backlog dev.db --all",),
+    output=("A domain tree containing matching tasks is printed.",),
+    exit_codes=("0: backlog displayed", "1: invalid domain filter"),
+    safeguards=("Filtering is read-only and does not mutate backlog records.",),
+    notes=("Completed tasks are hidden unless --all is provided.",),
 )

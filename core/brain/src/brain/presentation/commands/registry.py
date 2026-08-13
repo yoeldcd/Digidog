@@ -10,30 +10,34 @@ from brain.presentation.commands.backlog import (
     command_add_task,
     command_delete_task,
     command_edit_task,
+    command_read_task,
     command_rename_task_domain,
     command_set_task_status,
-    command_read_task,
     command_show_backlog,
     command_task_finished,
 )
-from brain.presentation.commands.diary import command_edit_diary, command_read_diary, command_write_diary
+from brain.presentation.commands.diary import (
+    command_edit_diary,
+    command_read_diary,
+    command_write_diary,
+)
 from brain.presentation.commands.general import (
-    command_resolve_avatar_message,
     command_avatar_outbox,
+    command_avatar_service_status,
     command_check_workspace,
     command_complete_work,
     command_create_brain,
     command_get_context,
     command_init,
-    command_list_messages,
     command_list_avatar_voices,
+    command_list_messages,
     command_query,
     command_register_project,
     command_registre_proyect,
+    command_resolve_avatar_message,
     command_serve_explorer,
     command_show_help,
     command_speak,
-    command_avatar_service_status,
     command_start_avatar_service,
     command_stop_avatar_service,
 )
@@ -61,13 +65,11 @@ from brain.presentation.commands.memory import (
     command_add_memory_domain,
     command_delete_memory_entry,
     command_export_domains,
-    command_memory_structure,
     command_get_memory_entry,
-    command_update_memory_index,
+    command_memory_structure,
     command_set_memory_entry,
+    command_update_memory_index,
 )
-from brain.presentation.commands.records import command_add_record, command_delete_record, command_show_records
-from brain.presentation.commands.profiles import command_list_profiles, command_read_profile
 from brain.presentation.commands.pictures import (
     command_delete_picture_guidance,
     command_describe_picture,
@@ -78,9 +80,22 @@ from brain.presentation.commands.pictures import (
     command_scan_pictures,
     command_set_picture_guidance,
 )
-from brain.presentation.commands.snippets import command_clone_snippet, command_list_snippets
+from brain.presentation.commands.profiles import (
+    command_list_profiles,
+    command_read_profile,
+)
+from brain.presentation.commands.records import (
+    command_add_record,
+    command_delete_record,
+    command_show_records,
+)
+from brain.presentation.commands.snippets import (
+    command_clone_snippet,
+    command_list_snippets,
+)
 from brain.presentation.commands.utilities import (
     command_apply_patch,
+    command_code_quality,
     command_propagate_agent_prompt,
     command_search_symbol,
     command_wiki,
@@ -92,7 +107,6 @@ from brain.presentation.commands.vectorstore import (
     command_update_vectorstore,
     command_vectorstore_status,
 )
-
 
 COMMAND_MODULES = [
     command_show_help,
@@ -120,6 +134,7 @@ COMMAND_MODULES = [
     command_clone_snippet,
     command_wiki,
     command_apply_patch,
+    command_code_quality,
     command_propagate_agent_prompt,
     command_search_symbol,
     command_update_vectorstore,

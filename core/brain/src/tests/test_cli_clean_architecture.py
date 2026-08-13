@@ -20,8 +20,11 @@ from unittest.mock import patch
 
 
 SOURCE_ROOT = Path(__file__).resolve().parents[1]
-if str(SOURCE_ROOT) not in sys.path:
-    sys.path.insert(0, str(SOURCE_ROOT))
+CORE_ROOT = SOURCE_ROOT.parents[1]
+for import_root in (CORE_ROOT, SOURCE_ROOT):
+    import_text = str(import_root)
+    if import_text not in sys.path:
+        sys.path.insert(0, import_text)
 
 
 class CliCleanArchitectureTest(unittest.TestCase):
@@ -382,8 +385,8 @@ class CliCleanArchitectureTest(unittest.TestCase):
         self.assertNotIn("before", args.json_payload["files"][0])
         self.assertNotIn("after", args.json_payload["files"][0])
 
-    def test_apply_patch_rejects_omitted_new_before_engine_construction(self) -> None:
-        """Reject the historical null replacement incident before filesystem access."""
+    def test_apply_patch_rejects_omitted_new_before_filesystem_access(self) -> None:
+        """Reject the historical null replacement incident during Core preflight."""
         from brain.presentation.actions.utilities.command_apply_patch import handle
 
         specification = json.dumps(
@@ -396,16 +399,13 @@ class CliCleanArchitectureTest(unittest.TestCase):
                 ]
             }
         )
-        args = Namespace(check=True, json=True, color=False)
+        args = Namespace(check=True, json=True, color=False, format="json")
 
-        with patch("sys.stdin", StringIO(specification)), patch(
-            "brain.presentation.actions.utilities.command_apply_patch.FileSystemPatchEngine"
-        ) as engine_type:
+        with patch("sys.stdin", StringIO(specification)):
             result = handle(args)
 
         self.assertEqual(result, 1)
         self.assertIn("new must be a string", args.json_payload["error"])
-        engine_type.assert_not_called()
 
 
     def test_apply_patch_creates_new_file_atomically(self) -> None:
@@ -477,6 +477,26 @@ class CliCleanArchitectureTest(unittest.TestCase):
                 "error": "Command did not provide a semantic JSON payload.",
             },
         )
+
+    def test_dispatch_preserves_explicit_raw_document_output(self) -> None:
+        """Allow a terminal Markdown command to bypass JSON escaping explicitly."""
+        from brain.presentation.router.services.command_router_service import dispatch_command
+
+        def raw_document_action(args: Namespace) -> int:
+            args.raw_document_output = True
+            print("<RAW DOCUMENT>\n# Contract")
+            return 0
+
+        stdout = StringIO()
+        args = Namespace(command="get-memory-entry", json=True, no_speak=False)
+        with patch(
+            "brain.presentation.router.services.command_router_service.get_action_handler",
+            return_value=raw_document_action,
+        ), redirect_stdout(stdout):
+            exit_code = dispatch_command(args)
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(stdout.getvalue(), "<RAW DOCUMENT>\n# Contract\n")
 
     def test_dispatch_serializes_action_semantic_payload(self) -> None:
         """Ensure a migrated action emits its domain fields instead of captured prose."""

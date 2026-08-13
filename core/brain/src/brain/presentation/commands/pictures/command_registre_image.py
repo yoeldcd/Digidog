@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from brain.presentation.commands.models import ArgumentSchema, CommandSchema
 
-
 SCHEMA = CommandSchema(
     name="registre-image",
     aliases=[],
@@ -49,4 +48,18 @@ SCHEMA = CommandSchema(
             help="Render machine-readable JSON.",
         ),
     ],
+    description="Register one image from a file or base64 payload in the selected picture scope.",
+    stdin=(),
+    examples=(
+        "py {LOCAL_BRAIN_SCRIPT} registre-image --image-file image.png --scope local --domain project",
+    ),
+    output=("Registered picture identifier and metadata.",),
+    exit_codes=(
+        "0: image registered.",
+        "1: invalid source, scope, or persistence failure.",
+    ),
+    safeguards=(
+        "Requires exactly one image source and validates scope before writing.",
+    ),
+    notes=("--index refreshes semantic picture references after registration.",),
 )

@@ -24,7 +24,6 @@ from brain.config import (
     CONFIGS_DIR_NAME,
     DATABASE_DIR_NAME,
     DATABASE_GITIGNORE_TEXT,
-    DEFAULT_WORKSPACE_ROOT,
     GLOBAL_KNOWLEDGE_DIR_NAME,
     GLOBAL_LOGS_DIR_NAME,
     GLOBAL_SOURCES_DIR_NAME,
@@ -94,47 +93,80 @@ def _read_configured_agent_home() -> Path | None:
 
 def get_workspace_root(workspace_root: Path | None = None) -> Path:
     """
-    Return the current workspace root path.
+    Return the explicitly configured consumer workspace root.
 
     Args:
         workspace_root: Optional explicit workspace root.
 
     Returns:
         Path: Resolved workspace root.
+
+    Raises:
+        RuntimeError: Neither an explicit root nor WORKSPACE_ROOT is available.
     """
-    return (workspace_root or Path(os.environ.get("WORKSPACE_ROOT", DEFAULT_WORKSPACE_ROOT))).resolve()
+    if workspace_root is not None:
+        return workspace_root.resolve()
+
+    configured_root = os.environ.get("WORKSPACE_ROOT", "").strip()
+    if not configured_root:
+        raise RuntimeError(
+            "Brain requires an explicit workspace_root or configured WORKSPACE_ROOT. "
+            "Run commands through the consumer $agent/scripts/brain.py facade."
+        )
+
+    return Path(configured_root).resolve()
 
 
 def get_transient_dir(workspace_root: Path | None = None, core_root: Path | None = None) -> Path:
-    """Return the resolved absolute transient directory for patch rollback backups.
+    """Return the existing patch-owned directory below the transient base.
 
-    Checks `brain_configs.json` for `transient_dir`. If configured, non-empty, exists,
-    and is a directory, returns that absolute Path. Otherwise, falls back to
-    `<workspace_root>/$agent/tmp/patches_rollback`.
+    The configured ``transient_dir`` is treated as a base directory. When it is
+    absent or invalid, the consumer-local ``$agent/.tmp`` directory becomes the
+    base. Patch rollback artifacts are confined to the ``patches_rollback``
+    child in either case.
 
     Args:
-        workspace_root: Optional workspace root override.
-        core_root: Optional core root override.
+        workspace_root: Optional consumer workspace root override.
+        core_root: Optional Core root override used to locate configuration.
 
     Returns:
-        Path: Validated transient directory path.
+        Path: Existing ``patches_rollback`` directory below the resolved base.
     """
-    config_path: Path = get_core_root(core_root=core_root) / CONFIGS_DIR_NAME / BRAIN_CONFIGS_FILE_NAME
-    if config_path.is_file():
-        try:
-            raw_data: object = json.loads(config_path.read_text(encoding="utf-8"))
-            if isinstance(raw_data, dict):
-                configured_value = raw_data.get("transient_dir")
-                if isinstance(configured_value, str) and configured_value.strip():
-                    candidate = Path(configured_value.strip()).resolve()
-                    if candidate.exists() and candidate.is_dir():
-                        return candidate
-        except (OSError, json.JSONDecodeError):
-            pass
+    configured_base = _read_configured_transient_base(core_root=core_root)
+    if configured_base is None:
+        configured_base = get_workspace_root(workspace_root=workspace_root) / "$agent" / ".tmp"
+        configured_base.mkdir(parents=True, exist_ok=True)
 
-    fallback = get_workspace_root(workspace_root=workspace_root) / "$agent" / "tmp" / "patches_rollback"
-    fallback.mkdir(parents=True, exist_ok=True)
-    return fallback
+    patch_transient_dir = configured_base / "patches_rollback"
+    patch_transient_dir.mkdir(parents=True, exist_ok=True)
+
+    return patch_transient_dir
+
+
+def _read_configured_transient_base(core_root: Path | None = None) -> Path | None:
+    """Return a valid absolute configured transient base, when available."""
+    config_path = get_core_root(core_root=core_root) / CONFIGS_DIR_NAME / BRAIN_CONFIGS_FILE_NAME
+    if not config_path.is_file():
+        return None
+
+    try:
+        raw_data: object = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    configured_value = raw_data.get("transient_dir") if isinstance(raw_data, dict) else None
+    if not isinstance(configured_value, str) or not configured_value.strip():
+        return None
+
+    candidate = Path(configured_value.strip()).expanduser()
+    if not candidate.is_absolute():
+        return None
+
+    resolved_candidate = candidate.resolve()
+    if not resolved_candidate.exists() or not resolved_candidate.is_dir():
+        return None
+
+    return resolved_candidate
 
 
 def ensure_private_directory(path: Path) -> Path:
@@ -593,7 +625,6 @@ def register_project_path(project_path: Path) -> None:
     Args:
         project_path (Path): Workspace root to register.
     """
-    import json
     mirrors_file: Path = get_brain_mirrors_path()
 
     projects = []

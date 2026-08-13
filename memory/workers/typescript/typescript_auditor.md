@@ -115,9 +115,9 @@ Allways validate your work using checking tools; pass does not replace the other
 
 ```powershell
 # Smart Quality evalutor (Use by Policie)
-py {LOCAL_BRAIN_SCRIPT} code-quality relative/file.js --mode check --json
-py {LOCAL_BRAIN_SCRIPT} code-quality relative/file.js --mode evaluate --json
-py {LOCAL_BRAIN_SCRIPT} code-quality relative/file.js --mode format --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality relative/file.js --mode check --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality relative/file.js --mode evaluate --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality relative/file.js --mode format --json
 
 git diff -- relative/path.ts
 git diff --check

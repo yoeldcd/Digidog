@@ -299,4 +299,3 @@ def update_lifecycle(target_root: Path) -> None:
         "--json",
     )
     run_lifecycle(command, cwd=target_root)
-

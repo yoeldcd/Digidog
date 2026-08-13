@@ -10,9 +10,6 @@ or mutation logic. Runtime behavior belongs to service modules.
 from __future__ import annotations
 
 
-DEFAULT_WORKSPACE_ROOT = "."
-"""Default workspace root when `WORKSPACE_ROOT` is not set."""
-
 CONFIGS_DIR_NAME = "configs"
 """Core-owned configuration directory name."""
 

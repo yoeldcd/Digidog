@@ -15,7 +15,7 @@ and signals, behavioral and visual invariants, validation, prohibitions, and rep
 * To inspect an authorized widget, dialog, signal, slot, or controller boundary, use the Inspection Tools defined below, for example `py {LOCAL_BRAIN_SCRIPT} search-symbol --name "Dialog" --path "src/dialog.py" --kind class --json`.
 * To read complete UI artifacts and scoped changes, use `Get-Content` and Git inspection, for example `Get-Content -Raw -LiteralPath 'src/dialog.py'`.
 * To implement the bounded PyQt6 change, use the Patching Tools defined below, for example `$PATCH_NATIVE | py {LOCAL_BRAIN_SCRIPT} apply-patch --format native --check --json` followed by the identical apply command.
-* To evaluate every changed Python UI artifact, use the Automatic Work Quality Evaluator, for example `py {LOCAL_BRAIN_SCRIPT} code-quality src/dialog.py --mode check --json`.
+* To evaluate every changed Python UI artifact, use the Automatic Work Quality Evaluator, for example `py {LOCAL_BRAIN_SCRIPT} eval-quality src/dialog.py --mode check --json`.
 * To prove signals, lifecycle, input preservation, and UI behavior, use the exact focused PyQt command supplied by the assignment, for example `py -m pytest tests/qt/test_dialog.py -q`.
 
 **Prohibited Actions**:
@@ -143,9 +143,9 @@ Preserve CRLF or LF endings as they exist. If Brain reports an anchor, occurrenc
 Run the check for every changed cleaned Python file. Non-pass blocks `COMPLETE`; pass does not replace the other required gates.
 
 ```powershell
-py {LOCAL_BRAIN_SCRIPT} code-quality relative/path.ts --mode check --json
-py {LOCAL_BRAIN_SCRIPT} code-quality relative/path.ts --mode evaluate --json
-py {LOCAL_BRAIN_SCRIPT} code-quality relative/path.ts --mode format --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality relative/path.ts --mode check --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality relative/path.ts --mode evaluate --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality relative/path.ts --mode format --json
 ```
 
 ### Validation Tools

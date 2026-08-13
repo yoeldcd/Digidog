@@ -1,4 +1,9 @@
-"""Application boundary for creating an agent directory."""
+"""Application boundary for creating an agent directory structure.
+
+Provides high-level application orchestration for instantiating new agent
+directories from canonical templates. Resolves target paths and delegates
+file synchronization operations to domain executors.
+"""
 
 from __future__ import annotations
 
@@ -81,11 +86,15 @@ def normalize_agent_name(agent_name: str) -> str:
 
     invalid_characters = ("\x00", "\n", "\r")
 
+    # Conditional check: evaluate domain preconditions and invariants
+
     if any(char in agent_name for char in invalid_characters):
         raise ValueError("agent_name must be non-empty single-line")
 
     value = agent_name.strip()
     candidate = value[1:] if value.startswith("@") else value
+
+    # Conditional check: evaluate domain preconditions and invariants
 
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", candidate):
         raise ValueError("agent_name has invalid format")
@@ -108,10 +117,14 @@ def _user(value: str) -> str:
 
     invalid_characters = ("\x00", "\n", "\r")
 
+    # Conditional check: evaluate domain preconditions and invariants
+
     if any(char in value for char in invalid_characters):
         raise ValueError("user_name must be non-empty single-line")
 
     normalized_value = value.strip()
+
+    # Conditional check: evaluate domain preconditions and invariants
 
     if not normalized_value:
         raise ValueError("user_name must be non-empty single-line")
@@ -120,7 +133,18 @@ def _user(value: str) -> str:
 
 
 class CreateAgentDirectoryUseCase:
-    """Coordinate validation, execution, publication, and rollback."""
+    """Coordinate validation, execution, publication, and rollback.
+
+    Args:
+        source_root: Root containing source assets and templates.
+        exists_reader: Predicate checking whether a path already exists.
+        staging_path_factory: Builds the staging path for an agent root.
+        render_values_factory: Builds template values for the requested agent.
+        executor_factory: Creates an operation executor for source and staging roots.
+        lifecycle_bootstrap: Initializes lifecycle state in the staging directory.
+        publisher: Publishes staging content at the final agent root.
+        rollback: Removes staging content after a failed operation.
+    """
 
     def __init__(
         self,
@@ -158,25 +182,46 @@ class CreateAgentDirectoryUseCase:
     def build_operations(self) -> tuple[ChangeOperationDTO, ...]:
         """Build the definitive immutable operation catalog.
 
+        Args:
+            None
+
         Returns:
             tuple[ChangeOperationDTO, ...]: Operations in execution order.
         """
 
         operations: list[ChangeOperationDTO] = []
         directories = (
+
+            # Direct cloned brain core infrastructure
             ("core/brain", "core/brain"),
             ("core/brain_explorer", "core/brain_explorer"),
+            
+            # Direct cloned public utilities registration
+            ("core/utilities/apply_text_patch", "core/utilities/apply_text_patch"),
+            ("core/utilities/code_quality_evaluator", "core/utilities/code_quality_evaluator"),
+            ("core/utilities/documentation_utils", "core/utilities/documentation_utils"),
+            ("core/utilities/propagate_agent_prompt", "core/utilities/propagate_agent_prompt"),
+            
+            # Direct cloned memory
+            ("memory/cli", "memory/cli"),
+            ("memory/engineering", "memory/engineering"),
+            ("memory/planning", "memory/planning"),
+            ("memory/workers", "memory/workers"),
+            ("memory/profiles/software_engineer", "memory/profiles/software_engineer"),
+        
+            # Direct cloned assets
             ("core/assets/screens", "core/assets/screens"),
             ("core/assets/avatar", "core/assets/avatar"),
-            ("core/utilities/propagate_agent_prompt", "core/utilities/propagate_agent_prompt"),
-            ("core/utilities/apply_text_patch", "core/utilities/apply_text_patch"),
-            ("memory/profiles/developer", "memory/profiles/developer"),
-            ("memory/profiles/worker", "memory/profiles/worker"),
+            
         )
         exclusions = ("__pycache__", ".pytest_cache", "node_modules", "tests", "documentation/wiki")
 
+        # Iteration: loop over collection elements
+
         for source, target in directories:
             operations.append(ChangeOperationDTO(Path(source), Path(target), ChangeOperationStrategy.COPY))
+
+            # Iteration: loop over collection elements
 
             for exclusion in exclusions:
                 source_exclusion_path = Path(source) / exclusion
@@ -187,12 +232,23 @@ class CreateAgentDirectoryUseCase:
 
         copy_operations = (
             ("core/requirements.txt", "core/requirements.txt"),
-            ("core/utilities/create_agent_directory/create_agent_directory.py", "core/utilities/create_agent_directory/create_agent_directory.py"),
+            (
+                "core/utilities/create_agent_directory/create_agent_directory.py",
+                "core/utilities/create_agent_directory/create_agent_directory.py",
+            ),
             ("core/utilities/create_agent_directory/src", "core/utilities/create_agent_directory/src"),
             ("core/utilities/create_agent_directory/files", "core/utilities/create_agent_directory/files"),
-            ("core/utilities/create_agent_directory/templates", "core/utilities/create_agent_directory/templates"),
-            ("core/utilities/create_agent_directory/documentation", "core/utilities/create_agent_directory/documentation"),
+            (
+                "core/utilities/create_agent_directory/templates",
+                "core/utilities/create_agent_directory/templates",
+            ),
+            (
+                "core/utilities/create_agent_directory/documentation",
+                "core/utilities/create_agent_directory/documentation",
+            ),
         )
+
+        # Iteration: process sequence items
 
         for source, target in copy_operations:
             operations.append(ChangeOperationDTO(Path(source), Path(target), ChangeOperationStrategy.COPY))
@@ -202,15 +258,22 @@ class CreateAgentDirectoryUseCase:
             ("core/utilities/create_agent_directory/files/LICENSE", "LICENSE"),
         )
 
+        # Iteration: process sequence items
+
         for source, target in replace_operations:
             operations.append(ChangeOperationDTO(Path(source), Path(target), ChangeOperationStrategy.REPLACE))
 
         render_operations = (
             ("core/utilities/create_agent_directory/templates/AGENTS.md", "core/AGENTS.md"),
             ("core/utilities/create_agent_directory/templates/brain_configs.json", "core/configs/brain_configs.json"),
-            ("core/utilities/create_agent_directory/templates/brain_avatar_config.json", "core/configs/brain_avatar_config.json"),
+            (
+                "core/utilities/create_agent_directory/templates/brain_avatar_config.json",
+                "core/configs/brain_avatar_config.json",
+            ),
             ("core/utilities/create_agent_directory/templates/brain_mirrors.json", "core/configs/brain_mirrors.json"),
         )
+
+        # Iteration: process sequence items
 
         for template, target in render_operations:
             operations.append(
@@ -238,10 +301,14 @@ class CreateAgentDirectoryUseCase:
         agent_root = Path(request.parent_path) / agent_name
         staging_root = self._staging(agent_root)
 
+        # Conditional check: evaluate domain preconditions and invariants
+
         if self._exists(agent_root) or self._exists(staging_root):
             raise FileExistsError("destination or staging exists")
 
         operations = self.build_operations()
+
+        # Exception safety: execute operation within error boundary
 
         try:
             values = self._render_values(agent_root, agent_name, user_name)
@@ -258,7 +325,10 @@ class CreateAgentDirectoryUseCase:
                 operations,
                 execution,
             )
-            
+
+        # Failure recovery: handle execution or transport exception
+
         except Exception:
             self._rollback(staging_root)
+
             raise

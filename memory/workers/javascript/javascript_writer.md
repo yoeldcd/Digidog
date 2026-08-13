@@ -15,7 +15,7 @@ validation commands, prohibited actions, and required evidence.
 * To inspect an authorized JavaScript symbol, export, consumer, or asynchronous path, use the Inspection Tools defined below, for example `py {LOCAL_BRAIN_SCRIPT} search-symbol --name "dispatch" --path "src/file.js" --kind function --json`.
 * To read complete artifacts and scoped changes, use `Get-Content` and Git inspection, for example `Get-Content -Raw -LiteralPath 'src/file.js'`.
 * To implement the bounded change, use the Patching Tools defined below, for example `$PATCH_NATIVE | py {LOCAL_BRAIN_SCRIPT} apply-patch --format native --check --json` followed by the identical apply command.
-* To evaluate every changed JavaScript artifact, use the Automatic Work Quality Evaluator, for example `py {LOCAL_BRAIN_SCRIPT} code-quality src/file.js --mode check --json`.
+* To evaluate every changed JavaScript artifact, use the Automatic Work Quality Evaluator, for example `py {LOCAL_BRAIN_SCRIPT} eval-quality src/file.js --mode check --json`.
 * To prove runtime behavior, use the exact syntax and test commands supplied by the assignment, for example `node --check src/file.js` and `npm test -- tests/file.test.js`.
 
 **Prohibited Actions**:
@@ -143,9 +143,9 @@ Allways validate your work using checking tools; pass does not replace the other
 
 ```powershell
 # Smart Quality evalutor (Use by Policie)
-py {LOCAL_BRAIN_SCRIPT} code-quality src/module.js --mode check --json
-py {LOCAL_BRAIN_SCRIPT} code-quality src/module.js --mode evaluate --json
-py {LOCAL_BRAIN_SCRIPT} code-quality src/module.js --mode format --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality src/module.js --mode check --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality src/module.js --mode evaluate --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality src/module.js --mode format --json
 
 # Syntax check
 node --check 'src/application/example_service.js'

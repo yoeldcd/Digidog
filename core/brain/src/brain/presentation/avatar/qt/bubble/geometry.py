@@ -49,14 +49,32 @@ class QtBubbleGeometryMixin:
         Returns:
             None.
         """
+
+        # Conditional check: evaluate domain preconditions and invariants
         if vertically_detached:
             maximum_height = max(self.minimumHeight(), available_height or UNBOUNDED_WIDGET_HEIGHT)
         else:
             maximum_height = self._standard_maximum_height
 
         self.setMaximumHeight(maximum_height)
+
+        # Conditional check: evaluate domain preconditions and invariants
         if fit_content:
             self._fit_content_height()
+
+    def reset_geometry(self) -> None:
+        """Restore automatic bubble sizing and clear drag/resize state.
+
+        Returns:
+            None: The bubble returns to its default uncustomized dimensions.
+        """
+        self._drag_origin = None
+        self._resize_origin = None
+        self._hover_corner = ""
+        self._manual_size = False
+        self.setMaximumHeight(self._standard_maximum_height)
+        default_size = QSize(getattr(self, "_default_size", QSize(620, 180)))
+        self.resize(default_size)
 
     def set_vertical_placement(self, above_avatar: bool) -> None:
         """Keep navigation nearest the avatar by swapping header/footer order.
@@ -67,6 +85,8 @@ class QtBubbleGeometryMixin:
         Returns:
             None.
         """
+
+        # Conditional check: evaluate domain preconditions and invariants
         if self._placed_above == above_avatar:
             return
 
@@ -74,14 +94,17 @@ class QtBubbleGeometryMixin:
         layout = self.layout()
         sections = (self.header, self.separator_a, self.document_view, self.separator_b, self.footer)
 
+        # Loop execution: iterate over items
         for widget in sections:
             layout.removeWidget(widget)
 
+        # Conditional check: evaluate domain preconditions and invariants
         if above_avatar:
             ordered = sections
         else:
             ordered = (self.footer, self.separator_a, self.document_view, self.separator_b, self.header)
 
+        # Loop execution: iterate over items
         for widget in ordered:
             layout.addWidget(widget)
 
@@ -139,12 +162,15 @@ class QtBubbleGeometryMixin:
         Returns:
             None.
         """
+
+        # Conditional check: evaluate domain preconditions and invariants
         if not self.isVisible() or self._resize_origin:
             return
 
         local = self.mapFromGlobal(QCursor.pos())
         corner = self._resize_corner(QPointF(local)) if self.rect().contains(local) else ""
 
+        # Conditional check: evaluate domain preconditions and invariants
         if corner != self._hover_corner:
             self._hover_corner = corner
             self.update()
@@ -155,11 +181,14 @@ class QtBubbleGeometryMixin:
         Returns:
             None.
         """
+
+        # Conditional check: evaluate domain preconditions and invariants
         if self.layout():
             self.layout().activate()
 
         document = self.document_view.document()
         document.setTextWidth(max(220, self.document_view.width()))
+
         content_height = math.ceil(document.documentLayout().documentSize().height())
 
         layout_margins = self.layout().contentsMargins() if self.layout() else None
@@ -183,10 +212,62 @@ class QtBubbleGeometryMixin:
         """
         self._tail_target = QPointF(self.mapFromGlobal(global_target))
         actions_on_right = self._tail_target.x() >= self.width() / 2
+        self._sync_tail_layout_margins()
 
+        # Conditional check: evaluate domain preconditions and invariants
         if actions_on_right != self._footer_actions_on_right:
             self._rebuild_footer_layout(actions_on_right)
         self.update()
+
+    def _tail_side(self) -> str:
+        """Resolve the side currently facing the avatar tail target.
+
+        Returns:
+            str: One of top, bottom, left, or right.
+        """
+        delta_x = self._tail_target.x() - self.width() / 2
+        delta_y = self._tail_target.y() - self.height() / 2
+        normalized_x = delta_x / max(1, self.width() / 2)
+        normalized_y = delta_y / max(1, self.height() / 2)
+
+        # Conditional check: evaluate domain preconditions and invariants
+        if abs(normalized_x) > abs(normalized_y):
+            return "right" if delta_x >= 0 else "left"
+
+        return "bottom" if delta_y >= 0 else "top"
+
+    def _sync_tail_layout_margins(self) -> None:
+        """Reserve internal layout space only beside the active tail.
+
+        Returns:
+            None: Inactive sides use compact rounded-body padding.
+        """
+        layout = self.layout()
+
+        # Conditional check: evaluate domain preconditions and invariants
+        if layout is None:
+            return
+
+        outer_inset = 6
+        content_inset = 10
+        tail_space = 22
+        side = self._tail_side()
+
+        # Conditional check: evaluate domain preconditions and invariants
+        if side in {"top", "bottom"}:
+            left = content_inset + outer_inset
+            right = content_inset + outer_inset
+            vertical_inset = 17
+            top = content_inset + vertical_inset
+            bottom = content_inset + vertical_inset
+        else:
+            horizontal_inset = 17
+            left = content_inset + horizontal_inset
+            right = content_inset + horizontal_inset
+            top = content_inset + outer_inset
+            bottom = content_inset + outer_inset
+        layout.setContentsMargins(left, top, right, bottom)
+        layout.activate()
 
     def set_pinned(self, pinned: bool) -> None:
         """Keep window priority synchronized with its owning avatar.
@@ -200,6 +281,7 @@ class QtBubbleGeometryMixin:
         was_visible = self.isVisible()
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, pinned)
 
+        # Conditional check: evaluate domain preconditions and invariants
         if was_visible:
             self.show()
             self.raise_()
@@ -213,18 +295,43 @@ class QtBubbleGeometryMixin:
         Returns:
             str: Corner code ("nw", "ne", "sw", "se") or empty string if not over a corner.
         """
-        tail_space = 22
+        body = self._bubble_body_rect()
         corners = {
-            "nw": QPointF(tail_space, tail_space),
-            "ne": QPointF(self.width() - tail_space, tail_space),
-            "sw": QPointF(tail_space, self.height() - tail_space),
-            "se": QPointF(self.width() - tail_space, self.height() - tail_space),
+            "nw": body.topLeft(),
+            "ne": body.topRight(),
+            "sw": body.bottomLeft(),
+            "se": body.bottomRight(),
         }
         corner, distance = min(
             ((name, (position - point).manhattanLength()) for name, point in corners.items()),
             key=lambda item: item[1],
         )
         return corner if distance <= 22 else ""
+
+    def _bubble_body_rect(self) -> QRectF:
+        """Return the painted body rectangle for the current tail axis.
+
+        Returns:
+            QRectF: Body bounds shared by painting and resize-handle detection.
+        """
+        outer_inset = 6
+        balanced_tail_inset = 17
+        body = QRectF(
+            outer_inset,
+            outer_inset,
+            self.width() - outer_inset * 2,
+            self.height() - outer_inset * 2,
+        )
+
+        # Conditional check: evaluate domain preconditions and invariants
+        if self._tail_side() in {"top", "bottom"}:
+            body.setTop(balanced_tail_inset)
+            body.setBottom(self.height() - balanced_tail_inset)
+        else:
+            body.setLeft(balanced_tail_inset)
+            body.setRight(self.width() - balanced_tail_inset)
+
+        return body
 
     def mousePressEvent(self, event: object) -> None:  # noqa: N802 - Qt API
         """Begin a bubble drag or resize interaction.
@@ -235,16 +342,53 @@ class QtBubbleGeometryMixin:
         Returns:
             None.
         """
+
+        # Conditional check: evaluate domain preconditions and invariants
         if event.button() != Qt.MouseButton.LeftButton:
             return super().mousePressEvent(event)
 
         corner = self._resize_corner(event.position())
+
+        # Conditional check: evaluate domain preconditions and invariants
         if corner:
+            self._refresh_resize_height_limit()
             self._resize_origin = (corner, event.globalPosition().toPoint(), self.geometry())
         else:
             self._drag_origin = (event.globalPosition().toPoint(), self.pos())
 
         event.accept()
+
+    def _refresh_resize_height_limit(self) -> None:
+        """Recalculate the vertical resize ceiling from the live anchor edge.
+
+        Returns:
+            None: The next corner resize may use the complete viewport lane.
+        """
+        screen = QApplication.screenAt(self.frameGeometry().center())
+
+        # Conditional check: evaluate domain preconditions and invariants
+        if screen is None:
+            screen = QApplication.primaryScreen()
+
+        # Conditional check: evaluate domain preconditions and invariants
+        if screen is None:
+            return
+
+        viewport = screen.availableGeometry()
+        geometry = self.frameGeometry()
+        side = self._tail_side()
+
+        # Conditional check: evaluate domain preconditions and invariants
+        if side == "bottom":
+            maximum_height = geometry.bottom() - viewport.top() + 1
+
+        # Conditional check: evaluate domain preconditions and invariants
+        elif side == "top":
+            maximum_height = viewport.bottom() - geometry.top() + 1
+        else:
+            maximum_height = viewport.height()
+
+        self.setMaximumHeight(max(self.minimumHeight(), maximum_height))
 
     def mouseMoveEvent(self, event: object) -> None:  # noqa: N802 - Qt API
         """Move or resize the bubble from current pointer interaction.
@@ -255,16 +399,20 @@ class QtBubbleGeometryMixin:
         Returns:
             None.
         """
+
+        # Conditional check: evaluate domain preconditions and invariants
         if self._resize_origin:
             corner, pointer, geometry = self._resize_origin
             delta = event.globalPosition().toPoint() - pointer
             left, top, right, bottom = geometry.left(), geometry.top(), geometry.right(), geometry.bottom()
 
+            # Conditional check: evaluate domain preconditions and invariants
             if "w" in corner:
                 left = min(right - self.minimumWidth(), left + delta.x())
             else:
                 right = max(left + self.minimumWidth(), right + delta.x())
 
+            # Conditional check: evaluate domain preconditions and invariants
             if "n" in corner:
                 top = max(bottom - self.maximumHeight(), min(bottom - self.minimumHeight(), top + delta.y()))
             else:
@@ -272,6 +420,8 @@ class QtBubbleGeometryMixin:
 
             self.setGeometry(left, top, right - left + 1, bottom - top + 1)
             self._manual_size = True
+
+        # Conditional check: evaluate domain preconditions and invariants
         elif self._drag_origin:
             pointer, origin = self._drag_origin
             self.move(origin + event.globalPosition().toPoint() - pointer)
@@ -301,6 +451,7 @@ class QtBubbleGeometryMixin:
         self._drag_origin = None
         self._resize_origin = None
 
+        # Conditional check: evaluate domain preconditions and invariants
         if was_manipulating:
             self.manuallyMoved.emit()
 
@@ -329,12 +480,15 @@ class QtBubbleGeometryMixin:
             None.
         """
         super().resizeEvent(event)
+
+        # Conditional check: evaluate domain preconditions and invariants
         if self.layout():
             self.layout().activate()
 
         self._position_close_button()
         self._refresh_header_label()
 
+        # Conditional check: evaluate domain preconditions and invariants
         if self._last_image_dimensions or "<img" in self.document_view.document().toHtml():
             self._apply_image_dimensions(self._last_image_dimensions)
 
@@ -368,21 +522,17 @@ class QtBubbleGeometryMixin:
         painter.setPen(QPen(QColor("#ff74c4" if dark else "#f062b7"), 3))
         painter.setBrush(QColor("#1f1722" if dark else "#fff8fd"))
 
+        delta_x = self._tail_target.x() - self.width() / 2
+        delta_y = self._tail_target.y() - self.height() / 2
+        side = self._tail_side()
+
         tail_space = 22
-        body = QRectF(tail_space, tail_space, self.width() - tail_space * 2, self.height() - tail_space * 2)
+        body = self._bubble_body_rect()
+
         body_path = QPainterPath()
         body_path.addRoundedRect(body, 16, 16)
 
-        delta_x = self._tail_target.x() - self.width() / 2
-        delta_y = self._tail_target.y() - self.height() / 2
-        normalized_x = delta_x / max(1, self.width() / 2)
-        normalized_y = delta_y / max(1, self.height() / 2)
-
-        if abs(normalized_x) > abs(normalized_y):
-            side = "right" if delta_x >= 0 else "left"
-        else:
-            side = "bottom" if delta_y >= 0 else "top"
-
+        # Conditional check: evaluate domain preconditions and invariants
         if side in {"top", "bottom"}:
             target = max(body.left() + 20, min(body.right() - 20, self._tail_target.x()))
             edge = body.top() + 4 if side == "top" else body.bottom() - 4
@@ -399,8 +549,14 @@ class QtBubbleGeometryMixin:
         tail_path.closeSubpath()
         painter.drawPath(body_path.united(tail_path))
 
+        # Conditional check: evaluate domain preconditions and invariants
         if self._hover_corner:
-            corners = {"nw": body.topLeft(), "ne": body.topRight(), "sw": body.bottomLeft(), "se": body.bottomRight()}
+            corners = {
+                "nw": body.topLeft(),
+                "ne": body.topRight(),
+                "sw": body.bottomLeft(),
+                "se": body.bottomRight(),
+            }
             painter.setPen(QPen(QColor("#1f1722" if dark else "#ffffff"), 1))
             painter.setBrush(QColor("#f062b7"))
             painter.drawEllipse(corners[self._hover_corner], 5, 5)

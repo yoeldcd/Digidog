@@ -11,10 +11,9 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Any
 
 from brain.application.profiles.service import profile_summaries
-from brain.infrastructure.runtime.paths import get_agent_home
+from brain.infrastructure.runtime.paths import get_agent_home, get_workspace_root
 from brain.presentation.terminal import log_step, render_markdown, render_placeholders
 
 
@@ -29,7 +28,7 @@ def _looks_like_embedding_failure(error: object) -> bool:
         return "embedding" in message or "winerror 10013" in message
 
 
-def _embedding_notice(error: object | None = None) -> dict[str, Any]:
+def _embedding_notice(error: object | None = None) -> dict[str, object]:
     """Return a deterministic-context notice with a recovery guide."""
     return {
         "kind": "notice",
@@ -41,7 +40,7 @@ def _embedding_notice(error: object | None = None) -> dict[str, Any]:
     }
 
 
-def _profiles_section(agent_home: Path) -> dict[str, Any]:
+def _profiles_section(agent_home: Path) -> dict[str, object]:
     """Build structured profile context."""
     profiles_dir = agent_home / "memory" / "profiles"
     if not profiles_dir.exists():
@@ -66,16 +65,19 @@ def _memory_section() -> dict[str, str]:
     """Build compact operational guidance for durable memory access."""
     return {
         "kind": "memory",
-        "use_when": "Use when durable context, preferences, relationships, notes, or reusable knowledge must be read or updated.",
+        "use_when": (
+            "Use when durable context, preferences, relationships, notes, "
+            "or reusable knowledge must be read or updated."
+        ),
         "get_structure_command": "memory-structure",
         "read_entry_template": "get-memory-entry <DOMAIN> [KEY]",
         "write_item_template": "set-memory-entry <DOMAIN> <KEY> <CONTENT>",
     }
 
 
-def _diary_header_items(path: Path, content: str) -> list[dict[str, Any]]:
+def _diary_header_items(path: Path, content: str) -> list[dict[str, object]]:
     """Build compact retrieval records for the headings in one diary file."""
-    header_items: list[dict[str, Any]] = []
+    header_items: list[dict[str, object]] = []
     headers = [line[3:].strip() for line in content.splitlines() if line.startswith("## ")]
     if not headers:
         return [
@@ -99,7 +101,7 @@ def _diary_header_items(path: Path, content: str) -> list[dict[str, Any]]:
     return header_items
 
 
-def _policies_section() -> dict[str, Any]:
+def _policies_section() -> dict[str, object]:
     """Build the always-on local policies section for every hydrated context."""
     from brain.application.records.service import list_live_records
 
@@ -113,7 +115,7 @@ def _policies_section() -> dict[str, Any]:
         "policies": {policy.id: policy.text for policy in policies},
     }
 
-def _diary_section(agent_home: Path, limit_diary: int) -> dict[str, Any]:
+def _diary_section(agent_home: Path, limit_diary: int) -> dict[str, object]:
     """Build structured diary index context."""
     diary_dir = agent_home / "memory" / "diary"
     diary_files: list[tuple[datetime.date, Path]] = []
@@ -124,7 +126,7 @@ def _diary_section(agent_home: Path, limit_diary: int) -> dict[str, Any]:
             except ValueError:
                 continue
     diary_files.sort(key=lambda item: item[0], reverse=True)
-    items: list[dict[str, Any]] = []
+    items: list[dict[str, object]] = []
     for _, path in diary_files[:limit_diary]:
         try:
             content = path.read_text(encoding="utf-8")
@@ -144,9 +146,9 @@ def _diary_section(agent_home: Path, limit_diary: int) -> dict[str, Any]:
     }
 
 
-def _parse_log_index_items(domain_lines: list[str]) -> list[dict[str, Any]]:
+def _parse_log_index_items(domain_lines: list[str]) -> list[dict[str, object]]:
     """Parse rendered log-index Markdown into compact domain records."""
-    items: list[dict[str, Any]] = []
+    items: list[dict[str, object]] = []
     stack: list[str] = []
     for line in domain_lines:
         heading = re.match(r"^(#{2,4})\s+(.+)$", line)
@@ -183,7 +185,10 @@ def _parse_log_index_items(domain_lines: list[str]) -> list[dict[str, Any]]:
     return items
 
 
-def _logs_section(workspace_root: Path, domain_filter: str | None = None) -> tuple[dict[str, Any], str | None]:
+def _logs_section(
+    workspace_root: Path,
+    domain_filter: str | None = None,
+) -> tuple[dict[str, object], str | None]:
     """Build structured workspace changelog context."""
     embedding_warning: str | None = None
     try:
@@ -218,7 +223,7 @@ def _logs_section(workspace_root: Path, domain_filter: str | None = None) -> tup
         }, embedding_warning
 
 
-def _system_section() -> dict[str, Any]:
+def _system_section() -> dict[str, object]:
     """Build structured diagnostics context."""
     from brain.application.memory.diagnostics import doctor_report
 
@@ -227,17 +232,21 @@ def _system_section() -> dict[str, Any]:
         "kind": "system",
         "title": "System Checkings",
         "status": "ok" if report["ok"] else "error",
-        "summary": "Memory layout compliance check passed." if report["ok"] else "Memory layout compliance check has errors.",
+        "summary": (
+            "Memory layout compliance check passed."
+            if report["ok"]
+            else "Memory layout compliance check has errors."
+        ),
         "errors": report.get("errors", []),
     }
 
 
-def _build_payload(args: argparse.Namespace) -> dict[str, Any]:
+def _build_payload(args: argparse.Namespace) -> dict[str, object]:
     """Build a structured context payload."""
     limit_diary = args.limit_diary
-    workspace_root = Path(os.environ.get("WORKSPACE_ROOT", ".")).resolve()
+    workspace_root = get_workspace_root()
     agent_home = get_agent_home()
-    sections: list[dict[str, Any]] = [
+    sections: list[dict[str, object]] = [
         {
             "kind": "workspace",
             "title": "Workspace Root",
@@ -281,7 +290,7 @@ def _build_payload(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
-def _render_payload(payload: dict[str, Any]) -> str:
+def _render_payload(payload: dict[str, object]) -> str:
     """Render the structured context payload as Markdown."""
     output: list[str] = [
         "# AGENT CONTEXT HYDRATION",

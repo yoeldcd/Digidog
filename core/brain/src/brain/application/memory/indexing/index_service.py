@@ -13,14 +13,38 @@ from brain.application.sources.registry_service import refresh_source_registry
 from brain.domain.sources.classification import memory_source_type
 from brain.domain.sources.models import SourceRegistryRecordDTO
 from brain.infrastructure.sources.registry.records import list_source_registry_records
+from brain.infrastructure.sources.scanning import scan_source_file_record
 
 
-def build_full_index() -> dict:
+def _index_file_records() -> list[SourceRegistryRecordDTO]:
+    """Build transient source records for memory router indexes.
+
+    Returns:
+        list[SourceRegistryRecordDTO]: Root and domain index records without
+            persisting them in the shared knowledge-source registry.
+    """
+    return [
+        scan_source_file_record(
+            file_path=index_path,
+            root=paths.MEMORY_ROOT,
+            root_prefix="memory",
+            source_type_resolver=memory_source_type,
+        )
+        for index_path in sorted(paths.MEMORY_ROOT.rglob("index.md"))
+        if index_path.is_file()
+    ]
+
+
+def build_full_index(include_indexes: bool = False) -> dict:
     """
     Refresh the memory source registry and return a tree-shaped view.
 
     Vector synchronization is intentionally owned by `update-vectorstore`,
     so memory index refreshes stay a cheap filesystem/SQLite operation.
+
+    Args:
+        include_indexes: Whether transient index records should appear in the
+            returned tree without entering the knowledge-source registry.
 
     Returns:
         dict: Memory source tree reconstructed from `brain_sources.db`.
@@ -38,17 +62,29 @@ def build_full_index() -> dict:
         root_prefix="memory",
         active_only=True,
     )
+    if include_indexes:
+        records_by_path: dict[str, SourceRegistryRecordDTO] = {
+            record.path: record
+            for record in records
+        }
+        for index_record in _index_file_records():
+            records_by_path[index_record.path] = index_record
+        records = list(records_by_path.values())
     return records_to_tree(records=records)
 
 
-def load_index() -> dict:
+def load_index(include_indexes: bool = False) -> dict:
     """
     Load the current memory source tree from SQLite.
+
+    Args:
+        include_indexes: Whether root and domain index files should appear as
+            transient records in the returned tree.
 
     Returns:
         dict: Memory source tree reconstructed from `brain_sources.db`.
     """
-    return build_full_index()
+    return build_full_index(include_indexes=include_indexes)
 
 
 def update_index_category(category: str, deleted: bool = False) -> None:

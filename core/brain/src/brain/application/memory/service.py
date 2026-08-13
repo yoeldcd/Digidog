@@ -92,7 +92,7 @@ def read_instance(category: str, key: str) -> str:
     try:
         return file_path.read_text(encoding="utf-8")
     except Exception as exc:
-        raise paths.BrainStoreError(f"Could not read file {file_path}: {exc}") from exc
+        raise paths.BrainStoreError(f"Could not read memory entry '{key}' in category '{category}': {exc}") from exc
 
 
 def delete_instance(category: str, key: str) -> None:

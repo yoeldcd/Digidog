@@ -231,13 +231,13 @@ def test_history_navigation_changes_visual_only_and_preserves_provenance() -> No
     window.show()
     window._set_text("Nuevo", "happy", "new", r"D:\new", 2)
     short_height = window.bubble.height()
-    # The windows may overlap vertically while the bubble is still relatively above.
-    # Orientation must follow their real centers, not a strict edge-gap threshold.
-    window.bubble.move(window.x(), window.frameGeometry().center().y() - short_height)
+    window.bubble.move(
+        window.x(),
+        window.frameGeometry().top() - short_height + 5,
+    )
     window.bubble.set_vertical_placement(True)
     assert window._bubble_is_above_avatar()
-    assert window.bubble.geometry().bottom() > window.frameGeometry().top()
-    anchored_bottom = window.bubble.geometry().bottom()
+    anchored_bottom = window.frameGeometry().top() - 1
     anchored_x = window.bubble.x()
     with patch.object(window, "_message_history", return_value=history), patch.object(window, "_post") as post:
         window._navigate_message(-1)
@@ -246,12 +246,14 @@ def test_history_navigation_changes_visual_only_and_preserves_provenance() -> No
         assert window.bubble.source_label.toolTip() == r"D:\old"
         assert window.bubble.x() == anchored_x
         assert window.bubble.geometry().bottom() == anchored_bottom
+        assert not window.bubble.frameGeometry().intersects(window.frameGeometry())
         assert window.bubble.layout().indexOf(window.bubble.footer) == 4
         assert short_height < window.bubble.height() <= window.bubble.maximumHeight()
         window._navigate_message(1)
     assert "Nuevo" in window.bubble.document_view.toPlainText()
     assert window.bubble.x() == anchored_x
     assert window.bubble.geometry().bottom() == anchored_bottom
+    assert not window.bubble.frameGeometry().intersects(window.frameGeometry())
     post.assert_not_called()
     window.close()
 

@@ -453,8 +453,9 @@ directory; workspace-local paths come from `workspace_root`.
 
 **Used By:** Tests, `create-brain`-style tooling, and future batch migration helpers.
 
-**Contract:** When omitted, the migrator resolves the active working directory or `WORKSPACE_ROOT`. The local
-runtime target remains `$agent/database` under this root.
+**Contract:** When omitted, the migrator requires `WORKSPACE_ROOT`, as exported by the consumer Brain facade.
+Without an explicit argument or that environment binding, it raises before creating local runtime storage. The
+local runtime target remains `$agent/database` under the resolved consumer root.
 
 ## Service Contracts:
 

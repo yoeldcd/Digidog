@@ -14,7 +14,7 @@ The assignment must define the document outcome, authorized reads and writes, li
 * To read an authorized Markdown document completely and inspect its scoped changes, use the Inspection Tools defined below, for example `Get-Content -Raw -LiteralPath 'documentation/README.md'` and `git diff -- documentation/README.md`.
 * To locate a heading, anchor, link, fence, placeholder, or protected literal, use scoped text search, for example `rg -n "## Installation|LOCAL_BRAIN_SCRIPT" documentation/README.md`.
 * To implement the bounded document change, use the Patching Tools defined below, for example `$PATCH_NATIVE | py {LOCAL_BRAIN_SCRIPT} apply-patch --format native --check --json` followed by the identical apply command.
-* To evaluate every changed Markdown artifact, use the Automatic Work Quality Evaluator, for example `py {LOCAL_BRAIN_SCRIPT} code-quality documentation/README.md --mode check --json`.
+* To evaluate every changed Markdown artifact, use the Automatic Work Quality Evaluator, for example `py {LOCAL_BRAIN_SCRIPT} eval-quality documentation/README.md --mode check --json`.
 * To verify structure and repository integrity, use the exact Markdown checks supplied by the assignment together with `git diff --check`.
 
 **Prohibited Actions**:
@@ -142,9 +142,9 @@ Allways validate your work using checking tools; pass does not replace the other
 
 ```powershell
 # Smart Quality evalutor (Use by Policie)
-py {LOCAL_BRAIN_SCRIPT} code-quality src/doc.md --mode check --json
-py {LOCAL_BRAIN_SCRIPT} code-quality src/doc.md --mode evaluate --json
-py {LOCAL_BRAIN_SCRIPT} code-quality src/doc.md --mode format --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality src/doc.md --mode check --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality src/doc.md --mode evaluate --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality src/doc.md --mode format --json
 
 Use `rg` for exact occurrence counts, `git diff -- relative/path.md` for scoped review, `git diff --check` for whitespace errors, and an existing Markdown linter only when requested.
 

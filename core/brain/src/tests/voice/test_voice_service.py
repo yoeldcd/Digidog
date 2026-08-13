@@ -1,7 +1,11 @@
 # Author: Yoel David <yoeldcd@gmail.com>
 # X: https://x.com/SAY6267
 
-'Voice client, configuration, and service adapter contracts.'
+"""Voice client, configuration, and service adapter contracts.
+
+Tests synchronous and asynchronous speak dispatch, input validation, repeat-last
+dialogue operations, and voice catalog inspection routing.
+"""
 
 from argparse import Namespace
 from io import StringIO
@@ -116,6 +120,38 @@ def test_explicit_daemon_start_propagates_dark_theme() -> None:
     assert request.call_args_list[0] == call(path="/theme", method="POST", payload={"mode": "dark"})
 
 
+def test_avatar_service_defaults_to_dark_and_preserves_explicit_light(monkeypatch) -> None:
+    """Keep the CLI default and runtime default aligned on dark theme.
+
+    Args:
+        No external arguments are accepted; pytest invokes the scenario.
+
+    Returns:
+        None: Assertions validate omitted and explicit theme behavior.
+    """
+
+    monkeypatch.setenv("WORKSPACE_ROOT", str(Path.cwd()))
+
+    from brain.presentation.commands.registry import COMMAND_MODULES
+    from brain.presentation.parser.services.argument_parser_service import build_argument_parser
+
+    parser = build_argument_parser(COMMAND_MODULES)
+    assert parser.parse_args(["start-avatar-service"]).mode == "dark"
+    assert parser.parse_args(["start-avatar-service", "--mode", "light"]).mode == "light"
+
+    memory = VoiceMemory()
+    assert memory.status()["themeMode"] == "dark"
+    assert memory.set_theme_mode("light") == "light"
+    assert memory.status()["themeMode"] == "light"
+
+    try:
+        VoiceDaemonClient().start(mode="sepia")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("Unsupported themes must be rejected before startup.")
+
+
 def test_voice_memory_exposes_validated_theme_in_status() -> None:
     memory = VoiceMemory()
     assert memory.set_theme_mode("dark") == "dark"
@@ -156,7 +192,12 @@ def test_avatar_message_accepts_one_stdin_json_envelope() -> None:
         emotion="happy",
         codex_thread_id="thread-1",
     )
-    assert args.json_payload["characters"] == len("Hola desde stdin")
+    assert args.json_payload == {
+        "ok": True,
+        "command": "speak",
+        "state": "SPEAKED",
+        "instruction": "continue",
+    }
 
 
 def test_daemon_client_attaches_nearest_consumer_repository() -> None:

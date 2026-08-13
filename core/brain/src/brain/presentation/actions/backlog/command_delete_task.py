@@ -12,6 +12,7 @@ from pathlib import Path
 
 from brain.presentation.terminal import render_placeholders, log_step
 from brain.application.backlog.service import BacklogTaskDeletionError, BacklogTaskNotFoundError, remove_backlog_task
+from brain.infrastructure.runtime.paths import get_workspace_root
 
 
 
@@ -25,7 +26,7 @@ def handle(args: argparse.Namespace) -> int:
     Returns:
         int: Zero when the task is deleted; otherwise one after reporting an error.
     """
-    workspace_root = Path(os.environ.get("WORKSPACE_ROOT", ".")).resolve()
+    workspace_root = get_workspace_root()
     color_enabled = getattr(args, "color", False)
 
     log_step(args, f"Deleting task '{args.task_id}'...")

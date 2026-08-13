@@ -37,7 +37,7 @@ ALLOWED_ROOT_SHIMS = {
 }
 VOICE_SHIMS: set[str] = set()
 SHARED_CONTRACT_MODULES = (
-    AVATAR_ROOT / "communication" / "daemon_projection.py",
+    AVATAR_ROOT / "communication" / "projection" / "daemon_status.py",
     AVATAR_ROOT / "interactivity" / "history_controller.py",
     AVATAR_ROOT / "interactivity" / "interaction_controller.py",
     AVATAR_ROOT / "interactivity" / "presentation_state.py",

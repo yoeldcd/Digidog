@@ -3,13 +3,13 @@
 
 """Bidirectional communication contracts for the avatar presentation."""
 
-from brain.presentation.avatar.communication.models import (
+from brain.presentation.avatar.communication.contracts.models import (
     CodexThreadTargetDTO,
     DeliveryMode,
     ReplyRequestDTO,
     ReplyResultDTO,
 )
-from brain.presentation.avatar.communication.service import AvatarReplyService
+from brain.presentation.avatar.communication.reply.service import AvatarReplyService
 
 __all__ = [
     "AvatarReplyService",

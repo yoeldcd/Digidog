@@ -35,6 +35,7 @@ ACTION_HANDLERS: dict[str, str] = {
     "clone-snippet": "brain.presentation.actions.snippets.command_clone_snippet",
     "wiki": "brain.presentation.actions.utilities.command_wiki",
     "apply-patch": "brain.presentation.actions.utilities.command_apply_patch",
+    "code-quality": "brain.presentation.actions.utilities.command_code_quality",
     "propagate-agent-prompt": "brain.presentation.actions.utilities.command_propagate_agent_prompt",
     "search-symbol": "brain.presentation.actions.utilities.command_search_symbol",
     "update-vectorstore": "brain.presentation.actions.vectorstore.command_update_vectorstore",

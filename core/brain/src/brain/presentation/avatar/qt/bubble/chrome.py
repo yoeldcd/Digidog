@@ -88,7 +88,7 @@ class QtBubbleChromeMixin:
             QToolButton: Configured reply button widget.
         """
         button = QToolButton(self.footer)
-        button.setText("\u21a9")
+        button.setText("💭")
         button.setAccessibleName("Responder en Codex")
         button.setToolTip("Responder a este task de Codex")
         button.setFixedSize(26, 24)
@@ -97,9 +97,31 @@ class QtBubbleChromeMixin:
             "QToolButton { color: #6f3158; background: transparent; border: 0; font: 700 16px Arial; }"
             "QToolButton:hover { color: #f062b7; } QToolButton:disabled { color: #c6afbd; }"
         )
-        button.clicked.connect(self.replyRequested.emit)
+        button.clicked.connect(self._emit_reply_requested)
         button.setEnabled(False)
         return button
+
+    def _emit_reply_requested(self, _checked: bool = False) -> None:
+        """Emit one reply request while suppressing synchronous re-entry.
+
+        Args:
+            _checked: Qt's optional check-state argument from the clicked signal.
+
+        Returns:
+            None: One guarded request is emitted for the current click.
+        """
+
+        # Conditional check: evaluate domain preconditions and invariants
+        if getattr(self, "_reply_request_emitting", False):
+            return
+
+        self._reply_request_emitting = True
+
+        # Exception safety: execute operation within protected error boundary
+        try:
+            self.replyRequested.emit()
+        finally:
+            self._reply_request_emitting = False
 
     def _zoom_button(self, text: str, accessible_name: str, direction: int) -> QToolButton:
         """Create one message-scale control beside the reply action.
@@ -130,6 +152,8 @@ class QtBubbleChromeMixin:
         Returns:
             None.
         """
+
+        # Loop execution: process until boundary condition is satisfied
         while self.footer_layout.count():
             self.footer_layout.takeAt(0)
 
@@ -138,18 +162,25 @@ class QtBubbleChromeMixin:
         action_width = sum(widget.width() for widget in actions) + self.footer_layout.spacing() * (len(actions) - 1)
         self.remaining_label.setFixedWidth(action_width)
 
+        # Conditional check: evaluate domain preconditions and invariants
         if not actions_on_right:
+            # Loop execution: iterate over items
             for widget in actions:
                 self.footer_layout.addWidget(widget)
         else:
             self.footer_layout.addWidget(self.remaining_label)
 
         self.footer_layout.addStretch(1)
+
+        # Loop execution: iterate over items
         for widget in navigation:
             self.footer_layout.addWidget(widget)
 
         self.footer_layout.addStretch(1)
+
+        # Conditional check: evaluate domain preconditions and invariants
         if actions_on_right:
+            # Loop execution: iterate over items
             for widget in reversed(actions):
                 self.footer_layout.addWidget(widget)
         else:
@@ -180,6 +211,8 @@ class QtBubbleChromeMixin:
         Returns:
             str: Stylesheet string for navigation buttons.
         """
+
+        # Conditional check: evaluate domain preconditions and invariants
         if dark:
             return (
                 "QToolButton { color: #fff4fb; background: #302832; border: 1px solid #a96b91; "
@@ -224,6 +257,8 @@ class QtBubbleChromeMixin:
             None.
         """
         next_step = max(-3, min(4, self._zoom_step + direction))
+
+        # Conditional check: evaluate domain preconditions and invariants
         if next_step == self._zoom_step:
             return
 
@@ -249,11 +284,15 @@ class QtBubbleChromeMixin:
         document = self.document_view.document()
         block = document.begin()
 
+        # Loop execution: process until boundary condition is satisfied
         while block.isValid():
             iterator = block.begin()
 
+            # Loop execution: process until boundary condition is satisfied
             while not iterator.atEnd():
                 fragment = iterator.fragment()
+
+                # Conditional check: evaluate domain preconditions and invariants
                 if fragment.isValid() and not fragment.charFormat().isImageFormat():
                     char_format = fragment.charFormat()
                     point_size = char_format.font().pointSizeF()

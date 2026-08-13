@@ -32,7 +32,7 @@ class FilesystemOperationExecutor:
             target_root: Root receiving generated resources.
             renderer: Optional template-to-text callable.
         """
-        
+
         self._source = source_root.resolve()
         self._target = target_root.resolve()
         self._renderer = renderer
@@ -50,22 +50,22 @@ class FilesystemOperationExecutor:
         """
         executable: list[tuple[ChangeOperationDTO, tuple[ChangeOperationDTO, ...]]] = []
         index = 0
-        
+
         while index < len(operations):
             operation = operations[index]
             if operation.strategy is ChangeOperationStrategy.EXCLUDE:
                 raise ValueError("EXCLUDE must immediately follow a COPY operation")
             exclusions: list[ChangeOperationDTO] = []
             index += 1
-        
+
             while index < len(operations) and operations[index].strategy is ChangeOperationStrategy.EXCLUDE:
                 exclusions.append(operations[index])
                 index += 1
-        
+
             if exclusions and operation.strategy is not ChangeOperationStrategy.COPY:
                 raise ValueError("EXCLUDE metadata must follow COPY")
             executable.append((operation, tuple(exclusions)))
-        
+
         results = tuple(self._execute_operation(operation, exclusions) for operation, exclusions in executable)
         changed_count = sum(result.changed for result in results)
         return SynchronizationResult(len(results), changed_count, len(results) - changed_count, results)
@@ -85,23 +85,23 @@ class FilesystemOperationExecutor:
         """
 
         destination = self._safe(self._target, operation.target)
-        
+
         if operation.strategy is ChangeOperationStrategy.RENDER:
             if exclusions or self._renderer is None or operation.template is None:
                 raise ValueError("renderer required and EXCLUDE is invalid")
             return OperationResult(str(operation.target), operation.strategy.value, self._atomic_write(destination, self._renderer(operation.template).encode("utf-8")))
         source = self._safe(self._source, operation.source)
-        
+
         if exclusions:
             self._validate_exclusions(operation, exclusions)
-        
+
         if operation.strategy is ChangeOperationStrategy.COPY and source.is_dir():
             changed = self._copy_directory(source, destination, operation, exclusions)
             return OperationResult(str(operation.target), operation.strategy.value, changed)
-        
+
         if exclusions:
             raise ValueError("file COPY cannot have EXCLUDE children")
-        
+
         if operation.strategy is ChangeOperationStrategy.MERGE:
             source_data = json.loads(source.read_text(encoding="utf-8"))
 
@@ -118,7 +118,7 @@ class FilesystemOperationExecutor:
             changed = self._atomic_write(destination, content.encode("utf-8"))
         else:
             changed = self._atomic_write(destination, source.read_bytes())
-        
+
         return OperationResult(str(operation.target), operation.strategy.value, changed)
 
     def _copy_directory(self, source: Path, destination: Path, operation: ChangeOperationDTO, exclusions: tuple[ChangeOperationDTO, ...]) -> bool:
@@ -132,13 +132,13 @@ class FilesystemOperationExecutor:
         Returns:
             bool: Whether any file changed or stale entry was removed.
         """
-        
+
         excluded = tuple((item.source, item.target) for item in exclusions)
         destination_created = not destination.exists()
         destination.mkdir(parents=True, exist_ok=True)
         changed = destination_created
         copied: set[Path] = set()
-        
+
         for root, _, files in os.walk(source):
             for filename in files:
                 source_file = Path(root) / filename
@@ -149,18 +149,18 @@ class FilesystemOperationExecutor:
                 if self._atomic_write(target_file, source_file.read_bytes()):
                     changed = True
                 copied.add(relative)
-        
+
         if operation.remove_stale and destination.exists():
             for root, dirs, files in os.walk(destination, topdown=False):
                 root_path = Path(root)
-        
+
                 for filename in files:
                     relative = (root_path / filename).relative_to(destination)
                     if relative in copied or any(self._is_excluded(relative, tgt.relative_to(operation.target)) for _, tgt in excluded):
                         continue
                     (root_path / filename).unlink()
                     changed = True
-        
+
                 for dirname in dirs:
                     directory = root_path / dirname
                     try:
@@ -168,7 +168,7 @@ class FilesystemOperationExecutor:
                         changed = True
                     except OSError:
                         pass
-        
+
         return changed
 
     def _validate_exclusions(self, operation: ChangeOperationDTO, exclusions: tuple[ChangeOperationDTO, ...]) -> None:
@@ -180,7 +180,7 @@ class FilesystemOperationExecutor:
         Raises:
             ValueError: If metadata is not nested under both parent paths.
         """
-        
+
         for metadata in exclusions:
             if not self._is_nested(metadata.source, operation.source) or not self._is_nested(metadata.target, operation.target):
                 raise ValueError("EXCLUDE paths must be nested under COPY")
@@ -188,13 +188,13 @@ class FilesystemOperationExecutor:
     @staticmethod
     def _is_nested(candidate: Path, parent: Path) -> bool:
         """Return whether candidate is equal to or nested under parent."""
-        
+
         return candidate == parent or parent in candidate.parents
 
     @staticmethod
     def _is_excluded(relative: Path, excluded: Path) -> bool:
         """Return whether relative identifies an excluded path or descendant."""
-        
+
         return relative == excluded or excluded in relative.parents
 
     @staticmethod
@@ -210,7 +210,7 @@ class FilesystemOperationExecutor:
             ValueError: If the resolved path escapes root.
         """
         path = (root / relative).resolve()
-        
+
         if root not in path.parents and path != root:
             raise ValueError("path escapes root")
         return path
@@ -227,14 +227,14 @@ class FilesystemOperationExecutor:
         Raises:
             OSError: If staging or replacement fails.
         """
-        
+
         destination.parent.mkdir(parents=True, exist_ok=True)
-        
+
         if destination.exists() and destination.read_bytes() == content:
             return False
-        
+
         descriptor, temporary = tempfile.mkstemp(dir=destination.parent, prefix=".tmp-")
-        
+
         try:
             with os.fdopen(descriptor, "wb") as handle:
                 handle.write(content)

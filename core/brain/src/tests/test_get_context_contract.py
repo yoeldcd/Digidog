@@ -4,7 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from brain.application.profiles.service import get_profiles_dir, profile_summaries
+from brain.application.profiles.service import discover_profile_names, get_profiles_dir, profile_summaries
 from brain.presentation.actions.general.command_get_context import (
     _diary_header_items,
     _memory_section,
@@ -82,7 +82,23 @@ def test_profile_context_items_include_root_usage_guidance() -> None:
     assert profiles
     assert all(set(profile) == {"id", "name", "retrieve_command", "use_when"} for profile in profiles)
     assert all(isinstance(profile["id"], int) for profile in profiles)
-    assert all(str(profile["use_when"]).startswith("Use ") for profile in profiles)
+    developer = next(profile for profile in profiles if profile["name"] == "developer")
+    assert "software design" in str(developer["use_when"])
+    assert "profiles.researcher" not in str(developer["use_when"])
+
+
+def test_profile_discovery_excludes_the_router_index(tmp_path: Path) -> None:
+    """Do not expose the profile router index as a selectable profile."""
+    profiles_dir = tmp_path / "profiles"
+    developer_dir = profiles_dir / "developer"
+    developer_dir.mkdir(parents=True)
+    (profiles_dir / "index.md").write_text("# Profile router\n", encoding="utf-8")
+    (profiles_dir / "legacy.md").write_text("# Legacy profile\n", encoding="utf-8")
+    (developer_dir / "usage.md").write_text("Use for development.\n", encoding="utf-8")
+
+    names = discover_profile_names(profiles_dir)
+
+    assert names == ["developer", "legacy"]
 
 
 def test_memory_context_section_exposes_only_operational_guidance() -> None:

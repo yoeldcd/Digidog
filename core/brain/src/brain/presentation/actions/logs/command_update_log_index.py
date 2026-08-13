@@ -13,10 +13,11 @@ from pathlib import Path
 # Application Modules Imports
 from brain.application.logs.index_service import migrate_legacy_log_files_to_database, migrate_log_files_to_database
 from brain.application.logs.store import get_logs_database_path, log_database_summary
+from brain.infrastructure.runtime.paths import get_workspace_root
 from brain.presentation.terminal import log_step, render_placeholders
 
 
-WORKSPACE_ROOT = Path(os.environ.get("WORKSPACE_ROOT", "."))
+WORKSPACE_ROOT: Path | None = None
 
 
 def _log_update_step(args: argparse.Namespace, message: str) -> None:
@@ -38,7 +39,7 @@ def handle(args: argparse.Namespace) -> int:
     color_enabled = getattr(args, "color", False)
     verbose_enabled = getattr(args, "verbose_log", False)
     try:
-        workspace_root = Path(WORKSPACE_ROOT).resolve()
+        workspace_root = get_workspace_root(workspace_root=WORKSPACE_ROOT)
         mode = getattr(args, "mode", None)
         if mode is not None and mode.lower() != "fix":
             msg = "__RED__Error: update-log-index compact mode must be 'fix'.__RESET__"

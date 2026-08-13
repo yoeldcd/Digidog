@@ -186,6 +186,12 @@ def _dispatch_json(
         raise
 
     output = captured.getvalue()
+
+    if getattr(args, "raw_document_output", False):
+        print(output, end="")
+        _sync_successful_task(voice_service, command_name, args, exit_code)
+        return exit_code
+
     payload, has_semantic_payload = _resolve_json_payload(
         args,
         command_name,

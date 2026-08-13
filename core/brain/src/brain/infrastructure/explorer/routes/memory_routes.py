@@ -74,7 +74,7 @@ class MemoryRoutesMixin:
         """
         if method == "GET":
             domain, key = split_memory_path(query=query)
-            arguments = ["get-memory-entry", domain, "--json"]
+            arguments = ["get-memory-entry", domain, "--json", "--json-envelope"]
             if key:
                 arguments.insert(2, key)
             return self._run_cli(arguments).to_payload()

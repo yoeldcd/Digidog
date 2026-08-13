@@ -13,7 +13,6 @@ from pathlib import Path
 from brain.application.memory.paths import BrainStoreError, validate_part_name
 from brain.infrastructure.runtime.paths import get_agent_home, get_workspace_root
 
-
 PROFILE_TEMPLATE_VARIABLES = (
     "BRAIN_HOME",
     "WORKSPACE_ROOT",
@@ -23,7 +22,9 @@ PROFILE_TEMPLATE_VARIABLES = (
 )
 """Runtime path variables supported in persisted profile and memory content."""
 
-PROFILE_SCRIPT_PATH_PATTERN = re.compile(r"\{BRAIN_SCRIPT_DIR\}(?P<suffix>/[A-Za-z0-9_./-]+)")
+PROFILE_SCRIPT_PATH_PATTERN = re.compile(
+    r"\{BRAIN_SCRIPT_DIR\}(?P<suffix>/[A-Za-z0-9_./-]+)"
+)
 """Composite script paths that require quoting after localization."""
 
 
@@ -53,9 +54,12 @@ def discover_profile_names(profiles_dir: Path | None = None) -> list[str]:
     for child in root.iterdir():
         if child.name.startswith("."):
             continue
-        if child.is_file() and child.suffix.lower() == ".md":
+        if child.is_file() and child.suffix.lower() == ".md" and child.stem != "index":
             names.add(child.stem)
-        elif child.is_dir() and any(entry.is_file() and entry.suffix.lower() == ".md" for entry in child.rglob("*.md")):
+        elif child.is_dir() and any(
+            entry.is_file() and entry.suffix.lower() == ".md"
+            for entry in child.rglob("*.md")
+        ):
             names.add(child.name)
 
     return sorted(names, key=str.lower)
@@ -74,13 +78,19 @@ def profile_summaries(profiles_dir: Path | None = None) -> list[dict[str, object
     summaries: list[dict[str, object]] = []
     for index, name in enumerate(discover_profile_names(root), start=1):
         usage_path = root / name / "usage.md"
-        use_when = usage_path.read_text(encoding="utf-8").strip() if usage_path.is_file() else ""
-        summaries.append({
-            "id": index,
-            "name": name,
-            "retrieve_command": f"read-profile {name}",
-            "use_when": use_when,
-        })
+        use_when = (
+            usage_path.read_text(encoding="utf-8").strip()
+            if usage_path.is_file()
+            else ""
+        )
+        summaries.append(
+            {
+                "id": index,
+                "name": name,
+                "retrieve_command": f"read-profile {name}",
+                "use_when": use_when,
+            }
+        )
     return summaries
 
 
@@ -180,7 +190,9 @@ def read_profile_entries(name: str) -> list[tuple[str, str]]:
     raise BrainStoreError(f"Profile '{profile_name}' does not exist.")
 
 
-def render_profile_template_variables(content: str, workspace_root: Path | None = None) -> str:
+def render_profile_template_variables(
+    content: str, workspace_root: Path | None = None
+) -> str:
     """Localize supported runtime paths in persisted profile and memory content.
 
     Args:
@@ -193,8 +205,7 @@ def render_profile_template_variables(content: str, workspace_root: Path | None 
     """
     root = get_workspace_root(workspace_root=workspace_root)
     agent_home = get_agent_home()
-    brain_script_dir = agent_home / "scripts"
-    local_brain_script = (brain_script_dir / "brain.py").as_posix().replace("'", "''")
+    brain_script_dir = root / "$agent" / "scripts"
     brain_home = agent_home / "core"
 
     values = {
@@ -202,16 +213,68 @@ def render_profile_template_variables(content: str, workspace_root: Path | None 
         "AGENT_HOME": agent_home.as_posix(),
         "BRAIN_HOME": brain_home.as_posix(),
         "BRAIN_SCRIPT_DIR": brain_script_dir.as_posix(),
-        "LOCAL_BRAIN_SCRIPT": f"'{local_brain_script}'",
+        "LOCAL_BRAIN_SCRIPT": resolve_local_brain_script(workspace_root=root),
     }
     rendered = content
     matches = list(PROFILE_SCRIPT_PATH_PATTERN.finditer(rendered))
     for match in reversed(matches):
-        script_path = f"{values['BRAIN_SCRIPT_DIR']}{match.group('suffix')}".replace("'", "''")
-        rendered = f"{rendered[:match.start()]}'{script_path}'{rendered[match.end():]}"
+        script_path = f"{values['BRAIN_SCRIPT_DIR']}{match.group('suffix')}".replace(
+            "'", "''"
+        )
+        rendered = (
+            f"{rendered[: match.start()]}'{script_path}'{rendered[match.end() :]}"
+        )
     for variable in PROFILE_TEMPLATE_VARIABLES:
         rendered = rendered.replace(f"{{{variable}}}", values[variable])
     return rendered
+
+
+def resolve_local_brain_script(workspace_root: Path | None = None) -> str:
+    """Return the quoted absolute Brain launcher for one consumer workspace.
+
+    Args:
+        workspace_root: Optional consumer root override.
+
+    Returns:
+        PowerShell-safe absolute path to ``$agent/scripts/brain.py``.
+    """
+    root = get_workspace_root(workspace_root=workspace_root)
+    script_path = (root / "$agent" / "scripts" / "brain.py").resolve()
+    escaped_path = script_path.as_posix().replace("'", "''")
+    return f"'{escaped_path}'"
+
+
+def render_profile_template_value(
+    value: object,
+    workspace_root: Path | None = None,
+) -> object:
+    """Localize runtime variables recursively without mutating stored data.
+
+    Args:
+        value: String or JSON-compatible value copied to an output boundary.
+        workspace_root: Optional consumer workspace override.
+
+    Returns:
+        A localized copy preserving the original container types.
+    """
+    if isinstance(value, str):
+        return render_profile_template_variables(value, workspace_root)
+
+    if isinstance(value, dict):
+        return {
+            key: render_profile_template_value(item, workspace_root)
+            for key, item in value.items()
+        }
+
+    if isinstance(value, list):
+        return [render_profile_template_value(item, workspace_root) for item in value]
+
+    if isinstance(value, tuple):
+        return tuple(
+            render_profile_template_value(item, workspace_root) for item in value
+        )
+
+    return value
 
 
 def render_profile(name: str, entries: list[tuple[str, str]]) -> str:

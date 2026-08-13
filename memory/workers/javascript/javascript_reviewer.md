@@ -14,7 +14,7 @@ claims, severity rules, validation authority, and required evidence.
 
 * To read every authorized JavaScript artifact and its scoped diff, use the Inspection Tools defined below, for example `Get-Content -Raw -LiteralPath 'src/file.js'` and `git diff -- src/file.js`.
 * To trace an export, consumer, dependency, asynchronous path, or failure, use Brain ACT or scoped search, for example `py {LOCAL_BRAIN_SCRIPT} search-symbol --name "dispatch" --path "src/file.js" --kind function --json`.
-* To obtain deterministic quality evidence without editing, use the Automatic Work Quality Evaluator when authorized, for example `py {LOCAL_BRAIN_SCRIPT} code-quality src/file.js --mode check --json`.
+* To obtain deterministic quality evidence without editing, use the Automatic Work Quality Evaluator when authorized, for example `py {LOCAL_BRAIN_SCRIPT} eval-quality src/file.js --mode check --json`.
 * To verify an authorized behavior claim, use the exact read-only command supplied by the assignment, for example `npm test -- tests/file.test.js`.
 * To prove repository integrity, use `git status --short` and `git diff --check`.
 
@@ -123,9 +123,9 @@ Allways validate your work using checking tools; pass does not replace the other
 
 ```powershell
 # Smart Quality evalutor (Use by Policie)
-py {LOCAL_BRAIN_SCRIPT} code-quality src/module.js --mode check --json
-py {LOCAL_BRAIN_SCRIPT} code-quality src/module.js --mode evaluate --json
-py {LOCAL_BRAIN_SCRIPT} code-quality src/module.js --mode format --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality src/module.js --mode check --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality src/module.js --mode evaluate --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality src/module.js --mode format --json
 
 git diff -- 'src/application/example_service.js'
 git diff --check -- 'src/application/example_service.js' 'tests/example_service.test.js'

@@ -364,10 +364,10 @@ def test_open_backlog_tracks_runtime_theme_changes() -> None:
     backlog = Mock()
     window.backlog_window = backlog
     with patch("brain.presentation.avatar.qt.runtime.backend_adapter.urlopen") as urlopen:
-        urlopen.return_value.__enter__.return_value.read.return_value = b'{"themeMode":"dark"}'
+        urlopen.return_value.__enter__.return_value.read.return_value = b'{"themeMode":"light"}'
         window._poll()
-    backlog.set_theme.assert_called_once_with("dark")
-    assert window._theme_mode == "dark"
+    backlog.set_theme.assert_called_once_with("light")
+    assert window._theme_mode == "light"
     window.close()
 
 
@@ -382,7 +382,7 @@ def test_backlog_window_is_created_once_then_refocused() -> None:
     ) as factory:
         window._open_backlog_window()
         window._open_backlog_window()
-    factory.assert_called_once_with(theme_mode="light")
+    factory.assert_called_once_with(theme_mode="dark")
     backlog.reload_projects.assert_called_once_with()
     assert window.backlog_window is backlog
     assert backlog.isVisible()
@@ -404,7 +404,7 @@ def test_message_history_links_each_speak_to_its_retained_audio() -> None:
 def test_qt_avatar_click_requests_manual_narration_for_active_file() -> None:
     app = QApplication.instance() or QApplication([])
     window = QtAvatarWindow(start_polling=False)
-    window.state = 'awaiting'
+    window.state = 'speaking'
     window._set_text(
         'Attached plan',
         'focused',
@@ -422,7 +422,7 @@ def test_qt_avatar_click_requests_manual_narration_for_active_file() -> None:
 def test_qt_avatar_click_requires_both_explicit_file_flags() -> None:
     app = QApplication.instance() or QApplication([])
     window = QtAvatarWindow(start_polling=False)
-    window.state = 'awaiting'
+    window.state = 'speaking'
     with patch.object(window, '_post') as post:
         window._set_text('File-like', message_id='one', has_embedded_file=True, manual_speech=False)
         window._commit_avatar_click()
@@ -505,10 +505,11 @@ def test_qt_status_projects_only_logical_message_counts() -> None:
 def test_qt_history_file_click_does_not_narrate_a_different_active_file() -> None:
     app = QApplication.instance() or QApplication([])
     window = QtAvatarWindow(start_polling=False)
-    window.state = 'awaiting'
+    window.state = 'speaking'
     window.current_has_embedded_file = True
     window.current_manual_speech = True
     window.progressive_playback_active = True
+    window.playback_active = True
     window.active_speak_id = 'speak-live'
     window.active_presentation_owned = True
     window.history_browsing = True

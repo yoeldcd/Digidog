@@ -1,36 +1,57 @@
-"""Execute the typed, guarded Python patching vertical through Brain."""
+"""Adapt Brain CLI input and output to the Core text-patch facade."""
 
 from __future__ import annotations
 
 import argparse
 import sys
+from typing import Protocol
 
-from brain.application.patching.models import FileEvidence, PatchResult
-from brain.application.patching.specification import PatchSpecificationError, parse_patch_request
-from brain.infrastructure.patching.filesystem_patch_engine import FileSystemPatchEngine, PatchExecutionError
-from brain.infrastructure.runtime.paths import get_workspace_root
-from brain.presentation.terminal import log_step
+from brain.infrastructure.runtime.paths import get_transient_dir, get_workspace_root
+from utilities.apply_text_patch.src.facade import (
+    NativePatchSpecificationError,
+    PatchExecutionError,
+    PatchInputFormat,
+    PatchInputFormatError,
+    PatchResult,
+    PatchSpecificationError,
+    apply_text_patch,
+)
 
 
 COMMAND_NAME = "apply-patch"
 
 
+class _FileEvidence(Protocol):
+    """Expose the redacted evidence fields rendered by Brain."""
+
+    path: str
+    operation: object
+    replacement_count: int
+
+
 def handle(args: argparse.Namespace) -> int:
-    """Validate and apply one stdin-provided exact-text patch specification.
-
-    Args:
-        args: Parsed check-only and output options.
-
-    Returns:
-        int: Zero when planning succeeds and, unless check-only, all commits complete.
-    """
+    """Read stdin, delegate execution to Core, and preserve Brain payloads."""
     specification = sys.stdin.read()
+
     try:
-        request = parse_patch_request(specification)
-        engine = FileSystemPatchEngine(root=get_workspace_root())
-        log_step(args, "Planning confined exact patch anchors...")
-        result = engine.execute(request=request, check=bool(args.check))
-    except (PatchSpecificationError, PatchExecutionError) as exc:
+        input_format = PatchInputFormat(getattr(args, "format", "json"))
+    except ValueError:
+        return _fail(args, "Unsupported patch input format.")
+
+    try:
+        result = apply_text_patch(
+            serialized_specification=specification,
+            workspace_root=get_workspace_root(),
+            transient_dir=get_transient_dir(),
+            check=bool(args.check),
+            input_format=input_format,
+        )
+    except (
+        PatchSpecificationError,
+        NativePatchSpecificationError,
+        PatchInputFormatError,
+        PatchExecutionError,
+    ) as exc:
         return _fail(
             args,
             str(exc),
@@ -39,8 +60,8 @@ def handle(args: argparse.Namespace) -> int:
             getattr(exc, "cleanup", "not-needed"),
             getattr(exc, "recovery_artifacts", ()),
         )
-    payload = _result_payload(result)
-    args.json_payload = payload
+
+    args.json_payload = _result_payload(result)
     if not getattr(args, "json", False):
         status = "CHECK PASSED" if result.check else "PATCH APPLIED"
         print(f"{status}: {len(result.files)} file(s).")
@@ -48,14 +69,7 @@ def handle(args: argparse.Namespace) -> int:
 
 
 def _result_payload(result: PatchResult) -> dict[str, object]:
-    """Build the minimal semantic success payload.
-
-    Args:
-        result: Immutable engine result.
-
-    Returns:
-        dict[str, object]: Compact operation mode and affected-file facts.
-    """
+    """Build the compact semantic success payload."""
     return {
         "ok": True,
         "command": COMMAND_NAME,
@@ -64,51 +78,27 @@ def _result_payload(result: PatchResult) -> dict[str, object]:
     }
 
 
-def _evidence_payload(evidence: FileEvidence) -> dict[str, object]:
-    """Serialize only actionable facts for one affected file.
-
-    Args:
-        evidence: Immutable internal verification evidence.
-
-    Returns:
-        dict[str, object]: Path, operation, and edit count when applicable.
-    """
+def _evidence_payload(evidence: _FileEvidence) -> dict[str, object]:
+    """Serialize actionable facts for one affected file."""
     payload: dict[str, object] = {
         "path": evidence.path,
         "operation": evidence.operation.value,
     }
     if evidence.replacement_count:
         payload["replacements"] = evidence.replacement_count
-
     return payload
 
 
 def _fail(
     args: argparse.Namespace,
     message: str,
-    evidence: tuple[FileEvidence, ...],
-    rollback: str,
+    evidence: tuple[_FileEvidence, ...] = (),
+    rollback: str = "not-needed",
     cleanup: str = "not-needed",
     recovery_artifacts: tuple[str, ...] = (),
 ) -> int:
-    """Expose one source-redacted guarded patch failure consistently.
-
-    Args:
-        args: Parsed namespace receiving JSON output.
-        message: Concrete failure explanation without source fragments.
-        evidence: Prepared redacted evidence available before failure.
-        rollback: Rollback state after a commit failure.
-        cleanup: Status of post-commit artifact cleanup.
-        recovery_artifacts: Retained recovery artifact identifiers.
-
-    Returns:
-        int: Stable non-zero command exit code.
-    """
-    payload: dict[str, object] = {
-        "ok": False,
-        "command": COMMAND_NAME,
-        "error": message,
-    }
+    """Expose one source-redacted guarded patch failure consistently."""
+    payload: dict[str, object] = {"ok": False, "command": COMMAND_NAME, "error": message}
     if evidence:
         payload["files"] = tuple(_evidence_payload(item) for item in evidence)
     if rollback != "not-needed":

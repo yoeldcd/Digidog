@@ -1,7 +1,4 @@
-# Author: Yoel David <yoeldcd@gmail.com>
-# X: https://x.com/SAY6267
-
-"""Lazy memory-only voice synthesis daemon with a one-hour idle TTL."""
+"""Run the memory-only voice synthesis daemon with a one-hour idle TTL."""
 
 from __future__ import annotations
 
@@ -13,47 +10,51 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from http.server import ThreadingHTTPServer
 from pathlib import Path
-from typing import Protocol, Required, TypedDict, TypeAlias, cast
+from typing import Protocol, Required, TypeAlias, TypedDict, cast
 
 SOURCE_ROOT = Path(__file__).resolve().parents[4]
+
+
 if str(SOURCE_ROOT) not in sys.path:
     sys.path.insert(0, str(SOURCE_ROOT))
 
-from brain.infrastructure.avatar.configuration.avatar_config import load_avatar_config  # noqa: E402
-from brain.infrastructure.avatar.process.avatar_process import AvatarProcessSupervisor  # noqa: E402
-from brain.infrastructure.voice.daemon.daemon_client import (  # noqa: E402
+from brain.infrastructure.avatar.configuration.avatar_config import load_avatar_config
+from brain.infrastructure.avatar.process import avatar_supervision
+from brain.infrastructure.avatar.process.avatar_process import AvatarProcessSupervisor
+from brain.infrastructure.voice.audio import synthesis_pipeline as tts_pipeline, voice_persistence
+from brain.infrastructure.voice.audio.audio_store import AudioStoreMixin
+from brain.infrastructure.voice.audio.engines import LocalPlayback, play_audio_url
+from brain.infrastructure.voice.daemon import http_api
+from brain.infrastructure.voice.daemon.daemon_client import (
     VOICE_DAEMON_HOST,
     VOICE_DAEMON_PORT,
     VOICE_DAEMON_URL,
 )
-from brain.infrastructure.voice.audio.engines import LocalPlayback, play_audio_url  # noqa: E402
-from brain.infrastructure.voice.audio.voice_persistence import (
-    consume_persistence_requests as consume_persistence,
-    enqueue_message_persistence as enqueue_persistence,
+from brain.infrastructure.voice.daemon.process_lease import (
+    ProcessLease,
+    core_process_lease_name,
 )
-from brain.infrastructure.voice.daemon.process_lease import ProcessLease, core_process_lease_name  # noqa: E402
-from brain.infrastructure.voice.audio.audio_store import AudioStoreMixin  # noqa: E402
-from brain.infrastructure.voice.audio import synthesis_pipeline as tts_pipeline  # noqa: E402
-from brain.infrastructure.voice.daemon import http_api  # noqa: E402
-from brain.infrastructure.voice.messaging.message_queue import MessageQueueMixin, bounded_prelude_seconds  # noqa: E402
-from brain.infrastructure.voice.messaging.message_session import (  # noqa: E402
-    ActiveMessageSession,
-    MessageSessionMixin,
-)
-from brain.infrastructure.avatar.process.avatar_supervision import (
-    run_avatar_supervision as supervise_loop,
-    supervise_avatar_window as supervise_window,
-)
-from brain.infrastructure.voice.daemon.runtime_state import (  # noqa: E402
+from brain.infrastructure.voice.daemon.runtime_state import (
     CORE_RUNTIME_ID,
     DAEMON_INSTANCE_ID,
     IDLE_TTL_SECONDS,
     RuntimeStateMixin,
     estimated_speech_seconds,
 )
-
+from brain.infrastructure.voice.messaging.message_queue import (
+    MessageQueueMixin,
+    bounded_prelude_seconds,
+)
+from brain.infrastructure.voice.messaging.message_session import (
+    ActiveMessageSession,
+    MessageSessionMixin,
+)
 
 semantic_speech_chunks = tts_pipeline.semantic_speech_chunks
+supervise_loop = avatar_supervision.run_avatar_supervision
+supervise_window = avatar_supervision.supervise_avatar_window
+consume_persistence = voice_persistence.consume_persistence_requests
+enqueue_persistence = voice_persistence.enqueue_message_persistence
 
 EngineConfigValue: TypeAlias = str | int | float | bool | None
 
@@ -91,6 +92,7 @@ class _TtsBatch(TypedDict, total=False):
     localPlayback: LocalPlayback
     error: str
 
+
 class _TtsBatchPublisher(Protocol):
     """Define the batch-publishing capability used by the producer.
 
@@ -124,7 +126,14 @@ class _PlaybackHandle(Protocol):
     """Define the wait capability shared by registered playback handles."""
 
     def wait(self) -> int:
-        """Wait until playback completes or stops."""
+        """Wait until playback completes or stops.
+
+        Args:
+            No arguments are accepted beyond the playback handle instance.
+
+        Returns:
+            int: Playback process result or completion status.
+        """
 
 
 @dataclass(frozen=True)
@@ -140,9 +149,9 @@ class _PlaybackPlan:
     starter: Callable[[], _PlaybackHandle]
 
 
-
-
-class VoiceMemory(RuntimeStateMixin, MessageQueueMixin, MessageSessionMixin, AudioStoreMixin):
+class VoiceMemory(
+    RuntimeStateMixin, MessageQueueMixin, MessageSessionMixin, AudioStoreMixin
+):
     """Compose runtime state, FIFO, session, and audio-store experts."""
 
 
@@ -150,19 +159,49 @@ MEMORY = VoiceMemory()
 
 
 def paid_synthesis_cache_key(request: dict[str, str]) -> str:
-    """Preserve the daemon public API while delegating cache identity policy."""
-    return tts_pipeline.paid_synthesis_cache_key(request, config_loader=load_avatar_config)
+    """Return the cache key used by the delegated synthesis policy.
+
+    Args:
+        request: Voice request whose synthesis settings determine its cache key.
+
+    Returns:
+        str: Stable cache key for the request.
+    """
+
+    return tts_pipeline.paid_synthesis_cache_key(
+        request,
+        config_loader=load_avatar_config,
+    )
 
 
 def synthesize(request: dict[str, str]) -> bytes | LocalPlayback:
-    """Preserve the daemon public API while delegating provider synthesis."""
+    """Synthesize one request through the configured voice provider.
+
+    Args:
+        request: Voice request containing text and provider settings.
+
+    Returns:
+        bytes | LocalPlayback: Audio bytes or a local playback handle.
+    """
+
     return tts_pipeline.synthesize(
-        request, config_loader=load_avatar_config, edge_synthesizer=_synthesize_edge_audio
+        request,
+        config_loader=load_avatar_config,
+        edge_synthesizer=_synthesize_edge_audio,
     )
 
 
 def sanitize_engine_text(text: str, engine_config: dict[str, EngineConfigValue]) -> str:
-    """Delegate engine sanitization to the synthesis expert."""
+    """Sanitize text using the delegated engine policy.
+
+    Args:
+        text: Text to sanitize before synthesis.
+        engine_config: Provider configuration used by the sanitizer.
+
+    Returns:
+        str: Sanitized synthesis text.
+    """
+
     return tts_pipeline.sanitize_engine_text(text, engine_config)
 
 
@@ -170,7 +209,15 @@ _synthesize_edge_audio = tts_pipeline._synthesize_edge_audio
 
 
 def synthesize_or_reuse(request: dict[str, str]) -> bytes | LocalPlayback:
-    """Delegate cache-aware synthesis with runtime-owned dependencies."""
+    """Synthesize a request or reuse its runtime-owned cached audio.
+
+    Args:
+        request: Voice request whose audio may already be cached.
+
+    Returns:
+        bytes | LocalPlayback: Cached or newly synthesized playback value.
+    """
+
     return tts_pipeline.synthesize_or_reuse(
         MEMORY,
         request,
@@ -188,6 +235,7 @@ def _display_text_contains_markdown_table(display_text: str) -> bool:
     Returns:
         bool: Whether the text contains the table separator used by the daemon.
     """
+
     return "\n| ---" in display_text
 
 
@@ -204,9 +252,11 @@ def cohere_signal_text(request: dict[str, str]) -> str:
     original = request["text"].strip()
     pre_processor = request.get("preProcessor", "<default>")
 
+    # Guard clause: verify required entity presence
     if pre_processor == "<none>" or not original:
         return original
 
+    # Conditional check: evaluate domain preconditions and invariants
     if pre_processor == "<default>" and not request.get("signalKey"):
         return original
 
@@ -215,15 +265,18 @@ def cohere_signal_text(request: dict[str, str]) -> str:
         signal_key=request.get("signalKey", ""),
     )
 
+    # Exception safety: execute operation within error boundary
     try:
         from brain.application.querying.llm import request_query_json
         from brain.infrastructure.voice.narration.narration_prompts import (
             SPANISH_NARRATION_SYSTEM_PROMPT,
         )
 
+        # Conditional check: evaluate domain preconditions and invariants
         if pre_processor == "<default>":
             signal_key = request.get("signalKey", "")
             user_prompt = f"Tipo de señal: {signal_key}\nBorrador factual: {original}"
+
         else:
             user_prompt = pre_processor.replace("{OUTPUT}", original)
 
@@ -234,10 +287,13 @@ def cohere_signal_text(request: dict[str, str]) -> str:
         )
         rewritten = str(payload.get("text", "")).strip()
 
+        # Conditional check: evaluate domain preconditions and invariants
         if is_safe_refined_narration(rewritten, fallback=fallback):
             return rewritten
 
         return fallback
+
+    # Failure recovery: handle execution or transport exception
     except Exception:
         return fallback
 
@@ -247,12 +303,18 @@ def cohere_signal_presentation(request: dict[str, str]) -> None:
 
     Args:
         request (dict[str, str]): Mutable canonical voice request.
+
+    Returns:
+        None: The request is updated in place.
     """
     request["text"] = cohere_signal_text(request)
 
-    if request.get("signalKey") and not _display_text_contains_markdown_table(
-        request.get("displayText", "")
-    ):
+    has_signal = bool(request.get("signalKey"))
+    current_display = request.get("displayText", "")
+    preserves_table = _display_text_contains_markdown_table(current_display)
+
+    # Conditional check: evaluate domain preconditions and invariants
+    if has_signal and not preserves_table:
         request["displayText"] = request["text"]
 
 
@@ -266,10 +328,25 @@ def safe_signal_fallback(*, original: str, signal_key: str) -> str:
     Returns:
         str: Explicit safe line, a canonical fallback, or the original text.
     """
+
+    # Conditional check: evaluate domain preconditions and invariants
     if not signal_key.startswith("reviewed-template:"):
         return original
-    fallback_line = next((line for line in original.splitlines() if line.startswith("Fallback seguro: ")), "")
+
+    fallback_line = next(
+        (
+            line
+
+            # Iteration: loop over collection elements
+            for line in original.splitlines()
+
+            # Conditional check: evaluate domain preconditions and invariants
+            if line.startswith("Fallback seguro: ")
+        ),
+        "",
+    )
     fallback = fallback_line.removeprefix("Fallback seguro: ").strip()
+
     return fallback or spanish_signal_fallback(signal_key)
 
 
@@ -283,8 +360,11 @@ def is_safe_refined_narration(text: str, fallback: str = "") -> bool:
     Returns:
         bool: Whether the candidate is safe to present.
     """
+
+    # Content check: validate message text payload
     if not text or text.lstrip().startswith(("{", "[", "```")):
         return False
+
     technical_markers = (
         "comando:",
         "fase:",
@@ -294,8 +374,11 @@ def is_safe_refined_narration(text: str, fallback: str = "") -> bool:
         "salida real:",
     )
     normalized = text.casefold()
+
+    # Conditional check: evaluate domain preconditions and invariants
     if any(marker in normalized for marker in technical_markers):
         return False
+
     generic_actions = (
         "completar la tarea",
         "completar la operación",
@@ -303,7 +386,13 @@ def is_safe_refined_narration(text: str, fallback: str = "") -> bool:
         "completado la operación",
     )
     fallback_normalized = fallback.casefold()
-    return not any(action in normalized and action not in fallback_normalized for action in generic_actions)
+
+    return not any(
+        action in normalized and action not in fallback_normalized
+
+        # Iteration: loop over collection elements
+        for action in generic_actions
+    )
 
 
 def spanish_signal_fallback(signal_key: str) -> str:
@@ -327,15 +416,28 @@ def spanish_signal_fallback(signal_key: str) -> str:
         "dream-completed": "He terminado de consolidar el conocimiento.",
         "dream-failed": "La consolidación encontró un problema.",
     }
+
     return spanish_fallbacks.get(signal_key, "He procesado la señal.")
 
 
 def consume_requests() -> None:
-    """Run the daemon-owned logical FIFO one ActiveMessageSession at a time."""
+    """Run the daemon-owned logical FIFO one session at a time.
+
+    Args:
+        No arguments are accepted.
+
+    Returns:
+        None: The consumer runs until the daemon process exits.
+    """
+
+    # Loop execution: process until boundary condition is satisfied
     while True:
-        request = MEMORY.requests.get()
+        request = MEMORY.get_next_request()
+
+        # Exception safety: execute operation within error boundary
         try:
             process_message_request(request)
+
         finally:
             MEMORY.requests.task_done()
 
@@ -356,14 +458,17 @@ def _request_is_terminal(
         bool: Whether the FIFO consumer must stop handling this request.
     """
 
-    is_deprecated = request.get("deprecated") == "true"
-
-    if not is_deprecated and not MEMORY.is_speak_terminal(speak_id):
-        return False
-
+    # Conditional check: evaluate domain preconditions and invariants
     if is_internal_replay:
+        # Concurrency control: acquire lock for thread-safe state mutation
         with MEMORY.lock:
             MEMORY._replay_pending = False
+
+        return False
+
+    # Identity check: verify instance ID invariants
+    if not MEMORY.is_speak_terminal(speak_id):
+        return False
 
     return True
 
@@ -381,22 +486,31 @@ def _prepare_external_message_presentation(
         speak_id: Identity used for presentation state updates.
         signal_key: Optional signal identity governing presentation behavior.
         display_text: Existing visible text that may preserve a Markdown table.
-    """
 
-    if signal_key and not _display_text_contains_markdown_table(display_text):
+    Returns:
+        None: The request and runtime presentation state are updated in place.
+    """
+    has_signal = bool(signal_key)
+    preserves_table = _display_text_contains_markdown_table(display_text)
+
+    # Conditional check: evaluate domain preconditions and invariants
+    if has_signal and not preserves_table:
         MEMORY.begin_thinking(speak_id)
 
+    is_partial_command = MEMORY.mute_mode == "partial" and bool(
+        request.get("sourceCommand")
+    )
     is_partial_command_output = (
-        MEMORY.mute_mode == "partial"
-        and request.get("sourceCommand")
-        and request.get("sourcePhase") == "output"
+        is_partial_command and request.get("sourcePhase") == "output"
     )
 
+    # Conditional check: evaluate domain preconditions and invariants
     if is_partial_command_output:
         request["text"] = safe_signal_fallback(
             original=request["text"],
             signal_key=signal_key,
         )
+
     else:
         cohere_signal_presentation(request)
 
@@ -417,19 +531,24 @@ def _open_message_session(
     Returns:
         ActiveMessageSession | None: Active session, or no session when stopped.
     """
+    is_internal_replay = bool(request.get("internalReplay"))
 
+    # Loop execution: process until boundary condition is satisfied
     while True:
         window_lease = MEMORY.wait_for_window(request)
 
+        # Conditional check: evaluate domain preconditions and invariants
         if window_lease is None:
             return None
 
         session = MEMORY.begin_message_session(request, window_lease)
 
+        # Conditional check: evaluate domain preconditions and invariants
         if session is not None:
             return session
 
-        if MEMORY.is_speak_terminal(str(speak_id)):
+        # Identity check: verify instance ID invariants
+        if not is_internal_replay and MEMORY.is_speak_terminal(str(speak_id)):
             return None
 
 
@@ -442,17 +561,25 @@ def _complete_muted_message_session(
     Args:
         session: Active muted session that owns visual state.
         request: Canonical request containing mute-display behavior.
+
+    Returns:
+        None: The muted session remains visible for its configured duration.
     """
 
+    # Conditional check: evaluate domain preconditions and invariants
     if request.get("hideWhenMuted", False):
         MEMORY.close_message_session(session, "DONE")
+
         return
 
     visual_seconds = estimated_speech_seconds(request["text"])
     MEMORY.muted_visual_deadline = time.monotonic() + visual_seconds
     session.presentation_done.wait(timeout=visual_seconds)
+
+    # Conditional check: evaluate domain preconditions and invariants
     if session.cancelled.is_set():
         muted_status = "CANCELLED"
+
     else:
         muted_status = "DONE"
 
@@ -468,8 +595,10 @@ def process_message_request(request: _VoiceRequest) -> None:
 
     Args:
         request: Canonical queue request consumed by the single FIFO worker.
-    """
 
+    Returns:
+        None: The request completes, is cancelled, or records an error.
+    """
     session: ActiveMessageSession | None = None
     preserve_visual = False
     speak_id = request["id"]
@@ -477,13 +606,16 @@ def process_message_request(request: _VoiceRequest) -> None:
     signal_key = request.get("signalKey", "")
     display_text = request.get("displayText", "")
 
+    # Exception safety: execute operation within error boundary
     try:
+        # Identity check: verify instance ID invariants
         if _request_is_terminal(request, speak_id, is_internal_replay):
             return
 
         MEMORY.begin_processing(speak_id, request.get("emotion", ""))
         MEMORY.set_speak_status(speak_id, "WORKING")
 
+        # Conditional check: evaluate domain preconditions and invariants
         if not is_internal_replay:
             _prepare_external_message_presentation(
                 request,
@@ -494,34 +626,50 @@ def process_message_request(request: _VoiceRequest) -> None:
 
         session = _open_message_session(request, speak_id)
 
+        # Conditional check: evaluate domain preconditions and invariants
         if session is None:
             return
 
         MEMORY.finish_thinking()
 
+        # Conditional check: evaluate domain preconditions and invariants
         if request.get("manualSpeech"):
             MEMORY.show_manual_file(request)
             preserve_visual = True
             MEMORY.close_message_session(session, "DONE", preserve_visual=True)
+
             return
 
+        # Conditional check: evaluate domain preconditions and invariants
         if session.muted:
             _complete_muted_message_session(session, request)
+
             return
 
         delegate_tts_for_session(session)
+
+    # Failure recovery: handle execution or transport exception
     except Exception as exc:
         MEMORY.finish_thinking()
 
+        replay_restored = MEMORY.restore_replay_record(request)
+
+        # Conditional check: evaluate domain preconditions and invariants
+        if not replay_restored:
+            MEMORY.set_speak_status(speak_id, "ERROR", error=str(exc))
+
+        # Conditional check: evaluate domain preconditions and invariants
         if session is not None:
             session.cancel()
             MEMORY.close_message_session(session, "ERROR")
 
-        MEMORY.set_speak_status(speak_id, "ERROR", error=str(exc))
     finally:
+        # Conditional check: evaluate domain preconditions and invariants
         if session is not None and not preserve_visual:
+            # Conditional check: evaluate domain preconditions and invariants
             if session.cancelled.is_set():
                 status = "CANCELLED"
+
             else:
                 status = "DONE"
 
@@ -531,11 +679,22 @@ def process_message_request(request: _VoiceRequest) -> None:
 
 
 def delegate_tts_for_session(session: ActiveMessageSession) -> bool:
-    """Validate the Qt lease again at the exact TTS delegation boundary."""
+    """Validate the Qt lease at the exact TTS delegation boundary.
+
+    Args:
+        session: Active message session being delegated to TTS.
+
+    Returns:
+        bool: Whether TTS delegation was accepted by the current window lease.
+    """
+
+    # Conditional check: evaluate domain preconditions and invariants
     if not MEMORY.window_lease_is_current(session.window_lease):
         MEMORY.stop_active_speak()
+
         return False
     run_tts_batch_session(session)
+
     return True
 
 
@@ -555,10 +714,14 @@ def _publish_replay_tts_batch(
 
     Raises:
         LookupError: If the selected retained message is unavailable.
+
+    Returns:
+        None: The retained message is published to the TTS owner.
     """
 
     message = MEMORY.find_message(name=replay_name)
 
+    # Conditional check: evaluate domain preconditions and invariants
     if message is None:
         raise LookupError(f"Replay message not found: {replay_name}")
 
@@ -590,6 +753,7 @@ def _chunk_request(
         "chunkCount": chunk_count,
     }
     chunk_request.update(chunk_metadata)
+
     return chunk_request
 
 
@@ -617,12 +781,20 @@ def _publish_synthesized_tts_batch(
         bool: Whether the batch was accepted for playback.
     """
 
+    # Type validation: verify parameter data type
     if isinstance(synthesis, bytes):
         combined_audio.append(synthesis)
-        message = MEMORY.retain_progressive_audio(session.speak_id, chunk_index, synthesis)
-        return publisher.publish(cast(_TtsBatch, {"request": chunk_request, "message": message}), token)
+        message = MEMORY.retain_progressive_audio(
+            session.speak_id, chunk_index, synthesis
+        )
 
-    return publisher.publish(cast(_TtsBatch, {"request": chunk_request, "localPlayback": synthesis}), token)
+        return publisher.publish(
+            cast(_TtsBatch, {"request": chunk_request, "message": message}), token
+        )
+
+    return publisher.publish(
+        cast(_TtsBatch, {"request": chunk_request, "localPlayback": synthesis}), token
+    )
 
 
 def _store_combined_audio_if_current(
@@ -640,11 +812,16 @@ def _store_combined_audio_if_current(
         request: Original request whose text labels the combined cache.
         combined_audio: Produced byte chunks accumulated in order.
         publisher: TTS owner used for the original acceptance check.
+
+    Returns:
+        None: The combined audio is stored only when the session is current.
     """
 
+    # Conditional check: evaluate domain preconditions and invariants
     if not combined_audio:
         return
 
+    # Conditional check: evaluate domain preconditions and invariants
     if not MEMORY.session_accepts(session, token) or not publisher.accepts(token):
         return
 
@@ -657,10 +834,14 @@ def _produce_tts_batches(session: ActiveMessageSession) -> None:
 
     Args:
         session: Audible session that exclusively owns the producer queue.
+
+    Returns:
+        None: Produced batches are published until synthesis or cancellation ends.
     """
 
     tts = session.tts
 
+    # Conditional check: evaluate domain preconditions and invariants
     if tts is None:
         return
 
@@ -668,27 +849,34 @@ def _produce_tts_batches(session: ActiveMessageSession) -> None:
     request = session.request
     combined_audio: list[bytes] = []
 
+    # Exception safety: execute operation within error boundary
     try:
         replay_name = str(request.get("replayName", ""))
 
+        # Conditional check: evaluate domain preconditions and invariants
         if replay_name:
             _publish_replay_tts_batch(session, replay_name, token, tts)
+
             return
 
         chunk_limit = load_avatar_config().tts_chunks_size
         chunks = semantic_speech_chunks(request["text"], limit=chunk_limit)
         MEMORY.mark_progressive_speak(session.speak_id, len(chunks))
 
+        # Iteration: loop over collection elements
         for chunk_index, chunk in enumerate(chunks):
+            # Conditional check: evaluate domain preconditions and invariants
             if not MEMORY.session_accepts(session, token) or not tts.accepts(token):
                 return
 
             chunk_request = _chunk_request(request, chunk, chunk_index, len(chunks))
             synthesis = synthesize_or_reuse(chunk_request)
 
+            # Conditional check: evaluate domain preconditions and invariants
             if not MEMORY.session_accepts(session, token) or not tts.accepts(token):
                 return
 
+            # Conditional check: evaluate domain preconditions and invariants
             if not _publish_synthesized_tts_batch(
                 session,
                 chunk_request,
@@ -701,9 +889,13 @@ def _produce_tts_batches(session: ActiveMessageSession) -> None:
                 return
 
         _store_combined_audio_if_current(session, token, request, combined_audio, tts)
+
+    # Failure recovery: handle execution or transport exception
     except Exception as exc:
         tts.publish(cast(_TtsBatch, {"error": str(exc)}), token)
+
     finally:
+
         # Processing chrome represents synthesis work only. Once the producer
         # has rendered every available segment, playback may continue without
         # leaving the processing indicator active.
@@ -712,10 +904,24 @@ def _produce_tts_batches(session: ActiveMessageSession) -> None:
 
 
 def run_tts_batch_session(session: ActiveMessageSession) -> None:
-    """Render and play the private batch queue for one audible message."""
+    """Render and play the private batch queue for one audible message.
+
+    Args:
+        session: Audible message session owning the private TTS queue.
+
+    Returns:
+        None: Batches are played until production or cancellation completes.
+
+    Raises:
+        RuntimeError: If the session has no TTS batch owner.
+    """
+
     tts = session.tts
+
+    # Conditional check: evaluate domain preconditions and invariants
     if tts is None:
         raise RuntimeError("Audible message session has no TTS batch owner.")
+
     token = session.generation
     threading.Thread(
         target=_produce_tts_batches,
@@ -723,21 +929,31 @@ def run_tts_batch_session(session: ActiveMessageSession) -> None:
         daemon=True,
         name=f"voice-synthesis-{session.speak_id}",
     ).start()
+
+    # Loop execution: process until boundary condition is satisfied
     while MEMORY.session_accepts(session, token) and tts.accepts(token):
+        # Exception safety: execute operation within error boundary
         try:
             batch = tts.batches.get(timeout=0.025)
+
+        # Failure recovery: handle execution or transport exception
         except queue.Empty:
+            # Conditional check: evaluate domain preconditions and invariants
             if tts.producer_done.is_set():
                 break
+
             continue
+
+        # Exception safety: execute operation within error boundary
         try:
+            # Conditional check: evaluate domain preconditions and invariants
             if "error" in batch:
                 raise RuntimeError(str(batch["error"]))
             _play_tts_batch(session, batch, token)
+
         finally:
             tts.batches.task_done()
-    if MEMORY.session_accepts(session, token) and tts.accepts(token):
-        MEMORY.set_speak_status(session.speak_id, "DONE")
+
     tts.finished.set()
 
 
@@ -746,14 +962,19 @@ def _prepare_session_playback(session: ActiveMessageSession) -> None:
 
     Args:
         session: Active session whose visible state will be prepared.
+
+    Returns:
+        None: Playback presentation state is prepared in runtime memory.
     """
 
     show_message = bool(session.request.get("showMessage", True))
 
+    # Conditional check: evaluate domain preconditions and invariants
     if show_message:
         text = session.request["text"]
         emotion = session.request.get("emotion", "")
         display_text = session.request.get("displayText", "")
+
     else:
         text = ""
         emotion = ""
@@ -785,15 +1006,26 @@ def _playback_plan(
 
     request = batch["request"]
 
+    # Conditional check: evaluate domain preconditions and invariants
     if "localPlayback" in batch:
         MEMORY.begin_playback_prelude()
-        return _PlaybackPlan(is_local_playback=True, starter=batch["localPlayback"].start)
+
+        return _PlaybackPlan(
+            is_local_playback=True, starter=batch["localPlayback"].start
+        )
 
     message = batch.get("message")
     prelude_seconds = bounded_prelude_seconds(request.get("preludeSeconds", 0))
 
     def starter() -> _PlaybackHandle:
-        """Start remote playback using the batch's original callback data."""
+        """Start remote playback using the batch's original callback data.
+
+        Args:
+            No arguments are accepted; the closure owns the playback metadata.
+
+        Returns:
+            _PlaybackHandle: Registered remote playback handle.
+        """
 
         return play_audio_url(
             f"{VOICE_DAEMON_URL}/audio/name/{message['name']}",
@@ -817,17 +1049,25 @@ def _wait_for_tts_batch_playback(
     Args:
         session: Active session that owns the playback handle.
         playback: Handle returned by the registered playback starter.
+
+    Returns:
+        None: Playback completion releases the handle from the active session.
     """
 
+    # Exception safety: execute operation within error boundary
     try:
         playback.wait()
+
     finally:
         tts = session.tts
 
+        # Conditional check: evaluate domain preconditions and invariants
         if tts is not None:
             tts.release_player(playback)
 
+        # Concurrency control: acquire lock for thread-safe state mutation
         with MEMORY.lock:
+            # Conditional check: evaluate domain preconditions and invariants
             if MEMORY.playback is playback:
                 MEMORY.playback = None
 
@@ -843,8 +1083,12 @@ def _play_tts_batch(
         session: Active session that owns the playback lifecycle.
         batch: Synthesized batch selected by the private TTS queue.
         generation: Generation that must still own the session.
+
+    Returns:
+        None: The batch is played when the session generation remains current.
     """
 
+    # Conditional check: evaluate domain preconditions and invariants
     if not MEMORY.session_accepts(session, generation):
         return
 
@@ -853,23 +1097,43 @@ def _play_tts_batch(
     playback_plan = _playback_plan(session, batch, generation)
     playback = MEMORY.start_registered_playback(session.speak_id, playback_plan.starter)
 
+    # Conditional check: evaluate domain preconditions and invariants
     if playback is None:
         return
 
+    # Conditional check: evaluate domain preconditions and invariants
     if playback_plan.is_local_playback:
-        MEMORY.set_playback_duration(round(estimated_speech_seconds(request["text"]) * 1000))
+        MEMORY.set_playback_duration(
+            round(estimated_speech_seconds(request["text"]) * 1000)
+        )
         MEMORY.mark_playback_started()
 
     _wait_for_tts_batch_playback(session, playback)
 
 
 def enqueue_message_persistence(request: dict[str, str]) -> None:
-    """Queue eligible history through the composed runtime."""
+    """Queue eligible history through the composed runtime.
+
+    Args:
+        request: Voice request whose eligible history is queued.
+
+    Returns:
+        None: Persistence is delegated to the runtime-owned queue.
+    """
+
     enqueue_persistence(MEMORY, request)
 
 
 def consume_persistence_requests() -> None:
-    """Consume persistence jobs through the composed runtime."""
+    """Consume persistence jobs through the composed runtime.
+
+    Args:
+        No arguments are accepted.
+
+    Returns:
+        None: Persistence jobs are consumed until process exit.
+    """
+
     consume_persistence(MEMORY)
 
 
@@ -878,10 +1142,12 @@ def replay_message(name: str | None = None, speak_id: str | None = None) -> bool
 
     Args:
         name: Optional retained audio name. The newest message is selected when omitted.
+        speak_id: Optional identity associated with the replay request.
 
     Returns:
         bool: True when the replay request was accepted.
     """
+
     return MEMORY.enqueue_replay(name=name, speak_id=speak_id)
 
 
@@ -895,7 +1161,15 @@ class VoiceDaemonHandler(http_api.VoiceHttpHandler):
 
 
 def supervise_avatar_window(supervisor: AvatarProcessSupervisor) -> int:
-    """Supervise the avatar process using the composed runtime state."""
+    """Supervise the avatar process using the composed runtime state.
+
+    Args:
+        supervisor: Avatar process supervisor being coordinated.
+
+    Returns:
+        int: Supervisor result code.
+    """
+
     return supervise_window(MEMORY, supervisor)
 
 
@@ -904,7 +1178,17 @@ def run_avatar_supervision(
     stop_event: threading.Event,
     poll_seconds: float = 0.05,
 ) -> None:
-    """Run supervision using the composed runtime state."""
+    """Run supervision using the composed runtime state.
+
+    Args:
+        supervisor: Avatar process supervisor being coordinated.
+        stop_event: Event requesting supervision shutdown.
+        poll_seconds: Delay between supervision checks.
+
+    Returns:
+        None: Supervision runs until the stop event is set.
+    """
+
     supervise_loop(MEMORY, supervisor, stop_event, poll_seconds)
 
 
@@ -913,15 +1197,28 @@ def main() -> int:
 
     Returns:
         int: Process exit status.
+
+    Args:
+        No arguments are accepted.
     """
     process_lease = ProcessLease(core_process_lease_name("voice-daemon"))
+
+    # Conditional check: evaluate domain preconditions and invariants
     if not process_lease.acquire():
         return 0
     MEMORY.prepare_for_window_spawn()
-    threading.Thread(target=consume_requests, daemon=True, name="voice-message-fifo").start()
-    threading.Thread(target=consume_persistence_requests, daemon=True, name="message-persistence").start()
-    server = ThreadingHTTPServer((VOICE_DAEMON_HOST, VOICE_DAEMON_PORT), VoiceDaemonHandler)
-    avatar_entrypoint = SOURCE_ROOT / "brain" / "presentation" / "avatar" / "window" / "main.py"
+    threading.Thread(
+        target=consume_requests, daemon=True, name="voice-message-fifo"
+    ).start()
+    threading.Thread(
+        target=consume_persistence_requests, daemon=True, name="message-persistence"
+    ).start()
+    server = ThreadingHTTPServer(
+        (VOICE_DAEMON_HOST, VOICE_DAEMON_PORT), VoiceDaemonHandler
+    )
+    avatar_entrypoint = (
+        SOURCE_ROOT / "brain" / "presentation" / "avatar" / "window" / "main.py"
+    )
     avatar_supervisor = AvatarProcessSupervisor(avatar_entrypoint, DAEMON_INSTANCE_ID)
     MEMORY.bind_window_supervisor(avatar_supervisor)
     MEMORY.register_window_process(avatar_supervisor.ensure_running())
@@ -934,21 +1231,33 @@ def main() -> int:
     )
     supervisor_thread.start()
     server.timeout = 1.0
+
+    # Exception safety: execute operation within error boundary
     try:
+        # Loop execution: process until boundary condition is satisfied
         while not MEMORY.stop_requested and not MEMORY.idle_expired():
             server.handle_request()
+
     finally:
+        MEMORY.cancel_all_instances()
         supervisor_stop.set()
         supervisor_thread.join(timeout=2)
         persistence_deadline = time.monotonic() + 5.0
-        while MEMORY.persistence_requests.unfinished_tasks and time.monotonic() < persistence_deadline:
+
+        # Loop execution: process until boundary condition is satisfied
+        while (
+            MEMORY.persistence_requests.unfinished_tasks
+            and time.monotonic() < persistence_deadline
+        ):
             time.sleep(0.025)
         server.server_close()
         avatar_supervisor.close()
         MEMORY.window_pids = []
         process_lease.close()
+
     return 0
 
 
+# Conditional check: evaluate domain preconditions and invariants
 if __name__ == "__main__":
     raise SystemExit(main())

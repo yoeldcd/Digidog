@@ -7,7 +7,7 @@ from __future__ import annotations
 import os
 import time
 
-from brain.presentation.avatar.communication.daemon_projection import DaemonStatusProjection
+from brain.presentation.avatar.communication.projection.daemon_status import DaemonStatusProjection
 from brain.presentation.avatar.interactivity.presentation_state import AvatarRuntimeState, ProjectedMessageState
 from brain.presentation.avatar.window.config import DAEMON_LOSS_GRACE_SECONDS, POLL_INTERVAL_MS, avatar_asset
 
@@ -21,8 +21,12 @@ class TkRuntimeAdapterMixin:
         Returns:
             None.
         """
+
+        # Exception safety: execute operation within protected error boundary
         try:
             self.transport.post("/window-ready", {"pid": os.getpid()})
+
+        # System error handling: handle operating system or IO failure
         except OSError:
             pass
 
@@ -32,6 +36,8 @@ class TkRuntimeAdapterMixin:
         Returns:
             None.
         """
+
+        # Conditional check: evaluate domain preconditions and invariants
         if not self.is_visible:
             self.root.deiconify()
             self.is_visible = True
@@ -42,6 +48,8 @@ class TkRuntimeAdapterMixin:
         Returns:
             None.
         """
+
+        # Conditional check: evaluate domain preconditions and invariants
         if self.is_visible:
             self.player.stop()
             self.root.withdraw()
@@ -64,6 +72,7 @@ class TkRuntimeAdapterMixin:
         speaking = self.presentation.speaking_animation_active
         self.player.set_playing(self.presentation.owns_active_presentation)
 
+        # Conditional check: evaluate domain preconditions and invariants
         if self.presentation.owns_active_presentation:
             self._show()
 
@@ -73,6 +82,7 @@ class TkRuntimeAdapterMixin:
         path = avatar_asset(animation, fallback_state=fallback)
         needs_recovery = self.player.displayed_path != str(path)
 
+        # Conditional check: evaluate domain preconditions and invariants
         if (changed or force or needs_recovery) and path.is_file():
             self.player.load(path)
 
@@ -95,9 +105,11 @@ class TkRuntimeAdapterMixin:
         presentation = getattr(self, "presentation", None)
         audible = presentation.speaking_animation_active if presentation is not None else state == "speaking"
 
+        # Conditional check: evaluate domain preconditions and invariants
         if audible:
             return emotion or "speaking", "speaking"
 
+        # State guard: verify component lifecycle state preconditions
         if state == "working":
             return "working", "awaiting"
 
@@ -109,9 +121,14 @@ class TkRuntimeAdapterMixin:
         Returns:
             None.
         """
+
+        # Exception safety: execute operation within protected error boundary
         try:
             payload = self.transport.status()
+
+        # Failure recovery: handle execution or transport exception
         except Exception:
+            # Conditional check: evaluate domain preconditions and invariants
             if time.monotonic() - self.last_seen >= DAEMON_LOSS_GRACE_SECONDS:
                 self._shutdown_window()
                 return
@@ -121,18 +138,22 @@ class TkRuntimeAdapterMixin:
 
         projection = DaemonStatusProjection.from_mapping(payload)
 
+        # Identity validation: check canonical message or instance identifier
         if self.daemon_instance_id and projection.instance_id != self.daemon_instance_id:
             self._shutdown_window()
             return
 
         self.last_seen = time.monotonic()
 
+        # Exception safety: execute operation within protected error boundary
         try:
             self.presentation = projection.presentation()
             self.mute_mode = self.presentation.mute_mode
             self.player.set_muted(self.presentation.mute_mode != "off")
             self._set_state(self.presentation.runtime_state.value, emotion=self.presentation.emotion)
             self.message_controller.apply(self.presentation, self._set_text)
+
+        # Failure recovery: handle execution or transport exception
         except Exception:
             pass
 

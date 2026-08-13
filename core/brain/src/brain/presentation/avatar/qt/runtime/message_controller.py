@@ -12,7 +12,7 @@ from PySide6.QtCore import QPoint
 from dataclasses import dataclass
 
 from brain.infrastructure.voice.daemon.daemon_client import VOICE_DAEMON_URL
-from brain.presentation.avatar.communication.models import CodexThreadTargetDTO
+from brain.presentation.avatar.communication.contracts.models import CodexThreadTargetDTO
 from brain.presentation.avatar.interactivity.emotions import emotion_emoji
 from brain.presentation.avatar.interactivity.history_controller import HistoryController, HistoryMessage
 from brain.presentation.avatar.qt.avatar.geometry import (
@@ -65,13 +65,19 @@ class QtHistoryMessage(HistoryMessage):
             "manualSpeech": self.manual_speech,
             "manual_speech": self.manual_speech,
         }
+
+        # Conditional check: evaluate domain preconditions and invariants
         if key in mapping:
             return mapping[key]
         raise KeyError(key)
 
 
 class QtMessageControllerMixin:
-    """Mixin managing message display, history navigation, and bubble coordination."""
+    """Mixin managing message display, history navigation, and bubble coordination.
+
+    Handles active message formatting, animation triggers, history index tracking,
+    and bubble geometry adjustments for the main Qt avatar presentation window.
+    """
 
 
     def _set_text(
@@ -100,7 +106,10 @@ class QtMessageControllerMixin:
         Returns:
             None.
         """
+
+        # Conditional check: evaluate domain preconditions and invariants
         if self.history_browsing:
+            # Content check: validate message text payload
             if text:
                 self.last_display_text = text
                 self.last_message_id = message_id
@@ -113,6 +122,8 @@ class QtMessageControllerMixin:
             return
 
         incoming_message = bool(message_id and message_id != self.current_message_id)
+
+        # Conditional check: evaluate domain preconditions and invariants
         if incoming_message:
             self.history_browsing = False
             self.current_audio_name = ""
@@ -120,10 +131,15 @@ class QtMessageControllerMixin:
             self.dismissed_display_text = ""
             self.dismissed_message_id = ""
 
+        # Content check: validate message text payload
         if not text:
+            # Conditional check: evaluate domain preconditions and invariants
             if self.message_reveal_latched or self.current_has_embedded_file:
                 return
+
+            # Conditional check: evaluate domain preconditions and invariants
             if self.bubble.isVisible():
+                # Conditional check: evaluate domain preconditions and invariants
                 if not self.bubble_hide_timer.isActive():
                     self.bubble_hide_timer.start()
                 return
@@ -137,6 +153,7 @@ class QtMessageControllerMixin:
             self.dismissed_message_id = ""
             return
 
+        # Content check: validate message text payload
         if incoming_message or text != self.current_display_text:
             self.message_reveal_latched = False
 
@@ -157,12 +174,15 @@ class QtMessageControllerMixin:
         self.current_has_embedded_file = has_embedded_file
         self.current_manual_speech = manual_speech
 
+        # Content check: validate message text payload
         if text == self.dismissed_display_text and message_id == self.dismissed_message_id:
             return
 
+        # Content check: validate message text payload
         if text == previous and message_id == previous_message_id and self.bubble.isVisible():
             return
 
+        # Content check: validate message text payload
         if incoming_message or text != previous:
             self.dismissed_display_text = ""
             self.dismissed_message_id = ""
@@ -176,8 +196,9 @@ class QtMessageControllerMixin:
             history_index=0,
             history_total=self.history_count,
         )
-        self.bubble.set_reply_available(bool(codex_thread_id))
+        self.bubble.set_reply_available(bool(message_id))
 
+        # Conditional check: evaluate domain preconditions and invariants
         if not was_visible:
             self._reposition_bubble(force=True)
         else:
@@ -194,10 +215,13 @@ class QtMessageControllerMixin:
         Returns:
             None.
         """
+
+        # Conditional check: evaluate domain preconditions and invariants
         if self.bubble.isVisible():
             self._dismiss_bubble()
             return
 
+        # Content check: validate message text payload
         if not self.last_display_text:
             return
 
@@ -210,15 +234,16 @@ class QtMessageControllerMixin:
         self.message_reveal_latched = True
         self.bubble_hide_timer.stop()
 
-        self.bubble.set_message(
+        self._set_bubble_message_anchored(
             self.last_display_text,
             emotion_emoji(self.last_display_emotion),
             self.last_consumer_path,
             history_index=0,
             history_total=self.history_count,
+            preserve_avatar_edge=True,
         )
         self.current_codex_thread_id = self.last_codex_thread_id
-        self.bubble.set_reply_available(bool(self.current_codex_thread_id))
+        self.bubble.set_reply_available(bool(self.current_message_id))
         self._reposition_bubble(force=True)
         self.bubble.show()
         self.bubble.raise_()
@@ -229,20 +254,32 @@ class QtMessageControllerMixin:
         Returns:
             list[HistoryMessage]: Retained message projections.
         """
+
+        # Exception safety: execute operation within error boundary
         try:
+            # Context management: enter managed resource scope
             with urlopen(f"{VOICE_DAEMON_URL}/messages", timeout=.5) as response:
                 payload = json.loads(response.read())
+
+        # Failure recovery: handle execution or transport exception
         except Exception:
             return []
 
         audio_by_speak_id = {
             str(item.get("speakId", "")): str(item.get("name", ""))
+
+            # Iteration: process sequence items
             for item in payload.get("messages", [])
+
+            # Conditional check: evaluate domain preconditions and invariants
             if item.get("speakId") and item.get("name")
         }
 
         messages: list[HistoryMessage] = []
+
+        # Iteration: process speak instances sequentially
         for item in payload.get("speaks", []):
+            # Content check: validate message text payload
             if item.get("displayText") or item.get("text"):
                 speak_id = str(item.get("id", ""))
                 audio_name = audio_by_speak_id.get(speak_id, "")
@@ -273,11 +310,14 @@ class QtMessageControllerMixin:
         raw_history = self._message_history()
         history = [
             item if isinstance(item, HistoryMessage) else HistoryMessage.from_mapping(item)
+
+            # Iteration: process sequence items
             for item in raw_history
         ]
         controller = HistoryController(history)
         projection = controller.navigate(self.current_message_id, direction)
 
+        # Conditional check: evaluate domain preconditions and invariants
         if projection is None:
             return
 
@@ -303,7 +343,7 @@ class QtMessageControllerMixin:
             history_total=projection.total,
             preserve_avatar_edge=True,
         )
-        self.bubble.set_reply_available(bool(item.codex_thread_id))
+        self.bubble.set_reply_available(bool(item.speak_id))
         self.bubble.show()
         self.bubble.raise_()
 
@@ -321,12 +361,17 @@ class QtMessageControllerMixin:
         was_visible = self.bubble.isVisible()
         old_geometry = self.bubble.frameGeometry()
         old_position = QPoint(old_geometry.topLeft())
+        manual_bottom = old_geometry.bottom()
         manual_position = self._bubble_manual_position is not None
         above_avatar = was_visible and self._bubble_is_above_avatar()
+        avatar_geometry = self.frameGeometry()
         lane = ""
 
+        # Conditional check: evaluate domain preconditions and invariants
         if was_visible:
             screen = self.app.screenAt(self.frameGeometry().center()) or self.app.primaryScreen()
+
+            # Conditional check: evaluate domain preconditions and invariants
             if screen is not None:
                 lane, available_height = bubble_vertical_lane(
                     screen.availableGeometry(),
@@ -339,35 +384,43 @@ class QtMessageControllerMixin:
 
         self.bubble.set_message(*args, **kwargs)
 
+        # Conditional check: evaluate domain preconditions and invariants
         if not was_visible:
             return
 
+        # Conditional check: evaluate domain preconditions and invariants
         if not manual_position:
-            screen = self.app.screenAt(self.frameGeometry().center()) or self.app.primaryScreen()
-            if lane and self._bubble_auto_lane == lane and screen is not None:
-                target = bubble_position(
-                    screen.availableGeometry(),
-                    self.frameGeometry(),
-                    self.bubble.size(),
-                    lane=lane,
-                )
-                target = clamp_bubble_position(screen.availableGeometry(), self.bubble.size(), target)
-                self.bubble.move(target)
+            # Conditional check: evaluate domain preconditions and invariants
+            if preserve_avatar_edge and above_avatar:
+                anchored_bottom = avatar_geometry.top() - 1
+                anchored_top = anchored_bottom - self.bubble.height() + 1
+                self.bubble.move(old_position.x(), anchored_top)
+
+            # Conditional check: evaluate domain preconditions and invariants
+            elif preserve_avatar_edge:
+                anchored_top = avatar_geometry.bottom() + 1
+                self.bubble.move(old_position.x(), anchored_top)
+
+            # Conditional check: evaluate domain preconditions and invariants
             elif above_avatar:
-                self.bubble.move(old_position.x(), old_geometry.bottom() - self.bubble.height() + 1)
+                self.bubble.move(
+                    old_position.x(),
+                    old_geometry.bottom() - self.bubble.height() + 1,
+                )
             else:
                 self.bubble.move(old_position)
             self._update_tail()
             return
 
-        if manual_position and above_avatar:
-            # A user-selected origin remains stable across new messages.
-            # The expanded manual lane only affects the resize ceiling.
-            self.bubble.move(old_position)
-        else:
-            self.bubble.move(old_position)
+        # Conditional check: evaluate domain preconditions and invariants
+        if manual_position:
+
+            # A user-selected bottom edge is the vertical authority across
+            # message-specific height changes, regardless of tail direction.
+            self.bubble.move(old_position.x(), manual_bottom - self.bubble.height() + 1)
 
         self._bubble_manual_position = QPoint(self.bubble.pos())
+        self._bubble_manual_bottom = self.bubble.frameGeometry().bottom()
         self._update_tail()
 
     def _open_reply_composer(self) -> None:
@@ -376,26 +429,73 @@ class QtMessageControllerMixin:
         Returns:
             None.
         """
-        if not self.current_codex_thread_id:
+
+        # Conditional check: evaluate domain preconditions and invariants
+        if not self.current_message_id:
             return
 
+        instance_id = self.current_message_id
+
+        # Identity validation: check canonical message or instance identifier
+        if getattr(self, "_reply_opening_instance_id", None) == instance_id:
+            return
+
+        self._reply_opening_instance_id = instance_id
+
+        # Exception safety: execute operation within protected error boundary
         try:
-            target = CodexThreadTargetDTO(
-                thread_id=self.current_codex_thread_id,
-                source_message_id=self.current_message_id,
-            )
-        except ValueError:
-            self.bubble.set_reply_available(False)
-            return
+            # Exception safety: execute operation within error boundary
+            try:
+                target = CodexThreadTargetDTO(
+                    instance_id=instance_id,
+                )
 
-        bubble = self.bubble.frameGeometry()
-        screen = self.app.screenAt(bubble.center()) or self.app.primaryScreen()
-        geometry = reply_composer_geometry(
-            screen.availableGeometry(),
-            bubble,
-            self._bubble_is_above_avatar(),
-        )
-        self.reply_window.open_for(target, geometry)
+            # Validation error handling: convert invalid input to domain exception
+            except ValueError:
+                self.bubble.set_reply_available(False)
+                return
+
+            bubble = self.bubble.frameGeometry()
+            screen = self.app.screenAt(bubble.center()) or self.app.primaryScreen()
+
+            # Conditional check: evaluate domain preconditions and invariants
+            if screen is None:
+                return
+
+            available = screen.availableGeometry()
+            is_visible = getattr(self.reply_window, "isVisible", None)
+            reply_was_hidden = not is_visible() if callable(is_visible) else True
+            has_manual_geometry = (
+                getattr(self.reply_window, "_manual_geometry", None) is not None
+            )
+            automatic_reply_open = reply_was_hidden and not has_manual_geometry
+            geometry = reply_composer_geometry(
+                available,
+                bubble,
+                self._bubble_is_above_avatar(),
+                minimum_size=self.reply_window.safe_minimum_size(available),
+                avatar=self.frameGeometry(),
+                horizontal_margin=0 if automatic_reply_open else None,
+            )
+            self.reply_window.open_for(target, geometry)
+
+            if automatic_reply_open:
+                apply_automatic_geometry = getattr(
+                    self.reply_window,
+                    "apply_automatic_geometry",
+                    None,
+                )
+
+                if callable(apply_automatic_geometry):
+                    apply_automatic_geometry(
+                        geometry,
+                        preserve_horizontal_anchor=True,
+                    )
+
+        finally:
+            # Identity validation: check canonical message or instance identifier
+            if getattr(self, "_reply_opening_instance_id", None) == instance_id:
+                self._reply_opening_instance_id = None
 
     def _bubble_is_above_avatar(self) -> bool:
         """Resolve vertical orientation solely from the current global window centers.
@@ -415,6 +515,7 @@ class QtMessageControllerMixin:
         self.history_browsing = False
         self.history_anchor_message_id = ""
 
+        # State guard: verify lifecycle status preconditions
         if not closing_history and self.active_presentation_owned and self.state in {"muted", "muted_replay"}:
             self._post("/stop-current-message")
             self._release_active_presentation()
@@ -431,10 +532,14 @@ class QtMessageControllerMixin:
         Returns:
             None.
         """
+
+        # Conditional check: evaluate domain preconditions and invariants
         if self.message_reveal_latched or self.current_has_embedded_file:
             return
 
         self.bubble.hide()
+
+        # Conditional check: evaluate domain preconditions and invariants
         if not self.underMouse():
             self.controls.set_expanded(False)
 

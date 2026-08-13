@@ -134,16 +134,66 @@ $PATCH_NATIVE | py {LOCAL_BRAIN_SCRIPT} apply-patch --format native --json
 The brain CLI provide a rich and local policies based automatic evaluator:
 
 ```powershell
-# check automated code quality
-py {LOCAL_BRAIN_SCRIPT} code-quality relative/file.ext --mode check --json
+# automated code checking evaluator
+py {LOCAL_BRAIN_SCRIPT} eval-quality relative/file.ext --mode check --json
 
-# check automated code readability
-py {LOCAL_BRAIN_SCRIPT} code-quality relative/file.ext --mode format --json
+# automated code readability evaluator
+py {LOCAL_BRAIN_SCRIPT} eval-quality relative/file.ext --mode format --json
 
-# execute automated expert QA evaluation
-py {LOCAL_BRAIN_SCRIPT} code-quality relative/file.ext --mode evaluate --json
+# automated expert Q.A evaluator
+py {LOCAL_BRAIN_SCRIPT} eval-quality relative/file.ext --mode evaluate --json
 ```
 
 ### extra_commands
 
 Read the `get-memory-entry cli.index` for details.
+
+## Task Reporting Policies
+
+Report all progression of the task using MANDATORY COMMAND `task-report` following examples:
+
+```powershell
+# 01 — Task received
+py {LOCAL_BRAIN_SCRIPT} task-report --task-id t123 --text "Task received. Inspecting requirements, constraints, and existing implementation context." --json
+
+# 02 — Initial analysis
+py {LOCAL_BRAIN_SCRIPT} task-report --task-id t123 --text "Initial analysis completed. Defining implementation scope, acceptance criteria, and affected components." --json
+
+# 03 — Delegate implementation
+py {LOCAL_BRAIN_SCRIPT} task-report --task-id t123 --text "Delegating implementation work to worker profile worker.python.python_writer." --json
+
+# 04 — Implementation progress
+py {LOCAL_BRAIN_SCRIPT} task-report --task-id t123 --text "Implementation delegated to worker.python.python_writer is in progress according to the defined requirements." --json
+
+# 05 — Implementation completed
+py {LOCAL_BRAIN_SCRIPT} task-report --task-id t123 --text "Worker profile worker.python.python_writer completed the implementation. Reviewing produced changes before validation." --json
+
+# 06 — Delegate audit
+py {LOCAL_BRAIN_SCRIPT} task-report --task-id t123 --text "Delegating implementation audit to worker profile worker.python.python_auditor." --json
+
+# 07 — Audit findings
+py {LOCAL_BRAIN_SCRIPT} task-report --task-id t123 --text "Worker profile worker.python.python_auditor completed the audit. Reviewing findings and required corrections." --json
+
+# 08 — Corrections
+py {LOCAL_BRAIN_SCRIPT} task-report --task-id t123 --text "Delegating required corrections identified during audit to worker profile worker.python.python_writer." --json
+
+# 09 — Delegate code cleanup
+py {LOCAL_BRAIN_SCRIPT} task-report --task-id t123 --text "Functional implementation is complete. Delegating code cleanup to worker profile worker.python.python_code_cleaner." --json
+
+# 10 — Code cleanup completed
+py {LOCAL_BRAIN_SCRIPT} task-report --task-id t123 --text "Worker profile worker.python.python_code_cleaner completed cleanup. Verifying that behavior remains unchanged." --json
+
+# 11 — Delegate documentation
+py {LOCAL_BRAIN_SCRIPT} task-report --task-id t123 --text "Delegating documentation review and completion to worker profile worker.python.python_documentator." --json
+
+# 12 — Documentation completed
+py {LOCAL_BRAIN_SCRIPT} task-report --task-id t123 --text "Worker profile worker.python.python_documentator completed documentation updates for the implemented behavior." --json
+
+# 13 — Final audit
+py {LOCAL_BRAIN_SCRIPT} task-report --task-id t123 --text "Delegating final compliance and quality audit to worker profile worker.python.python_auditor." --json
+
+# 14 — Final validation
+py {LOCAL_BRAIN_SCRIPT} task-report --task-id t123 --text "Final audit passed. Validating implementation, cleanup, documentation, and acceptance criteria as an integrated result." --json
+
+# 15 — Task completed
+py {LOCAL_BRAIN_SCRIPT} task-report --task-id t123 --text "Task completed. Implementation, audit corrections, code cleanup, documentation, and final validation are complete." --json```

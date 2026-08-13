@@ -15,6 +15,7 @@ from brain.application.backlog.models import BacklogTask
 from brain.application.backlog.service import get_backlog_task, set_backlog_task_status
 from brain.application.logs.append_service import AppendLogRequest, append_log_entry
 from brain.application.logs.store import refresh_log_index
+from brain.infrastructure.runtime.paths import get_workspace_root
 
 
 @dataclass(slots=True, frozen=True)
@@ -47,7 +48,7 @@ def handle(args: argparse.Namespace) -> int:
     Returns:
         int: Zero on completed work; otherwise one.
     """
-    workspace_root = Path(os.environ.get("WORKSPACE_ROOT", ".")).resolve()
+    workspace_root = get_workspace_root()
     try:
         pending_task = get_backlog_task(workspace_root=workspace_root, task_id=args.task_id)
         metadata = _resolve_completion_metadata(task=pending_task, args=args)
@@ -83,8 +84,8 @@ def handle(args: argparse.Namespace) -> int:
             "log": {
                 "timestamp": result.timestamp,
                 "readCommand": result.read_command,
-                "path": result.log_file.as_posix(),
                 "domain": metadata.domain,
+                "domainChain": [part for part in metadata.domain.split(".") if part],
                 "title": metadata.title,
                 "changeType": metadata.change_type,
             },
@@ -162,3 +163,4 @@ def _validated_stage_paths(workspace_root: Path, requested_paths: list[str]) -> 
     if not validated:
         raise ValueError("At least one explicit stage path is required.")
     return validated
+

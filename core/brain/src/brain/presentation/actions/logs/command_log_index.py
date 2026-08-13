@@ -12,12 +12,23 @@ from dataclasses import asdict
 from pathlib import Path
 
 # Application Modules Imports
-from brain.application.logs.index_service import migrate_legacy_log_files_to_database, migrate_log_files_to_database
-from brain.application.logs.store import list_log_entries, log_database_summary, rendered_logs_index
+from brain.application.logs.index_service import (
+    migrate_legacy_log_files_to_database,
+    migrate_log_files_to_database,
+)
+from brain.application.logs.store import (
+    list_log_entries,
+    log_database_summary,
+    rendered_logs_index,
+)
+from brain.application.profiles.service import (
+    render_profile_template_value,
+    render_profile_template_variables,
+)
+from brain.infrastructure.runtime.paths import get_workspace_root
 from brain.presentation.terminal import log_step, render_markdown, render_placeholders
 
-
-WORKSPACE_ROOT = Path(os.environ.get("WORKSPACE_ROOT", "."))
+WORKSPACE_ROOT: Path | None = None
 
 
 def handle(args: argparse.Namespace) -> int:
@@ -34,14 +45,22 @@ def handle(args: argparse.Namespace) -> int:
     color_enabled = getattr(args, "color", False)
     try:
         log_step(args, "Reading DB-backed logs index...")
-        workspace_root = Path(WORKSPACE_ROOT).resolve()
+        workspace_root = get_workspace_root(workspace_root=WORKSPACE_ROOT)
 
-        entry_count, _domain_count, _latest_count = log_database_summary(workspace_root=workspace_root)
+        entry_count, _domain_count, _latest_count = log_database_summary(
+            workspace_root=workspace_root
+        )
         if entry_count == 0:
-            migrate_legacy_log_files_to_database(workspace_root=workspace_root, archive_sources=False)
-            migrate_log_files_to_database(workspace_root=workspace_root, archive_sources=False)
+            migrate_legacy_log_files_to_database(
+                workspace_root=workspace_root, archive_sources=False
+            )
+            migrate_log_files_to_database(
+                workspace_root=workspace_root, archive_sources=False
+            )
 
-        content = rendered_logs_index(workspace_root=workspace_root)
+        content = render_profile_template_variables(
+            rendered_logs_index(workspace_root=workspace_root), workspace_root
+        )
         all_entries = list_log_entries(workspace_root=workspace_root, newest_first=True)
         latest_by_domain = {}
         for entry in all_entries:
@@ -49,13 +68,20 @@ def handle(args: argparse.Namespace) -> int:
         entries = list(latest_by_domain.values())
         if args.section:
             section = args.section.strip().casefold()
-            entries = [entry for entry in entries if entry.domain.casefold().startswith(section)]
+            entries = [
+                entry
+                for entry in entries
+                if entry.domain.casefold().startswith(section)
+            ]
         args.json_payload = {
             "ok": True,
             "command": "log-index",
             "section": args.section,
             "count": len(entries),
-            "entries": [asdict(entry) for entry in entries],
+            "entries": render_profile_template_value(
+                [{k: v for k, v in asdict(entry).items() if k not in ("source_path", "source_mtime", "source_size")} for entry in entries],
+                workspace_root,
+            ),
         }
 
         if not args.section:
@@ -89,3 +115,4 @@ def handle(args: argparse.Namespace) -> int:
         msg = f"__RED__Error: {exc}__RESET__"
         print(render_placeholders(msg, color_enabled))
         return 1
+

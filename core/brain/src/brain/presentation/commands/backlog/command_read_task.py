@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from brain.presentation.commands.models import ArgumentSchema, CommandSchema
 
-
 SCHEMA = CommandSchema(
     name="read-task",
     domain="task backlog",
@@ -27,4 +26,11 @@ SCHEMA = CommandSchema(
             help="Task ID or number to read (e.g. t749 or 749).",
         ),
     ],
+    description="Read one backlog task by identifier.",
+    stdin=(),
+    examples=("py {LOCAL_BRAIN_SCRIPT} read-task t1",),
+    output=("The matching task record is printed.",),
+    exit_codes=("0: task found", "1: task ID not found"),
+    safeguards=("Task identifiers are validated before lookup.",),
+    notes=("Accepts IDs with or without the leading t.",),
 )

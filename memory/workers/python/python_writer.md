@@ -15,7 +15,7 @@ behavioral and integrity invariants, functional and quality validation, prohibit
 * To inspect an authorized Python symbol and its surrounding implementation, use the Inspection Tools defined below, for example `py {LOCAL_BRAIN_SCRIPT} search-symbol --name "MyClass" --path "src/file.py" --kind class --json`.
 * To read an authorized file completely or inspect its scoped changes, use `Get-Content`, `git diff`, and `git status`, for example `Get-Content -Raw -LiteralPath 'src/file.py'`.
 * To edit an authorized file, use the Patching Tools defined below, for example `$PATCH_NATIVE | py {LOCAL_BRAIN_SCRIPT} apply-patch --format native --check --json` followed by the identical apply command.
-* To evaluate every changed Python artifact deterministically, use the Automatic Work Quality Evaluator defined below, for example `py {LOCAL_BRAIN_SCRIPT} code-quality src/file.py --mode check --json`.
+* To evaluate every changed Python artifact deterministically, use the Automatic Work Quality Evaluator defined below, for example `py {LOCAL_BRAIN_SCRIPT} eval-quality src/file.py --mode check --json`.
 * To prove the requested behavior, use the exact functional commands supplied by the assignment, for example `py -m pytest tests/test_file.py -q`.
 
 **Prohibited Actions**:
@@ -144,9 +144,9 @@ Allways validate your work using checking tools; pass does not replace the other
 
 ```powershell
 # Smart Quality evalutor (Use by Policie)
-py {LOCAL_BRAIN_SCRIPT} code-quality src/module.py --mode check --json
-py {LOCAL_BRAIN_SCRIPT} code-quality src/module.py --mode evaluate --json
-py {LOCAL_BRAIN_SCRIPT} code-quality src/module.py --mode format --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality src/module.py --mode check --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality src/module.py --mode evaluate --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality src/module.py --mode format --json
 
 # Syntax check
 py -m py_compile relative/path.py

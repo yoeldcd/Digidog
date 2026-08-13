@@ -15,6 +15,7 @@ from brain.infrastructure.runtime.paths import (
     get_knowledge_database_path,
     get_local_database_dir,
     get_vectorstore_dir,
+    get_workspace_root,
 )
 from brain.infrastructure.runtime.migrations.migration_dtos import RuntimeMigrationReportDTO
 from brain.infrastructure.runtime.migrations.migration_steps import (
@@ -41,7 +42,7 @@ def migrate_brain_runtime_stores(
         RuntimeMigrationReportDTO: Completed actions and warnings.
     """
     resolved_agent_home: Path = get_agent_home(agent_home=agent_home)
-    resolved_workspace_root: Path = (workspace_root or Path.cwd()).resolve()
+    resolved_workspace_root = get_workspace_root(workspace_root=workspace_root)
     report = RuntimeMigrationReportDTO()
 
     get_global_database_dir()

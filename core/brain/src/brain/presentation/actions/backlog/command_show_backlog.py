@@ -11,6 +11,7 @@ from pathlib import Path
 
 from brain.application.backlog.rendering import render_task_table, resolve_task_reference
 from brain.application.backlog.service import list_backlog_tasks
+from brain.infrastructure.runtime.paths import get_workspace_root
 from brain.presentation.terminal import render_markdown
 
 
@@ -35,7 +36,7 @@ def handle(args: argparse.Namespace) -> int:
     Returns:
         int: Always zero after rendering the requested task tree.
     """
-    workspace_root = Path(os.environ.get("WORKSPACE_ROOT", ".")).resolve()
+    workspace_root = get_workspace_root()
     color_enabled = getattr(args, "color", False)
 
     show_all = getattr(args, "all", False)
@@ -48,8 +49,14 @@ def handle(args: argparse.Namespace) -> int:
     args.narration_output = ''
     args.narration_table_columns = ['estado', 'dominio', 'tarea']
     args.narration_table_rows = [
-        {'estado': f'{_status_emoji(task.status)} `{task.status}` · {_priority_emoji(task.priority)} `{task.priority}`', 'dominio': task.domain,
-         'tarea': f'`{task.task_id}` — {task.title}'}
+        {
+            "estado": (
+                f"{_status_emoji(task.status)} `{task.status}` · "
+                f"{_priority_emoji(task.priority)} `{task.priority}`"
+            ),
+            "dominio": task.domain,
+            "tarea": f"`{task.task_id}` — {task.title}",
+        }
         for task in projected_tasks
     ]
     args.json_payload = {

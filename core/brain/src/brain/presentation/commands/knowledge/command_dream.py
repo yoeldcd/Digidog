@@ -7,11 +7,30 @@ from __future__ import annotations
 
 from brain.presentation.commands.models import ArgumentSchema, CommandSchema
 
-
 SCHEMA = CommandSchema(
     name="dream",
     domain="knowledge",
     help="Use configured LLM stages to propose knowledge deltas, then confirm selected applications.",
+    description=(
+        "Run configured LLM stages over selected sources to propose knowledge deltas and refresh the graph when requested."
+    ),
+    stdin=(
+        "No stdin is read; source selection, confidence, pruning, and output mode are command-line flags.",
+    ),
+    examples=("py {LOCAL_BRAIN_SCRIPT} dream --scope local --limit 10 --json",),
+    output=(
+        "Text reports scanned sources, generated proposals, and graph updates. --json emits stage results and counts.",
+    ),
+    exit_codes=(
+        "0: dreaming completed, including no new proposals.",
+        "2: invalid options, unavailable source, or stage failure.",
+    ),
+    safeguards=(
+        "Without --force, current consumer timestamps can skip unchanged sources. --prune rebuilds the graph before processing.",
+    ),
+    notes=(
+        "Scope defaults to all, domain to all, and limit is unset. Proposed deltas are reviewed separately with knowledge-deltas.",
+    ),
     arguments=[
         ArgumentSchema(
             flags=["--domain"],
@@ -50,6 +69,8 @@ SCHEMA = CommandSchema(
             action="store_true",
             help="Recreate the entire knowledge graph before running dream.",
         ),
-        ArgumentSchema(flags=["-j", "--json"], action="store_true", help="Output results as JSON."),
+        ArgumentSchema(
+            flags=["-j", "--json"], action="store_true", help="Output results as JSON."
+        ),
     ],
 )

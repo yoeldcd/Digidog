@@ -12,6 +12,7 @@ from pathlib import Path
 
 from brain.presentation.terminal import render_placeholders, log_step
 from brain.application.backlog.service import create_backlog_task
+from brain.infrastructure.runtime.paths import get_workspace_root
 
 
 
@@ -39,7 +40,7 @@ def handle(args: argparse.Namespace) -> int:
         print("Error: priority must be HIGH, MEDIUM, or LOW.", file=sys.stderr)
         return 1
 
-    workspace_root = Path(os.environ.get("WORKSPACE_ROOT", ".")).resolve()
+    workspace_root = get_workspace_root()
     color_enabled = getattr(args, "color", False)
 
     log_step(args, f"Adding task under domain '{args.task_domain}' with priority {priority}...")

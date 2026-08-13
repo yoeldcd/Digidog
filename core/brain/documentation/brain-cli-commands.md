@@ -40,6 +40,7 @@ vectorstore maintenance, and memory indexing stay in their own modules.
 | `wiki` | mode, documentation_path | `--log-domain`, `--host`, `--port`, `--json` | Checks, generates, or serves a documentation wiki through the core-owned utility. |
 | `apply-patch` | none | `--check`, `--json` | Validates and applies exact-text patch specifications received through standard input. |
 | `propagate-agent-prompt` | none | `--source`, `--mirrors-file`, `--dry-run`, `--json` | Verifies or synchronizes canonical prompt mirrors through the core-owned utility. |
+| `code-quality` | paths | `--mode`, `--language`, `--evaluator`, `--schema`, `--json` | Runs Core code-quality checks, formatting, semantic evaluation, or DTO schema output through the evaluator adapter. |
 | `memory-structure` | none | `--json`, `--uptime-order`, `--limit` | Lists memory domains, subdomains, and indexed entries. |
 | `add-memory-domain` | domain | `--json` | Creates a Markdown memory domain or subdomain. |
 | `set-memory-entry` | domain, key, val | `--value`, `--json` | Writes Markdown content to a memory entry. |
@@ -62,7 +63,7 @@ vectorstore maintenance, and memory indexing stay in their own modules.
 | `query-log` | domain, query | `--limit`, `--json` | Searches workspace logs through the local log vectorstore. |
 | `list-profiles` | none | `--json` | Lists available agent profiles. |
 | `read-profile` | name | `--json` | Reads every Markdown entry for one profile. |
-| `list-snippets` | query | `--filter` | Lists reusable snippets from the shared home repository. |
+| `list-snippets` (`list-utilities`) | query | `--filter`, `--scope local|global|all` | Lists local consumer utilities before shared agent snippets. |
 | `clone-snippet` | name | `--dest` | Copies a reusable snippet into the workspace. |
 | `update-vectorstore` | none | `--json` | Incrementally updates the shared memory vectorstore. |
 | `rebuild-vectorstore` | none | `--yes`, `--json` | Rebuilds the shared memory vectorstore from scratch. |
@@ -290,16 +291,17 @@ configured mirrors must be checked or synchronized.
 
 #### `apply-patch`
 
-**What It Does:** Executes a guarded, source-redacted exact text patch specification received on standard input through the typed Python patching vertical.
+**What It Does:** Adapts the canonical `core/utilities/apply_text_patch` implementation for a workspace consumer. The adapter injects the workspace root, forwards `--format`, and presents the utility result.
 
-**Use It When:** Editing or creating codebase files through standard input JSON specifications.
+**Use It When:** Applying the exact patch contracts documented in the [canonical Apply Text Patch specification](../../utilities/apply_text_patch/documentation/README.md).
 
-**Result:** Validates anchors, occurrences, strict encodings, and physical path confinement. In check mode (`--check`), plans and returns redacted SHA-256 evidence without disk writes. In apply mode, performs same-directory exclusive temporary writes, atomic per-file replacement, and batch rollback upon failure.
+**Result:** JSON (default), native, and auto formats are available. Native uses the contextual patch grammar accepted by the harness patcher, including named sections, ordered hunks, whitespace-tolerant context, and `*** End of File`. Shared safeguards include trusted workspace-relative confinement, reparse rejection, strict encoding/BOM checks, complete preflight, per-file atomic replacement, best-effort rollback/cleanup, and redacted output. `auto` is sentinel-only and never falls back.
 
 | Parameter | Required | Default | Description |
 |---|---|---|---|
-| standard input | Yes | none | JSON specification containing `edits` and/or `creates`. |
-| `--check` | No | false | Validate and report evidence without filesystem writes. |
+| standard input | Yes | none | JSON contract retaining exact occurrence guards, or the native contextual patch contract. |
+| `--format` | No | `json` | Selects `json`, `native`, or sentinel-only `auto`. |
+| `--check` | No | false | Run complete validation and planning without filesystem writes. |
 
 ## `brain.application.memory`
 
@@ -713,11 +715,11 @@ Snippet commands list and clone reusable utilities.
 
 #### `list-snippets`
 
-**What It Does:** Lists reusable snippets from the shared home repository, optionally filtered by text.
+**What It Does:** Lists reusable utilities from the consumer workspace `$agent/scripts` directory before shared entries from the agent `snippets` directory. `list-utilities` is an alias of the same command, and `--scope` can select either source.
 
 **Use It When:** Looking for an existing utility before creating a new one.
 
-**Result:** Prints matching snippet names and paths.
+**Result:** Prints matching utility paths and descriptions from both sources. Folder descriptions use root `README.md` first, then `documentation/README.md`, and finally a supported script in the folder root.
 
 **Arguments & Flags:**
 
@@ -725,6 +727,7 @@ Snippet commands list and clone reusable utilities.
 |---|---|---|---|
 | query | No | none | Compact positional filter text. |
 | `--filter` | No | none | Explicit filter text. |
+| `--scope` | No | `all` | Selects `local`, `global`, or both sources with `all`. |
 
 #### `clone-snippet`
 

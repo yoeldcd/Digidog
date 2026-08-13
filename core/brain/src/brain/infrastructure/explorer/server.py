@@ -182,31 +182,6 @@ class BrainExplorerRequestHandler(
         self._handle_static(path=parsed_url.path)
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     def _read_json_body(self) -> dict[str, Any]:
         """
         Read and parse a bounded JSON request body.

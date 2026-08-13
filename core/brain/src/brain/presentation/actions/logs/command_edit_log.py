@@ -12,6 +12,7 @@ from pathlib import Path
 
 # Application Modules Imports
 from brain.application.logs.edit_service import EditLogError, EditLogRequest, edit_log_entry
+from brain.infrastructure.runtime.paths import get_workspace_root
 from brain.presentation.terminal import log_step, render_placeholders
 
 
@@ -48,7 +49,7 @@ def handle(args: argparse.Namespace) -> int:
         if timestamp is None:
             raise EditLogError("Datetime must be provided via --datetime or compact positional form.")
 
-        workspace_root: Path = Path(os.environ.get("WORKSPACE_ROOT", ".")).resolve()
+        workspace_root = get_workspace_root()
         request = EditLogRequest(
             timestamp=timestamp,
             log_domain=_first_present(args.log_domain, args.domain),
@@ -77,7 +78,6 @@ def handle(args: argparse.Namespace) -> int:
                 "description": entry.description,
                 "impact": entry.impact,
                 "readCommand": result.read_command,
-                "path": result.log_file.as_posix(),
             } if entry is not None else None,
         }
         return 0
@@ -87,3 +87,4 @@ def handle(args: argparse.Namespace) -> int:
     except Exception as exc:
         print(render_placeholders(f"__RED__Error: {exc}__RESET__", color_enabled))
         return 1
+

@@ -1074,6 +1074,38 @@ class KnowledgeGraphTests(unittest.TestCase):
         self.assertIn("Precise log", log_stdout.getvalue())
         self.assertNotIn("Other log", log_stdout.getvalue())
 
+    def test_read_diary_localizes_runtime_template_variables_for_human_and_json(self) -> None:
+        """Render persisted diary template variables in every reader output path."""
+        diary_dir = self.root / "memory" / "diary" / "2026-06"
+        diary_dir.mkdir(parents=True)
+        diary_path = diary_dir / "29-06-2026.md"
+        diary_path.write_text(
+            "# Diary - 29-06-2026\n\n"
+            "## 29-06-2026 10:15:00 - Runtime command\n\n"
+            "Run: py {LOCAL_BRAIN_SCRIPT} get-context\n",
+            encoding="utf-8",
+        )
+        old_memory_root = brain_memory_paths_module.MEMORY_ROOT
+        brain_memory_paths_module.MEMORY_ROOT = self.root / "memory"
+        expected_script = f"'{(self.root / '$agent' / 'scripts' / 'brain.py').resolve().as_posix()}'"
+        try:
+            human_args = argparse.Namespace(datetime="29-06-2026", date=None, time=None, limit=None, color=False)
+            human_stdout = io.StringIO()
+            with redirect_stdout(human_stdout):
+                self.assertEqual(command_read_diary_module.handle(human_args), 0)
+
+            json_args = argparse.Namespace(datetime="29-06-2026", date=None, time=None, limit=None, color=False)
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(command_read_diary_module.handle(json_args), 0)
+        finally:
+            brain_memory_paths_module.MEMORY_ROOT = old_memory_root
+
+        for rendered in (human_stdout.getvalue(), json_args.json_payload["entries"][0]["text"]):
+            self.assertIn(expected_script, rendered)
+            self.assertNotIn("{LOCAL_BRAIN_SCRIPT}", rendered)
+            self.assertNotIn("py py ", rendered)
+            self.assertNotIn("$agent", rendered.replace(expected_script, ""))
+
     def test_llm_prompt_does_not_expose_source_path(self) -> None:
         """Ensure model prompts receive semantic content without file provenance."""
         prompt_text = build_delta_prompt(

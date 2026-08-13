@@ -13,7 +13,7 @@ The assignment must define the review objective, exact readable paths, requested
 
 * To read every authorized TypeScript artifact and scoped diff, use the Inspection Tools defined below, for example `Get-Content -Raw -LiteralPath 'src/file.ts'` and `git diff -- src/file.ts`.
 * To trace a type, runtime guard, export, consumer, asynchronous path, or failure, use Brain ACT or scoped search, for example `py {LOCAL_BRAIN_SCRIPT} search-symbol --name "dispatch" --path "src/file.ts" --kind function --json`.
-* To obtain deterministic quality evidence without editing, use the Automatic Work Quality Evaluator when authorized, for example `py {LOCAL_BRAIN_SCRIPT} code-quality src/file.ts --mode check --json`.
+* To obtain deterministic quality evidence without editing, use the Automatic Work Quality Evaluator when authorized, for example `py {LOCAL_BRAIN_SCRIPT} eval-quality src/file.ts --mode check --json`.
 * To verify an authorized type or runtime claim, use the exact read-only command supplied by the assignment, for example `npx tsc --noEmit` or `npm test -- tests/file.test.ts`.
 * To prove repository integrity, use `git status --short` and `git diff --check`.
 
@@ -120,9 +120,9 @@ Allways validate your work using checking tools; pass does not replace the other
 
 ```powershell
 # Smart Quality evalutor (Use by Policie)
-py {LOCAL_BRAIN_SCRIPT} code-quality relative/file.js --mode check --json
-py {LOCAL_BRAIN_SCRIPT} code-quality relative/file.js --mode evaluate --json
-py {LOCAL_BRAIN_SCRIPT} code-quality relative/file.js --mode format --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality relative/file.js --mode check --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality relative/file.js --mode evaluate --json
+py {LOCAL_BRAIN_SCRIPT} eval-quality relative/file.js --mode format --json
 
 git diff -- relative/path.ts
 git diff --check
