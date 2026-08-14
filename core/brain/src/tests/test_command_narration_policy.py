@@ -29,6 +29,14 @@ from brain.presentation.router.services.narration_templates import NARRATION_TEM
 
 
 def test_internal_contracts_drive_command_selection_and_start_phases() -> None:
+    """Verify command contracts select reviewed narration and start phases.
+
+    Args:
+
+    Returns:
+        None: Assertions verify the selected contracts and start phases.
+    """
+
     assert narration_for(command="write-diary", args=Namespace()) is not None
     assert narration_for("write-diary", Namespace()) is not None
     assert narration_for("set-task-status", Namespace()) is not None
@@ -41,6 +49,14 @@ def test_internal_contracts_drive_command_selection_and_start_phases() -> None:
 
 
 def test_narration_contracts_do_not_read_workspace_files() -> None:
+    """Verify narration contract lookup does not access workspace files.
+
+    Args:
+
+    Returns:
+        None: Assertions verify the contract lookup and start phase.
+    """
+
     with patch("pathlib.Path.open", side_effect=AssertionError("runtime file access is forbidden")):
         narration = narration_for("get-context", Namespace())
     assert narration is not None
@@ -48,13 +64,30 @@ def test_narration_contracts_do_not_read_workspace_files() -> None:
 
 
 def test_reviewed_aliases_share_templates() -> None:
+    """Verify reviewed aliases reuse identical narration templates.
+
+    Args:
+
+    Returns:
+        None: Assertions verify that each reviewed alias pair is equal.
+    """
+
     assert narration_for("init", Namespace()) == narration_for("wakeup", Namespace())
     assert narration_for("register-project", Namespace()) == narration_for("registre-proyect", Namespace())
 
 
 def test_every_seeded_command_has_a_specific_packaged_output_contract() -> None:
+    """Verify every seeded command exposes a specific packaged output contract.
+
+    Args:
+
+    Returns:
+        None: Assertions verify the row count and command-specific outputs.
+    """
+
     generic_fragments = ("He completado la operación", "No pude completar la operación")
-    assert len(NARRATION_TEMPLATE_ROWS) == 47
+    assert len(NARRATION_TEMPLATE_ROWS) == 49
+
     for command in NARRATION_TEMPLATE_ROWS:
         narration = narration_for(command, Namespace())
         assert narration is not None, command
@@ -63,6 +96,14 @@ def test_every_seeded_command_has_a_specific_packaged_output_contract() -> None:
 
 
 def test_delete_task_error_names_the_rejected_operation() -> None:
+    """Verify delete-task failure narration names the rejected operation.
+
+    Args:
+
+    Returns:
+        None: Assertions verify the operation-specific safe fallback.
+    """
+
     narration = narration_for("delete-task", Namespace())
     assert narration is not None
     draft = build_narration_draft(
@@ -80,12 +121,21 @@ def test_delete_task_error_names_the_rejected_operation() -> None:
 
 
 def test_seeded_failure_templates_preserve_their_command_domain() -> None:
+    """Verify seeded failure templates retain their command domains.
+
+    Args:
+
+    Returns:
+        None: Assertions verify each expected phrase in its command template.
+    """
+
     expected_verbs = {
         "delete-memory-entry": "eliminaba la entrada",
         "export-logs": "exportar los registros",
         "knowledge-export": "exportar mi conocimiento",
         "rebuild-vectorstore": "reconstruir mi índice vectorial",
     }
+
     for command, phrase in expected_verbs.items():
         narration = narration_for(command, Namespace())
         assert narration is not None
@@ -93,6 +143,14 @@ def test_seeded_failure_templates_preserve_their_command_domain() -> None:
 
 
 def test_draft_selects_status_and_includes_real_facts() -> None:
+    """Verify status selection includes safe factual task details.
+
+    Args:
+
+    Returns:
+        None: Assertions verify the selected status branch and factual fields.
+    """
+
     narration = narration_for("set-task-status", Namespace())
     assert narration is not None
     draft = build_narration_draft(
@@ -110,6 +168,14 @@ def test_draft_selects_status_and_includes_real_facts() -> None:
 
 
 def test_complete_work_draft_contains_safe_spanish_fallback_without_payload_content() -> None:
+    """Verify complete-work fallback excludes payload text and keeps task identity.
+
+    Args:
+
+    Returns:
+        None: Assertions verify the bounded fallback content.
+    """
+
     narration = narration_for("complete-work", Namespace())
     assert narration is not None
     draft = build_narration_draft(
@@ -133,7 +199,14 @@ def test_complete_work_draft_contains_safe_spanish_fallback_without_payload_cont
 
 
 def test_show_backlog_projects_reference_marker_without_mutating_storage() -> None:
-    """CLI projection must expose the real image path while preserving stored metadata."""
+    """Verify CLI projection exposes the image path without mutating metadata.
+
+    Args:
+
+    Returns:
+        None: Assertions verify projected output and unchanged stored metadata.
+    """
+
     task = BacklogTask(
         task_id="t42",
         domain="core.brain",
@@ -142,6 +215,7 @@ def test_show_backlog_projects_reference_marker_without_mutating_storage() -> No
         priority="HIGH",
         status="TODO",
     )
+
     with patch("pathlib.Path.is_file", return_value=True):
         projected = resolve_task_reference(task=task, workspace_root=Path("workspace"))
 
@@ -150,14 +224,28 @@ def test_show_backlog_projects_reference_marker_without_mutating_storage() -> No
 
 
 def test_task_reference_path_returns_canonical_existing_extension() -> None:
-    """The reusable resolver keeps extension selection independent of CLI projection."""
+    """Verify the reusable resolver selects the canonical existing extension.
+
+    Args:
+
+    Returns:
+        None: Assertions verify extension selection independently of projection.
+    """
+
     with patch("pathlib.Path.is_file", side_effect=(False, True)):
         reference_path = resolve_task_reference_path("t42", Path("workspace"))
 
     assert reference_path == "$agent/pictures/backlog-pic-t42.jpg"
 
 def test_show_backlog_narrates_only_count_and_keeps_task_table_visual() -> None:
-    """Keep task details visible in Markdown while excluding them from speech."""
+    """Verify task details remain visual while speech contains only the count.
+
+    Args:
+
+    Returns:
+        None: Assertions verify the spoken count and preserved Markdown details.
+    """
+
     tasks = [
         BacklogTask(
             task_id="t1",
@@ -197,11 +285,20 @@ def test_show_backlog_narrates_only_count_and_keeps_task_table_visual() -> None:
 
 
 def test_show_backlog_exposes_semantic_tagged_avatar_columns() -> None:
+    """Verify avatar columns remain semantically tagged in the command projection.
+
+    Args:
+
+    Returns:
+        None: Assertions verify the command result and tagged column payload.
+    """
+
     task = BacklogTask(
         task_id='t7', domain='core.ui', title='Repair footer', description='',
         priority='HIGH', status='WORKING',
     )
     args = Namespace(task_domain=None, all=False, color=False, json=True)
+
     with patch.object(command_show_backlog, 'list_backlog_tasks', return_value=[task]):
         assert command_show_backlog.handle(args) == 0
     assert args.narration_table_columns == ['estado', 'dominio', 'tarea']
@@ -213,10 +310,28 @@ def test_show_backlog_exposes_semantic_tagged_avatar_columns() -> None:
 
 
 def test_dispatch_mirrors_output_and_emits_call_then_outcome() -> None:
+    """Verify dispatch mirrors handler output and emits call and outcome signals in order.
+
+    Args:
+
+    Returns:
+        None: Assertions verify output mirroring and signal phases.
+    """
+
     narration = CommandNarration("Voy a probar.", "Éxito: Terminé. | Error: Falló: {cause}.", True)
 
     def handler(_args: Namespace) -> int:
+        """Emit representative command output and report success.
+
+        Args:
+            _args (Namespace): Mock command arguments ignored by the handler.
+
+        Returns:
+            int: Zero to indicate successful mocked execution.
+        """
+
         print("resultado real")
+
         return 0
 
     with (
@@ -225,15 +340,41 @@ def test_dispatch_mirrors_output_and_emits_call_then_outcome() -> None:
         patch("brain.presentation.router.services.command_router_service.VoiceSignalService.emit_reviewed") as emit,
         patch("sys.stdout", new_callable=io.StringIO) as output,
     ):
-        assert dispatch_command(Namespace(command="demo", no_speak=False)) == 0
+        assert dispatch_command(
+            Namespace(
+                command="demo",
+                authority="user",
+                authority_provided=True,
+                authority_verified=True,
+                no_speak=False,
+            )
+        ) == 0
     assert "resultado real" in output.getvalue()
     assert [call.kwargs["phase"] for call in emit.call_args_list] == ["call", "output"]
     assert emit.call_args_list[1].kwargs["output"] == "resultado real\n"
 
 
 def test_no_speak_bypasses_signals() -> None:
+    """Verify no_speak suppresses narration signals while retaining handler output.
+
+    Args:
+
+    Returns:
+        None: Assertions verify output preservation and signal suppression.
+    """
+
     def handler(_args: Namespace) -> int:
+        """Emit representative silent output and report success.
+
+        Args:
+            _args (Namespace): Mock command arguments ignored by the handler.
+
+        Returns:
+            int: Zero to indicate successful mocked execution.
+        """
+
         print("silencioso")
+
         return 0
 
     with (
@@ -241,17 +382,42 @@ def test_no_speak_bypasses_signals() -> None:
         patch("brain.presentation.router.services.command_router_service.VoiceSignalService.emit_reviewed") as emit,
         patch("sys.stdout", new_callable=io.StringIO) as output,
     ):
-        assert dispatch_command(Namespace(command="query", no_speak=True)) == 0
+        assert dispatch_command(
+            Namespace(
+                command="query",
+                authority="user",
+                authority_provided=True,
+                authority_verified=True,
+                no_speak=True,
+            )
+        ) == 0
     assert output.getvalue() == "silencioso\n"
     emit.assert_not_called()
 
 
 def test_json_dispatch_preserves_machine_output_and_command_narration() -> None:
-    """JSON controls stdout format while the internal silence flag controls narration."""
+    """Verify JSON controls stdout while the internal silence flag controls narration.
+
+    Args:
+
+    Returns:
+        None: Assertions verify machine-readable output and narration phases.
+    """
+
     narration = CommandNarration("Voy a probar.", "Éxito: Terminé.", False)
 
     def handler(args: Namespace) -> int:
+        """Populate a machine-readable payload and report success.
+
+        Args:
+            args (Namespace): Mock command arguments receiving the JSON payload.
+
+        Returns:
+            int: Zero to indicate successful mocked execution.
+        """
+
         args.json_payload = {"ok": True, "value": 7}
+
         return 0
 
     with (
@@ -260,21 +426,65 @@ def test_json_dispatch_preserves_machine_output_and_command_narration() -> None:
         patch("brain.presentation.router.services.command_router_service.VoiceSignalService.emit_reviewed") as emit,
         patch("sys.stdout", new_callable=io.StringIO) as output,
     ):
-        assert dispatch_command(Namespace(command="demo", json=True, no_speak=False)) == 0
+        assert dispatch_command(
+            Namespace(
+                command="demo",
+                authority="user",
+                authority_provided=True,
+                authority_verified=True,
+                json=True,
+                no_speak=False,
+            )
+        ) == 0
     assert output.getvalue() == '{"ok":true,"value":7}\n'
     assert [call.kwargs["phase"] for call in emit.call_args_list] == ["call", "output"]
 
 def test_configured_silent_command_bypasses_normal_and_json_narration() -> None:
-    """Configured silent commands preserve outputs while emitting no voice signals."""
+    """Configured silent commands preserve outputs while emitting no voice signals.
+
+    Args:
+
+    Returns:
+        None: Assertions verify both normal and JSON signal suppression.
+    """
+
     def handler(args: Namespace) -> int:
+        """Produce the configured command's normal or JSON output.
+
+        Args:
+            args (Namespace): Mock command arguments selecting the output mode.
+
+        Returns:
+            int: Zero to indicate successful mocked execution.
+        """
+
         if getattr(args, "json", False):
             args.json_payload = {"ok": True}
+
         else:
             print("visible")
+
         return 0
 
     silent = AvatarConfigDTO(silent_commands=("quiet",))
-    for args in (Namespace(command="quiet", no_speak=False), Namespace(command="quiet", json=True, no_speak=False)):
+
+    for args in (
+        Namespace(
+            command="quiet",
+            authority="user",
+            authority_provided=True,
+            authority_verified=True,
+            no_speak=False,
+        ),
+        Namespace(
+            command="quiet",
+            authority="user",
+            authority_provided=True,
+            authority_verified=True,
+            json=True,
+            no_speak=False,
+        ),
+    ):
         with (
             patch("brain.presentation.router.services.command_router_service.get_action_handler", return_value=handler),
             patch("brain.presentation.router.services.command_router_service.load_avatar_config", return_value=silent),
@@ -285,8 +495,29 @@ def test_configured_silent_command_bypasses_normal_and_json_narration() -> None:
         emit.assert_not_called()
 
 def test_command_show_policy_normalizes_keys_and_preserves_configured_fields() -> None:
-    """Hyphenated commands resolve their immutable configured presentation policy."""
-    config = AvatarConfigDTO.model_validate({"commands_show_customization": {"show_backlog": {"show_message": False, "speak_message": False, "hiden_on_muted": True, "level": "important", "pre_processor": "Resume: {OUTPUT}", "animation": "celebrating"}}})
+    """Verify hyphenated commands resolve their immutable presentation policy.
+
+    Args:
+
+    Returns:
+        None: Assertions verify normalized command keys and configured fields.
+    """
+
+    config = AvatarConfigDTO.model_validate(
+        {
+            "commands_show_customization": {
+                "show_backlog": {
+                    "show_message": False,
+                    "speak_message": False,
+                    "hiden_on_muted": True,
+                    "level": "important",
+                    "pre_processor": "Resume: {OUTPUT}",
+                    "animation": "celebrating",
+                },
+            },
+        },
+    )
+
     policy = command_show_policy("show-backlog", config)
     assert policy is not None
     assert (policy.show_message, policy.speak_message, policy.hiden_on_muted) == (False, False, True)
@@ -294,6 +525,64 @@ def test_command_show_policy_normalizes_keys_and_preserves_configured_fields() -
 
 
 def test_silent_commands_override_configured_show_customizations() -> None:
-    """Authoritative silent commands suppress even an otherwise configured policy."""
-    config = AvatarConfigDTO.model_validate({"silent_commands": ["show-backlog"], "commands_show_customization": {"show_backlog": {"speak_message": True}}})
+    """Verify authoritative silent commands suppress configured show customizations.
+
+    Args:
+
+    Returns:
+        None: Assertions verify that the silent-command policy takes precedence.
+    """
+
+    config = AvatarConfigDTO.model_validate(
+        {
+            "silent_commands": ["show-backlog"],
+            "commands_show_customization": {
+                "show_backlog": {
+                    "speak_message": True,
+                },
+            },
+        },
+    )
+
     assert command_show_policy("show-backlog", config) is None
+
+
+def test_narration_recursively_redacts_password_fields_and_nested_digests() -> None:
+    """Keep plaintext passwords and nested command digests out of narration.
+
+    Args:
+        None.
+
+    Returns:
+        None: Assertions verify recursive redaction while preserving safe facts.
+    """
+
+    password = "super-secret-password"
+    digest = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    draft = build_narration_draft(
+        command="generate-pwd",
+        template="Éxito: Resultado listo. | Error: No pude completar la operación.",
+        args=Namespace(
+            password=password,
+            json_payload={
+                "ok": True,
+                "hash": digest,
+                "nested": {
+                    "password_digest": digest,
+                    "items": [
+                        {"secret": password},
+                        {"label": "safe fact"},
+                    ],
+                },
+            },
+        ),
+        output=f"generated {digest}",
+        cause=f"failed with {password}",
+        phase="output",
+    )
+
+    assert password not in draft
+    assert digest not in draft
+    assert '"password": "[REDACTED]"' in draft
+    assert '"hash": "[REDACTED]"' in draft
+    assert "safe fact" in draft

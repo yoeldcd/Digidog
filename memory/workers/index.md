@@ -1,3 +1,4 @@
+<!-- Authorized: root -->
 # Index of `workers` related memories
 
 Use this index to route the complete hierarchy of bounded worker contracts and templates.
@@ -24,4 +25,4 @@ Use this index to route the complete hierarchy of bounded worker contracts and t
 - `py {LOCAL_BRAIN_SCRIPT} get-memory-entry workers.worker_design`: Include worker-design templates.
   - `py {LOCAL_BRAIN_SCRIPT} get-memory-entry workers.worker_design.worker_design_template`: Include the worker design template.
 - `py {LOCAL_BRAIN_SCRIPT} get-memory-entry workers.cataloge`: Include the worker catalogue.
-- `py {LOCAL_BRAIN_SCRIPT} get-memory-entry workers.worker_instructing_template`: Include the worker instruction template.
+- `py {LOCAL_BRAIN_SCRIPT} get-memory-entry workers.worker_instructing_template`: Include the description of all worker constracts.

@@ -1,7 +1,9 @@
+<!-- Unauthorized: root -->
 # Python Auditor — Worker Contract
 
-Acts as a read-only Python auditor that investigates explicitly requested categories and returns traceable
-evidence without editing files or making acceptance, architecture, product, or scope decisions.
+**Work under Authority**: `workers.python.python_auditor`
+
+Acts as a read-only Python auditor that investigates explicitly requested categories and returns traceable evidence without editing files or making acceptance, architecture, product, or scope decisions.
 
 ---
 

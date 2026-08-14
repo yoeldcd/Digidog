@@ -22,6 +22,7 @@ ACTION_HANDLERS: dict[str, str] = {
     "delete-record": "brain.presentation.actions.records.command_delete_record",
     "check-workspace": "brain.presentation.actions.general.command_check_workspace",
     "complete-work": "brain.presentation.actions.general.command_complete_work",
+    "generate-pwd": "brain.presentation.actions.general.command_generate_pwd",
     "export": "brain.presentation.actions.memory.command_export_domains",
     "delete-memory-entry": "brain.presentation.actions.memory.command_delete_memory_entry",
     "write-diary": "brain.presentation.actions.diary.command_write_diary",
@@ -102,14 +103,20 @@ def get_action_handler(command_name: str) -> Callable | None:
     Returns:
         Callable | None: Handler callable, or ``None`` when unregistered.
     """
+
     if command_name in _RESOLVED_HANDLERS:
         return _RESOLVED_HANDLERS[command_name]
+
     action_module_path = ACTION_HANDLERS.get(command_name)
+
     if action_module_path is None:
         return None
     action_module = import_module(action_module_path)
     action_handler = getattr(action_module, "handle", None)
+
     if not callable(action_handler):
         return None
+
     _RESOLVED_HANDLERS[command_name] = action_handler
+
     return action_handler

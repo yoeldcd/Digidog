@@ -1,3 +1,4 @@
+<!-- Authorized: root, auditor -->
 # Archeitectural distribution patterns for (Testing Codebase)
 
 /{test_suite, e.g. tests}

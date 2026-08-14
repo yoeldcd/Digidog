@@ -1,3 +1,4 @@
+<!-- Authorized: root, typescript -->
 # TypeScript development practices
 
 ## Clean architecture principles

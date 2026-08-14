@@ -1,3 +1,4 @@
+<!-- Authorized: root, auditor -->
 # Archeitectural distribution patterns for Storage Structures
 
 /{data_stores, e.g. database_stores}

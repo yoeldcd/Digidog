@@ -1,6 +1,7 @@
+<!-- Authorized: root, reviewer, documentator -->
 # Maintain the technical documentation of projects unified, updated, and accessible through interactive HTML wikis
 
-**IMPORTANT**
+**IMPORTANT**:
 
 COMPILE WIKI ONLY UNLESS USER REQUEST. IS A EXPENSIVE COMMAND.
 

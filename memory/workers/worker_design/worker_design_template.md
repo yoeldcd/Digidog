@@ -1,3 +1,4 @@
+<!-- Authorized: root -->
 <!--
 
 - The following template defines the mandatory structure and format for worker-agent profiles.
@@ -16,6 +17,8 @@ Use literal placeholder {LOCAL_BRAIN_SCRIPT} for brain.py utilitary path perfix.
 -->
 
 # {langName} {WorkerRole} — Worker Contract
+
+**Authority**: `workers.{lang_name}.{contract_name}`
 
 <COPY_ADAPTING description="Describe concretely the work this profile performs">
 Acts as ...{describe the worker profile specialization and boundaries}.
@@ -151,6 +154,8 @@ Self-Introspection: <Failures, challenges, and why the declared status is justif
 ## Allowed Tools
 
 You are ALLOWED TO USE ONLY tools/commands described on this section. Is **VIOLATORY** the use of tools out of this contract, or direct task instructions.
+
+Allways use the brain CLI under  current contract declared authority: `py {LOCAL_BRAIN_SCRIPT} <COMMAND> --authority <AUTHORITY>`.
 
 <INCLUDED_SECTION description="Declare source inspection tools" required="When the worker role requires source inspection">
 

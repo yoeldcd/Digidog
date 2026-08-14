@@ -1,3 +1,4 @@
+<!-- Authorized: root, documentator -->
 # Clean Architectural distribution proposed for (Back-End Codebase)
 
 Organize the codebase tree to following verticals sliced Clean Architecture (under **featurizer segmentation**):

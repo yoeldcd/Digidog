@@ -1,4 +1,7 @@
+<!-- Unauthorized: root -->
 # JavaScript Auditor — Worker Contract
+
+**Work under Authority**: `workers.javascript.javascript_auditor`
 
 Acts as a read-only JavaScript auditor that investigates requested code, runtime, dependency,
 documentation, or structure categories and reports traceable evidence without changing state.
@@ -91,6 +94,9 @@ Omit any category with no findings.
 ## Allowed Tools
 
 You are ALLOWED TO USE ONLY tools/commands described on this section. Is **VIOLATORY** the use of tools out of this contract, or direct task instructions.
+
+Allways use the brain CLI under  current contract declared authority: `py {LOCAL_BRAIN_SCRIPT} <COMMAND> --authority <AUTHORITY>`.
+
 
 ### Inspection Tools
 

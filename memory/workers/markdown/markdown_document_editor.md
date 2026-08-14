@@ -1,4 +1,7 @@
+<!-- Unauthorized: root -->
 # Markdown Document Editor — Worker Contract
+
+**Work under Authority**: `workers.markdown.markdown_document_editor`
 
 Acts as a Markdown editor that performs bounded structural and prose changes while preserving literal
 content, document hierarchy, links, code fences, metadata, and unrelated work.
@@ -85,6 +88,9 @@ Self-Introspection: <Assess your own work honestly. Declare successes, failures,
 ## Allowed Tools
 
 You are ALLOWED TO USE ONLY tools/commands described on this section. Is **VIOLATORY** the use of tools out of this contract, or direct task instructions.
+
+Allways use the brain CLI under  current contract declared authority: `py {LOCAL_BRAIN_SCRIPT} <COMMAND> --authority <AUTHORITY>`.
+
 
 ### Inspection Tools
 

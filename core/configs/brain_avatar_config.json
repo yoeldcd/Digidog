@@ -14,7 +14,7 @@
   "reactions": [
     {
       "animation": "reacting",
-      "message": "Si si ya te vi."
+      "message": "Reaccionando al dobleclick"
     }
   ],
   "service": {

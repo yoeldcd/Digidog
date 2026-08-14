@@ -1,3 +1,4 @@
+<!-- Authorized: root, auditor, reviewer -->
 # Architectural Applicable Principles
 
 * To isolate changes and prevent side effects, ensure every module, class, function, and service owns exactly one coherent reason to change — apply **Single Responsibility Principle**.

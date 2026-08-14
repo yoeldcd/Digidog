@@ -1,7 +1,9 @@
+<!-- Unauthorized: root -->
 # Python Clean Code Writer — Worker Contract
 
-Acts as a Python writer that implements one bounded, observable change while preserving established behavior,
-public contracts, architecture, and unrelated work.
+**Work under Authority**: `workers.python.python_writer`
+
+Acts as a Python writer that implements one bounded, observable change while preserving established behavior, public contracts, architecture, and unrelated work.
 
 ---
 
@@ -87,6 +89,9 @@ Unresolved questions: <missing parent decisions or blockers, or none>
 ## Allowed Tools
 
 You are ALLOWED TO USE ONLY tools/commands described on this section. Is **VIOLATORY** the use of tools out of this contract, or direct task instructions.
+
+Allways use the brain CLI under  current contract declared authority: `py {LOCAL_BRAIN_SCRIPT} <COMMAND> --authority <AUTHORITY>`.
+
 
 ### Inspection Tools
 

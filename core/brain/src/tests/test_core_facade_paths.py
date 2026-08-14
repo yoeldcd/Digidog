@@ -11,17 +11,40 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import ModuleType
 from unittest.mock import patch
 
 
-def _load_core_module():
-    """Load the canonical facade template without invoking its CLI entry point."""
-    core_path = Path(__file__).resolve().parents[3] / "core_cli.py"
-    spec = importlib.util.spec_from_file_location("brain_core_template", core_path)
+def _load_facade_module(facade_path: Path, module_name: str) -> ModuleType:
+    """Load one facade without invoking its CLI entry point.
+
+    Args:
+        facade_path: Absolute path to the launcher module.
+        module_name: Temporary import name assigned to the loaded module.
+
+    Returns:
+        ModuleType: Loaded launcher module.
+
+    Raises:
+        AssertionError: If Python cannot create an import specification.
+    """
+    spec = importlib.util.spec_from_file_location(module_name, facade_path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+
     return module
+
+
+def _load_core_module() -> ModuleType:
+    """Load the canonical facade template without invoking its CLI entry point.
+
+    Returns:
+        ModuleType: Loaded core launcher template.
+    """
+    core_path = Path(__file__).resolve().parents[3] / "core_cli.py"
+
+    return _load_facade_module(core_path, "brain_core_template")
 
 
 def test_import_path_is_moved_to_front_when_already_present() -> None:
@@ -74,6 +97,50 @@ def test_core_data_paths_do_not_derive_from_agent_dir() -> None:
             assert get_vectorstore_dir(scope="global", create=False) == core_root / "database" / "vectorstores"
 
 
+def test_facades_route_speak_through_secured_cli_runtime() -> None:
+    """Ensure both launchers send speak through the canonical authority gate.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+    """
+    from brain import cli as brain_cli
+
+    workspace_root = Path(__file__).resolve().parents[4]
+    facade_paths = (
+        ("brain_core_template", workspace_root / "core" / "core_cli.py"),
+        ("workspace_brain_facade", workspace_root / "$agent" / "scripts" / "brain.py"),
+    )
+
+    for module_name, facade_path in facade_paths:
+        module = _load_facade_module(facade_path, module_name)
+
+        with (
+            patch.object(module, "IS_CORE_FACTORY", False),
+            patch.object(
+                sys,
+                "argv",
+                [
+                    str(facade_path),
+                    "speak",
+                    "--text",
+                    "authority-protected",
+                    "--authority",
+                    "worker",
+                    "--json",
+                ],
+            ),
+            patch.object(brain_cli, "run_cli", return_value=23) as run_cli,
+            patch("brain.infrastructure.voice.service.VoiceService.speak") as legacy_speak,
+        ):
+            assert module.main() == 23
+
+        run_cli.assert_called_once_with(argv=None)
+        legacy_speak.assert_not_called()
+
+
 def load_tests(loader, tests, pattern):
     """Expose the function-style path regressions to unittest discovery."""
     del loader, tests, pattern
@@ -81,5 +148,6 @@ def load_tests(loader, tests, pattern):
         (
             unittest.FunctionTestCase(test_import_path_is_moved_to_front_when_already_present),
             unittest.FunctionTestCase(test_core_data_paths_do_not_derive_from_agent_dir),
+            unittest.FunctionTestCase(test_facades_route_speak_through_secured_cli_runtime),
         )
     )

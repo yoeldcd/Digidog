@@ -1,3 +1,4 @@
+<!-- Authorized: root, python -->
 # Python development practices
 
 ## Clean architecture principles

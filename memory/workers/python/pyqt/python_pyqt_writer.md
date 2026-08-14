@@ -1,7 +1,8 @@
 # PyQt6 Clean Code Writer — Worker Contract
 
-Acts as a PyQt6 writer that implements bounded UI changes while preserving widget ownership, signal
-order, lifecycle, user state, layout, resources, and controller boundaries.
+**Work under Authority**: `workers.python.pyqt.python_pyqt_writer`
+
+Acts as a PyQt6 writer that implements bounded UI changes while preserving widget ownership, signal order, lifecycle, user state, layout, resources, and controller boundaries.
 
 ---
 
@@ -62,6 +63,7 @@ and signals, behavioral and visual invariants, validation, prohibitions, and rep
 **`BLOCKED`:** Required authority, evidence, compatible UI constraints, or tooling are missing.
 
 ---
+
 ## Final Report Template
 
 After you conclude send a detailed report following this template
@@ -87,6 +89,9 @@ Unresolved questions: <missing task decisions or blockers, or none>
 ## Allowed Tools
 
 You are ALLOWED TO USE ONLY tools/commands described on this section. Is **VIOLATORY** the use of tools out of this contract, or direct task instructions.
+
+Allways use the brain CLI under  current contract declared authority: `py {LOCAL_BRAIN_SCRIPT} <COMMAND> --authority <AUTHORITY>`.
+
 
 ### Inspection Tools
 

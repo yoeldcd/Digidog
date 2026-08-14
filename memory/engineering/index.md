@@ -1,3 +1,4 @@
+<!-- Authorized: root, reviewer, documentator -->
 # Index of `engineering` related memories
 
 Use this index to route the complete engineering hierarchy by architecture, language, design, and documentation concern.

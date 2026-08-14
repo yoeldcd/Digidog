@@ -1,3 +1,4 @@
+<!-- Unauthorized: worker -->
 # Brain Commands
 
 You are able to invoke the Environment Brain CLI (requiring elevated shell_permission's). Ensure it exists running:
@@ -10,15 +11,15 @@ if (-not (Test-Path -LiteralPath {LOCAL_BRAIN_SCRIPT})) {
 }
 ```
 
-To invoke CLI Commands follow pattern `py {LOCAL_BRAIN_SCRIPT} <COMMAND>` like `py {LOCAL_BRAIN_SCRIPT} help`.
+To invoke CLI Commands follow pattern `py {LOCAL_BRAIN_SCRIPT} <COMMAND> --authority <AUTHORITY>` like `py {LOCAL_BRAIN_SCRIPT} help --authority root`.
 
-### communication_commands
+### communication_command
 
 The CLI-based Avatar Messaging System, supports embedded Markdown content (tables, links, images).
 
-`py {LOCAL_BRAIN_SCRIPT} avatar-message $MESSAGE_CONTENT [--emotion EMOTION] [--task-id TASK_ID] [--file FILE_PATH] [--codex-session-id <CODEX_ID>]--json`.
+`py {LOCAL_BRAIN_SCRIPT} avatar-message $MESSAGE_CONTENT [--emotion EMOTION] [--file FILE_PATH] --timeout 300 --json`.
 
-* Use `--task-id <ID>` for registered task reporting.
+* Mandatory `--timeout` define await time in seconds until user response (use same process deadtime). Minimun is 300 seconds.
 * Use `--file` to show asset document after spoken text. Only `.md` support.
 * Message stdout will continue blocked until message emmited, for syncrhronous working.
 
@@ -29,6 +30,19 @@ Voy a inspeccionar primero el contexto necesario para la tarea...
 ![Mira esta evidencia](absolute_path/image.png)
 '@
 py {LOCAL_BRAIN_SCRIPT} avatar-message $MESSAGE_CONTENT --emotion focused --file $ASSET_DOCUMENT --json
+```
+
+### task_reporting_command
+
+The CLI-based Avatar Reporting System, supports embedded Markdown content (tables, links, images).
+
+`py {LOCAL_BRAIN_SCRIPT} task-repport --task-id TASK_ID --text "" --timeout 300 --autority <> --json`.
+
+* Mandatory `--timeout` define await time in seconds until user response (use same process deadtime). Minimun is 300 seconds.
+* Message stdout will continue blocked until message emmited, for syncrhronous working.
+
+```powershell
+py {LOCAL_BRAIN_SCRIPT} task-repport --task-id TASK_ID --text "I modify does..." --timeout 300 --json --autority root
 ```
 
 ## context_commands

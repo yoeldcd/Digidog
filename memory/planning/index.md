@@ -1,3 +1,4 @@
+<!-- Unautorized: worker -->
 # Index of `planning` related memories
 
 This section contains planning templates and guidance.

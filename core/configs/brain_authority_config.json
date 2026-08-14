@@ -1,0 +1,31 @@
+[
+  {
+    "name_word": "root",
+    "allowed": "all",
+    "disallowed": [
+      "delete-memory-entry",
+      "delete-task",
+      "rebuild-vectorstore",
+      "wiki",
+      "clone-snippet",
+      "generate-pwd"
+    ],
+    "ask_message": "Ask the password to User",
+    "user_password": "gen with generate-pwd --authority user and COPY HERE",
+    "disallow_message_postfix": "You don't have my permission to do this."
+  },
+  {
+    "name_word": "worker",
+    "allowed": [
+      "get-memory-entry",
+      "eval-quality",
+      "code-quality",
+      "apply-patch",
+      "help"
+    ],
+    "disallowed": [],
+    "ask_message": "",
+    "user_password": "",
+    "disallow_message_postfix": "Sub-agent lacks authority for system administrative commands."
+  }
+]

@@ -1,4 +1,5 @@
-# Documentatio Guidelines
+<!-- Authorized: root, reviewer, documentator -->
+# Documentation Guidelines
 
 Documentation is part of implementation and must remain legible, layered, and aligned with the surrounding architecture.
 

@@ -1,3 +1,4 @@
+<!-- Authorized: root, documentator -->
 # Clean Architectural distribution patterns for (Front-End Codebase)
 
 Organize the codebase tree to following verticals sliced Clean Architecture ( under **featurizer segmentation**):

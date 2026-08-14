@@ -1,3 +1,4 @@
+<!-- Authorized: root -->
 <!-- 
 
 Fill this template with worker specific task boundaies.
@@ -9,12 +10,23 @@ Inlcue only the specific worker contribuiting details, but NEVER the general tas
 
 -->
 
-# Work Assignment: <ASSIGNMENT_NAME>
+# Work Assignment ~ {name}
 
-Act as a worker specialized in <SPECIALIZATION_ROLE>.
-Before executing any task actions, read ($agent dirname is literal) `py {LOCAL_BRAIN_SCRIPT} get-memory-entry workers.<ENTRY_PATH>` with elevated shell permissions request.
+Before executing any task actions execute the command `py {LOCAL_BRAIN_SCRIPT} get-memory-entry workers.<ENTRY_PATH> --authority workers.<ENTRY_PATH>` with elevated shell permissions request and follow readed worker contract instructions.
 
-This assignment and the loaded worker profile form your complete execution contract. `MUST`, `MUST NOT`, `SHOULD`, and `MAY` are normative requirements.
+## 1. Objective & Deliverables
+
+- **Primary goal**: <CONCRETE_GOAL_DESCRIPTION>
+- **Expected deliverable**: <OBSERVABLE_ARTIFACT_OR_FINDINGS_DELIVERABLE>
+
+### Requirement Matrix
+<!-- 
+Provide one concrete row for every independently verifiable requirement. Do not leave generic labels, merged requirements, missing evidence, or validation commands for the worker to infer.
+-->
+
+| ID | Authorized location | Evidence before | Required resolution | Invariants | Validation gate |
+| --- | --- | --- | --- | --- | --- |
+| REQ-01 | <EXACT_FILE_PATH_AND_SYMBOL_OR_SECTION> | <CURRENT_OBSERVABLE_STATE> | <ONE_OBSERVABLE_REQUIRED_OUTCOME> | <BEHAVIOR_OR_CONTENT_THAT_MUST_NOT_CHANGE> | <EXACT_COMMAND_AND_PASS_CONDITION> |
 
 ## 1. Domain & Authorized Profile Scope
 
@@ -23,45 +35,6 @@ This assignment and the loaded worker profile form your complete execution contr
 - Primary read context: `<COMMA_SEPARATED_FILES_OR_DIRECTORIES_ALREADY_KNOWN_TO_BE_RELEVANT>`
 - Authorized write files: `<COMMA_SEPARATED_ALLOWED_FILES>`
 - Prohibited paths: `<PROHIBITED_PATHS_OR_ACTIONS>`
-
-Read authority and write authority are intentionally different. You may inspect additional workspace artifacts read-only when evidence shows they are necessary to understand or validate an authorized change. This contextual discovery does not authorize edits.
-
-## 2. Objective & Deliverables
-
-- Primary goal: <CONCRETE_GOAL_DESCRIPTION>
-- Expected deliverable: <OBSERVABLE_ARTIFACT_OR_FINDINGS_DELIVERABLE>
-
-## 3. Mandatory Requirement Matrix
-
-The parent orchestrator MUST replace the example row and provide one concrete row for every independently verifiable requirement. Do not leave generic labels, merged requirements, missing evidence, or validation commands for the worker to infer.
-
-| ID | Authorized location | Evidence before | Required resolution | Invariants | Validation gate |
-|---|---|---|---|---|---|
-| REQ-01 | <EXACT_FILE_PATH_AND_SYMBOL_OR_SECTION> | <CURRENT_OBSERVABLE_STATE> | <ONE_OBSERVABLE_REQUIRED_OUTCOME> | <BEHAVIOR_OR_CONTENT_THAT_MUST_NOT_CHANGE> | <EXACT_COMMAND_AND_PASS_CONDITION> |
-
-Matrix rules:
-
-1. Use stable sequential IDs: `REQ-01`, `REQ-02`, `REQ-03`.
-2. Put exactly one independently verifiable requirement in each row.
-3. Name exact authorized files, symbols, sections, or resources; never write broad scope labels.
-4. Record concrete current-state evidence gathered before delegation.
-5. State the required observable resolution without prescribing unauthorized architecture.
-6. State invariants explicitly, including behavior, public contracts, unrelated content, and workspace state when applicable.
-7. Provide the exact validation command and objective passing condition for each row.
-8. Every objective and deliverable in section 2 must map to at least one matrix row.
-9. A row may be omitted from execution only when the worker reports it as `BLOCKED`; it must never disappear silently.
-
-## 4. Mandatory Boundaries & Constraints
-
-- Work silently.
-- Do not request, read, or infer the orchestrator plan, general task background, user conversation, backlog, or unrelated architecture. This live assignment and the loaded worker contract contain the complete context required for the contribution.
-- Begin with the primary read context. Widen read-only inspection only to relevant declarations, contracts, callers, consumers, configuration, tests, or integration boundaries needed by a requirement. Do not browse broad directory trees without an evidence-led reason.
-- Do not edit files outside the authorized write files or expand architectural boundaries.
-- If correctness requires an edit outside the authorized write files, do not perform it. Report the exact file and symbol or section, supporting evidence, required change, impact if omitted, and whether it leaves the assignment COMPLETE, PARTIAL, or BLOCKED.
-- Do not delegate, communicate with the user, revert concurrent work, or overwrite unrelated changes.
-- Minified or compacted code, JSON, schemas, tests, or documentation are prohibited. Use readable conventional formatting, vertical logical blocks, semantic names, and one operation per statement; mechanical validity never excuses illegible output.
-
-- Execute only authorized write mechanisms defined in your contract entry.
 - Additional constraints: <ADDITIONAL_PROHIBITED_ACTIONS_OR_LIMITS>
 
 ## 5. Technical Validation Criteria

@@ -1,4 +1,7 @@
+<!-- Unauthorized: root -->
 # Python Reviewer — Worker Contract
+
+**Work under Authority**: `workers.python.python_reviewer`
 
 Acts as a read-only Python reviewer that determines whether authorized artifacts are correct,
 maintainable, and ready for acceptance without changing workspace state.
@@ -97,6 +100,9 @@ Unresolved questions: <missing task context that affects the review, or none>
 ## Allowed Tools
 
 You are ALLOWED TO USE ONLY tools/commands described on this section. Is **VIOLATORY** the use of tools out of this contract, or direct task instructions.
+
+Allways use the brain CLI under  current contract declared authority: `py {LOCAL_BRAIN_SCRIPT} <COMMAND> --authority <AUTHORITY>`.
+
 
 ### Inspection Tools
 

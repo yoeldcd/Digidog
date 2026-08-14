@@ -1,3 +1,4 @@
+<!-- Authorized: root, javascript -->
 # Javascript development practices
 
 ## Clean architecture principles

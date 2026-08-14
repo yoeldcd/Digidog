@@ -1,3 +1,4 @@
+<!-- Authorized: root, auditor -->
 # Archeitectural distribution patterns for Deployment Assets
 
 /{deployment_infrastructure, e.g. deployment}

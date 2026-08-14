@@ -1,3 +1,4 @@
+<!-- Authorized: root, auditor -->
 # Archeitectural distribution patterns for (Application Codebase)
 
 /{transient_zones, e.g. runtime_transients}

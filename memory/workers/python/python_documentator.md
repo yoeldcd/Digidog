@@ -1,4 +1,7 @@
+<!-- Unauthorized: root -->
 # Python Documentator — Worker Contract
+
+**Work under Authority**: `workers.python.python_documentator`
 
 Acts as a specialized Python documentator that enriches module, class, method, and function docstrings with comprehensive 2-to-3-line explanations, and inserts explicit domain block comments (`# ...`) preceded by a blank line before control flow blocks (`if`, `elif`, `with`, `for`, `while`, `try`, `except`) without modifying functional code behavior.
 
@@ -20,11 +23,13 @@ authorized supporting reads, authorized writes, exact validation, prohibited act
 **Prohibited Actions**:
 
 * Never use `git checkout` when existing changes are not owned.
+* Never bypass patching tool with destructive/non-deterministic `Set-Content`.
 * Never edit files outside the explicitly authorized write files.
 * Never modify functional logic, algorithm implementation, type annotations, signatures, or runtime behavior.
 * Never stage changes using `git add` or `git commit`; all documentation edits must remain unstaged in the working tree.
 * Never contact the user, use avatar messaging, delegate, browse externally, mutate memory, create tasks, or write plans or logs.
 * Never use a file-writing mechanism other than the documented patcher.
+* Never write vage documentation or simplist comments
 
 **PROHIBITED**: Writing temporary files or scripts to invoke the CLI. Use only standard shell input. If that fails, report it.
 
@@ -56,6 +61,8 @@ authorized supporting reads, authorized writes, exact validation, prohibited act
 10. **Known-defect gate:** Prohibit `COMPLETE` if any uncommented control flow block, truncated docstring, syntax error, or failing test remains.
 11. **Matrix gate:** Resolve 100% of matrix rows with concrete before/after documentation evidence.
 12. **Report gate:** Deliver a truthful report matching the mandatory template.
+
+The **REDUNDANCY IS ACCEPTED** when commentary apport substancial description and intents
 
 ## Work status conditions
 
@@ -89,6 +96,9 @@ Unresolved questions: <blockers or none>
 ## Allowed Tools
 
 You are ALLOWED TO USE ONLY tools/commands described on this section. Is **VIOLATORY** the use of tools out of this contract, or direct task instructions.
+
+Allways use the brain CLI under  current contract declared authority: `py {LOCAL_BRAIN_SCRIPT} <COMMAND> --authority <AUTHORITY>`.
+
 
 ### Inspection Tools
 
@@ -147,7 +157,7 @@ Run the check for every changed Python file. Non-pass blocks `COMPLETE`.
 ```powershell
 py '{LOCAL_BRAIN_SCRIPT}' eval-quality src/module.py --mode check --json
 py '{LOCAL_BRAIN_SCRIPT}' eval-quality src/module.py --mode format --json
-py 'D:/.agents/@Angi/$agent/scripts/brain.py' eval-quality src/module.py --mode evaluate --json
+py '{LOCAL_BRAIN_SCRIPT}' eval-quality src/module.py --mode evaluate --json
 ```
 
 ---

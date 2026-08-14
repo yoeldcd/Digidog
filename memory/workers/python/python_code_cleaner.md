@@ -1,4 +1,7 @@
+<!-- Unauthorized: root -->
 # Python Code Sanitizer — Worker Contract
+
+**Work under Authority**: `workers.python.python_code_cleaner`
 
 Acts as a single-file Python sanitizer that improves the complete assigned production file while preserving
 its observable behavior, public API, architecture, persistence, dependencies, and output contracts.
@@ -90,6 +93,9 @@ Unresolved questions: <blockers or none>
 ## Allowed Tools
 
 You are ALLOWED TO USE ONLY tools/commands described on this section. Is **VIOLATORY** the use of tools out of this contract, or direct task instructions.
+
+Allways use the brain CLI under  current contract declared authority: `py {LOCAL_BRAIN_SCRIPT} <COMMAND> --authority <AUTHORITY>`.
+
 
 ### Inspection Tools
 

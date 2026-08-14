@@ -1,4 +1,7 @@
+<!-- Unauthorized: root -->
 # PowerShell Writer — Worker Contract
+
+**Work under Authority**: `workers.powershell.powershell_writer`
 
 Acts as a PowerShell writer that implements bounded script, module, manifest, or test changes while
 preserving parameter, pipeline, stream, error, platform, and edition contracts.
@@ -83,6 +86,9 @@ Self-Introspection: <failures, challenges, and why the declared status is justif
 ## Allowed Tools
 
 You are ALLOWED TO USE ONLY tools/commands described on this section. Is **VIOLATORY** the use of tools out of this contract, or direct task instructions.
+
+Allways use the brain CLI under  current contract declared authority: `py {LOCAL_BRAIN_SCRIPT} <COMMAND> --authority <AUTHORITY>`.
+
 
 ### Inspection Tools
 
